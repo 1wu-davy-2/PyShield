@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from . import __version__, crypto, fingerprint, licensing
+from . import __version__, crypto, ed25519, fingerprint, licensing
 
 RUNTIME_PACKAGE = "_shield_runtime"
 MARKER_FILE = ".pyshield-build.json"
@@ -202,19 +202,28 @@ def protect_module(module: Module, build_key: bytes, cipher: str) -> str:
     return crypto.b85encode(sealed)
 
 
-def install_runtime(output: Path, build_id: str, master_key: bytes, cipher: str, runtime_pyc: bool) -> None:
+def install_runtime(
+    output: Path,
+    build_id: str,
+    master_key: bytes,
+    signing_public_key: bytes,
+    cipher: str,
+    runtime_pyc: bool,
+) -> None:
     source_dir = Path(__file__).resolve().parent
     template = source_dir / "runtime_template" / RUNTIME_PACKAGE
     runtime = output / RUNTIME_PACKAGE
     shutil.copytree(template, runtime)
     shutil.copy2(source_dir / "crypto.py", runtime / "_crypto.py")
     shutil.copy2(source_dir / "fingerprint.py", runtime / "_machine.py")
+    shutil.copy2(source_dir / "ed25519.py", runtime / "_ed25519.py")
 
     core = runtime / "_core.py"
     text = core.read_text(encoding="utf-8")
     replacements = {
         "__PYSHELD_BUILD_ID__": build_id,
         "__PYSHELD_MASTER_KEY__": crypto.b85encode(master_key),
+        "__PYSHELD_SIGNING_PUBLIC_KEY__": crypto.b85encode(signing_public_key),
         "__PYSHELD_PYTHON_VERSION__": f"{sys.version_info[0]}.{sys.version_info[1]}",
         "__PYSHELD_CIPHER__": cipher,
     }
@@ -350,6 +359,8 @@ def build(options: BuildOptions) -> BuildResult:
     build_id = os.urandom(8).hex()
     build_key = crypto.random_bytes(32)
     master_key = crypto.random_bytes(32)
+    signing_key = crypto.random_bytes(32)
+    signing_public_key = ed25519.public_key(signing_key)
     temp = output.parent / f".{output.name}.tmp"
 
     if temp.exists():
@@ -368,12 +379,12 @@ def build(options: BuildOptions) -> BuildResult:
             target.write_text(stub, encoding="utf-8", newline="\n")
 
         log("installing runtime")
-        install_runtime(temp, build_id, master_key, cipher, options.runtime_pyc)
+        install_runtime(temp, build_id, master_key, signing_public_key, cipher, options.runtime_pyc)
 
         python_version = f"{sys.version_info[0]}.{sys.version_info[1]}"
         log("writing license")
         sealed = licensing.create_license(
-            master_key, build_id, build_key, cipher, python_version,
+            master_key, build_id, build_key, cipher, python_version, signing_key,
             expires=expire_date, fingerprints=fingerprints, customer=options.customer,
         )
         licensing.write_license(temp / LICENSE_FILE, sealed)
@@ -388,11 +399,13 @@ def build(options: BuildOptions) -> BuildResult:
 
     secret_path = licensing.secret_path_for(output)
     licensing.write_secret(secret_path, {
-        "format": 1,
+        "format": licensing.FORMAT,
         "tool": f"pyshield {__version__}",
         "build_id": build_id,
         "master_key": crypto.b85encode(master_key),
         "build_key": crypto.b85encode(build_key),
+        "signing_key": crypto.b85encode(signing_key),
+        "signing_public_key": crypto.b85encode(signing_public_key),
         "cipher": cipher,
         "python": f"{sys.version_info[0]}.{sys.version_info[1]}",
         "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -427,6 +440,8 @@ def issue(options: IssueOptions) -> tuple[Path, dict]:
     secret = licensing.read_secret(secret_path)
     master_key = crypto.b85decode(secret["master_key"])
     build_key = crypto.b85decode(secret["build_key"])
+    signing_key = crypto.b85decode(secret["signing_key"])
+    signing_public_key = licensing.secret_public_key(secret)
     build_id = secret["build_id"]
     cipher = secret.get("cipher", "chacha")
     python_version = secret.get("python", f"{sys.version_info[0]}.{sys.version_info[1]}")
@@ -442,7 +457,7 @@ def issue(options: IssueOptions) -> tuple[Path, dict]:
         fingerprints = licensing.normalize_fingerprints(options.bind_device)
 
     sealed = licensing.create_license(
-        master_key, build_id, build_key, cipher, python_version,
+        master_key, build_id, build_key, cipher, python_version, signing_key,
         expires=expire_date, fingerprints=fingerprints, customer=options.customer,
     )
 
@@ -452,7 +467,7 @@ def issue(options: IssueOptions) -> tuple[Path, dict]:
         target = Path(secret.get("license") or Path(secret["output"]) / LICENSE_FILE).resolve()
     licensing.write_license(target, sealed)
 
-    payload = licensing.open_license(master_key, build_id, sealed)
+    payload = licensing.open_license(master_key, build_id, sealed, signing_public_key)
     log(f"license written: {target}")
     log(licensing.describe(payload))
     return target, payload
@@ -464,7 +479,7 @@ def inspect(options: IssueOptions) -> dict:
     master_key = crypto.b85decode(secret["master_key"])
     build_id = secret["build_id"]
     target = Path(secret.get("license") or Path(secret["output"]) / LICENSE_FILE).resolve()
-    payload = licensing.open_license(master_key, build_id, target.read_bytes())
+    payload = licensing.open_license(master_key, build_id, target.read_bytes(), licensing.secret_public_key(secret))
     log(f"secret:  {secret_path}")
     log(f"build:   {secret.get('output', '?')}")
     log(f"license: {target}")

@@ -18,12 +18,15 @@ from datetime import date
 from pathlib import Path
 
 from . import _crypto
+from . import _ed25519
 from . import _machine
 
 BUILD_ID = "__PYSHELD_BUILD_ID__"
 MASTER_KEY_B85 = "__PYSHELD_MASTER_KEY__"
+SIGNING_PUBLIC_KEY_B85 = "__PYSHELD_SIGNING_PUBLIC_KEY__"
 PYTHON_VERSION = "__PYSHELD_PYTHON_VERSION__"
 CIPHER = "__PYSHELD_CIPHER__"
+LICENSE_FORMAT = 2
 
 LICENSE_SALT = b"pyshield-license-v1"
 LICENSE_AAD_PREFIX = b"pyshield-license:"
@@ -98,7 +101,25 @@ def _load_state() -> dict:
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise LicenseError(f"license {path} is damaged") from exc
 
-        if payload.get("format") != 1 or payload.get("build_id") != BUILD_ID:
+        if payload.get("format") != LICENSE_FORMAT:
+            raise LicenseError(f"license {path} has an unsupported format")
+
+        signature = payload.get("signature")
+        try:
+            signed = (
+                isinstance(signature, str)
+                and _ed25519.verify(
+                    _crypto.b85decode(SIGNING_PUBLIC_KEY_B85),
+                    _crypto.license_signing_message(payload),
+                    _crypto.b85decode(signature),
+                )
+            )
+        except Exception:
+            signed = False
+        if not signed:
+            raise LicenseError(f"license {path} has an invalid signature")
+
+        if payload.get("build_id") != BUILD_ID:
             raise LicenseError(f"license {path} does not belong to this build")
 
         expires = payload.get("expires")
@@ -176,4 +197,5 @@ def license_status() -> dict:
         "fingerprints": state["fingerprints"],
         "customer": state["customer"],
         "cipher": CIPHER,
+        "signature": "ed25519",
     }

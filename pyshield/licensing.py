@@ -2,7 +2,9 @@
 
 A license is a PSX1 envelope sealed with a key derived from the build's master
 key. It carries the build key (needed to decrypt modules), an optional expiry
-date and an optional list of licensed machine fingerprints.
+date and an optional list of licensed machine fingerprints. The payload is
+signed with the build's Ed25519 signing key, so a license cannot be forged
+even when the runtime's symmetric master key is extracted.
 """
 
 from __future__ import annotations
@@ -12,11 +14,11 @@ import os
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-from . import crypto
+from . import crypto, ed25519
 
 LICENSE_FILENAME = "pyshield.lic"
 SECRET_SUFFIX = ".shield-secret.json"
-FORMAT = 1
+FORMAT = 2
 
 LICENSE_SALT = b"pyshield-license-v1"
 LICENSE_AAD_PREFIX = b"pyshield-license:"
@@ -56,6 +58,29 @@ def normalize_fingerprints(values: list[str] | tuple[str, ...]) -> list[str]:
     return seen
 
 
+def sign_payload(payload: dict, signing_key: bytes) -> dict:
+    signed = dict(payload)
+    signed.pop("signature", None)
+    signature = ed25519.sign(signing_key, crypto.license_signing_message(signed))
+    signed["signature"] = crypto.b85encode(signature)
+    return signed
+
+
+def verify_payload(payload: dict, public_key: bytes) -> bool:
+    signature = payload.get("signature")
+    if not isinstance(signature, str) or not signature:
+        return False
+    try:
+        raw = crypto.b85decode(signature)
+    except Exception:
+        return False
+    return ed25519.verify(public_key, crypto.license_signing_message(payload), raw)
+
+
+def secret_public_key(secret: dict) -> bytes:
+    return ed25519.public_key(crypto.b85decode(secret["signing_key"]))
+
+
 def build_payload(
     build_id: str,
     build_key: bytes,
@@ -84,14 +109,15 @@ def create_license(
     build_key: bytes,
     cipher: str,
     python_version: str,
+    signing_key: bytes,
     expires: date | None = None,
     fingerprints: list[str] | tuple[str, ...] = (),
     customer: str | None = None,
 ) -> bytes:
-    payload = build_payload(
+    payload = sign_payload(build_payload(
         build_id, build_key, cipher, python_version, expires,
         normalize_fingerprints(fingerprints), customer,
-    )
+    ), signing_key)
     data = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     try:
         return crypto.seal(license_key(master_key, build_id), data, license_aad(build_id), cipher=cipher)
@@ -99,7 +125,7 @@ def create_license(
         raise LicenseError(str(exc)) from exc
 
 
-def open_license(master_key: bytes, build_id: str, sealed: bytes) -> dict:
+def open_license(master_key: bytes, build_id: str, sealed: bytes, public_key: bytes) -> dict:
     try:
         data = crypto.open_envelope(license_key(master_key, build_id), sealed, license_aad(build_id))
     except crypto.CryptoError as exc:
@@ -109,7 +135,9 @@ def open_license(master_key: bytes, build_id: str, sealed: bytes) -> dict:
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise LicenseError("license payload is not valid JSON") from exc
     if payload.get("format") != FORMAT:
-        raise LicenseError("unsupported license format")
+        raise LicenseError("unsupported license format; rebuild with a current PyShield")
+    if not verify_payload(payload, public_key):
+        raise LicenseError("license signature is invalid")
     if payload.get("build_id") != build_id:
         raise LicenseError("license does not belong to this build")
     try:
@@ -134,17 +162,28 @@ def read_secret(path: Path) -> dict:
     except json.JSONDecodeError as exc:
         raise LicenseError(f"build secret {path} is not valid JSON") from exc
     if data.get("format") != FORMAT:
-        raise LicenseError("unsupported build secret format")
-    for field in ("build_id", "master_key", "build_key"):
+        raise LicenseError("unsupported build secret format; rebuild with a current PyShield")
+    for field in ("build_id", "master_key", "build_key", "signing_key"):
         if not data.get(field):
             raise LicenseError(f"build secret is missing {field!r}")
     try:
         master = crypto.b85decode(data["master_key"])
         build = crypto.b85decode(data["build_key"])
+        signing = crypto.b85decode(data["signing_key"])
     except Exception as exc:
         raise LicenseError("build secret contains invalid keys") from exc
-    if len(master) != 32 or len(build) != 32:
+    if len(master) != 32 or len(build) != 32 or len(signing) != 32:
         raise LicenseError("build secret keys have an invalid length")
+    public = ed25519.public_key(signing)
+    stored_public = data.get("signing_public_key")
+    if stored_public:
+        try:
+            matches = crypto.b85decode(stored_public) == public
+        except Exception as exc:
+            raise LicenseError("build secret contains an invalid signing public key") from exc
+        if not matches:
+            raise LicenseError("build secret signing keys do not match")
+    data["signing_public_key"] = crypto.b85encode(public)
     return data
 
 

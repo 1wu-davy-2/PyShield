@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -7,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pyshield import builder, licensing
+from pyshield import builder, crypto, licensing
 
 MANAGE = """\
 import sys
@@ -83,6 +84,9 @@ class BuilderTests(unittest.TestCase):
         result = self.build()
         self.assertTrue(result.license.is_file())
         self.assertTrue(self.secret_path.is_file())
+        secret = licensing.read_secret(self.secret_path)
+        self.assertIn("signing_key", secret)
+        self.assertIn("signing_public_key", secret)
         self.assertIn("PyShield protected module", (self.output / "mypkg" / "tools.py").read_text(encoding="utf-8"))
         self.assertNotIn("PyShield protected module", (self.output / "mypkg" / "tests.py").read_text(encoding="utf-8"))
         self.assertNotIn("PyShield protected module", (self.output / "mypkg" / "migrations" / "0001_initial.py").read_text(encoding="utf-8"))
@@ -122,6 +126,29 @@ class BuilderTests(unittest.TestCase):
         completed = self.run_project("check")
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("cannot decrypt protected module mypkg.tools", completed.stderr)
+
+    def test_forged_license_with_extracted_master_key(self) -> None:
+        result = self.build(expire="2000-01-01")
+        secret = licensing.read_secret(result.secret)
+        master_key = crypto.b85decode(secret["master_key"])
+        build_id = secret["build_id"]
+        license_key = licensing.license_key(master_key, build_id)
+        sealed = result.license.read_bytes()
+        payload = json.loads(
+            crypto.open_envelope(license_key, sealed, licensing.license_aad(build_id)).decode("utf-8")
+        )
+        payload["expires"] = None
+        forged = crypto.seal(
+            license_key,
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+            licensing.license_aad(build_id),
+            cipher="chacha",
+        )
+        result.license.write_bytes(forged)
+
+        completed = self.run_project("check")
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("signature", completed.stderr)
 
     def test_runtime_pyc(self) -> None:
         self.build(runtime_pyc=True)

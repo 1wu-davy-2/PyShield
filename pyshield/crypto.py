@@ -15,6 +15,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import json
 import secrets
 import struct
 
@@ -248,6 +249,15 @@ def derive_module_key(build_key: bytes, module_id: str) -> bytes:
 
 def module_aad(module_id: str) -> bytes:
     return b"pyshield-module:" + module_id.encode("utf-8")
+
+
+LICENSE_SIGNATURE_PREFIX = b"pyshield-license-v2:"
+
+
+def license_signing_message(payload: dict) -> bytes:
+    unsigned = {key: value for key, value in payload.items() if key != "signature"}
+    data = json.dumps(unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    return LICENSE_SIGNATURE_PREFIX + data
 
 
 def b85encode(data: bytes) -> str:
