@@ -338,8 +338,8 @@ def build(options: BuildOptions) -> BuildResult:
     log(f"project:  {project}")
     log(f"output:   {output}")
     log(f"cipher:   {cipher}")
-    if cipher == "aesgcm":
-        log("note: AES-GCM builds require the 'cryptography' package on the deployment machine")
+    if cipher in {"aesgcm", "chacha20poly1305"}:
+        log(f"note: {cipher} builds require the 'cryptography' package on the deployment machine")
     log(f"expire:   {expire_date.isoformat() if expire_date else 'never'}")
     log(f"bound to: {', '.join(fingerprints) if fingerprints else 'any machine'}")
     if options.bind_device and local not in fingerprints:

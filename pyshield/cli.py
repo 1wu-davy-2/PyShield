@@ -32,8 +32,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     build.add_argument("--encrypt-migrations", action="store_true", help="encrypt Django migrations too")
     build.add_argument("--encrypt-tests", action="store_true", help="encrypt test modules too")
-    build.add_argument("--cipher", choices=["auto", "chacha", "aesgcm"], default="auto",
-                       help="module cipher; auto uses aesgcm only when cryptography is installed")
+    build.add_argument(
+        "--cipher", choices=["auto", "chacha", "chacha-pure", "aesgcm"], default="auto",
+        help="module cipher; auto uses aesgcm when cryptography is installed, "
+             "chacha uses ChaCha20-Poly1305 when available, chacha-pure is dependency-free",
+    )
     _add_license_arguments(build)
     build.add_argument("--runtime-pyc", action="store_true", help="ship the runtime as sourceless bytecode")
     build.add_argument("--no-verify", action="store_true", help="skip manage.py check on the output")

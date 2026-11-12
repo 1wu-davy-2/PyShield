@@ -6,6 +6,7 @@ Envelope format:
 
 Cipher 1: AES-256-GCM (requires the optional ``cryptography`` package)
 Cipher 2: ChaCha20 + HMAC-SHA256 (pure Python, always available)
+Cipher 3: ChaCha20-Poly1305 (requires the optional ``cryptography`` package)
 
 The header and caller supplied associated data are authenticated.
 """
@@ -24,8 +25,9 @@ VERSION = 1
 
 CIPHER_AESGCM = 1
 CIPHER_CHACHA = 2
+CIPHER_CHACHA_POLY = 3
 
-_TAG_LEN = {CIPHER_AESGCM: 16, CIPHER_CHACHA: 32}
+_TAG_LEN = {CIPHER_AESGCM: 16, CIPHER_CHACHA: 32, CIPHER_CHACHA_POLY: 16}
 _NONCE_LEN = 12
 
 
@@ -171,6 +173,22 @@ def _aesgcm_decrypt(key: bytes, nonce: bytes, data: bytes, aad: bytes, tag: byte
         raise CryptoError("invalid or corrupted data") from exc
 
 
+def _chacha_poly_encrypt(key: bytes, nonce: bytes, data: bytes, aad: bytes) -> tuple[bytes, bytes]:
+    from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+
+    sealed = ChaCha20Poly1305(key).encrypt(nonce, data, aad)
+    return sealed[:-16], sealed[-16:]
+
+
+def _chacha_poly_decrypt(key: bytes, nonce: bytes, data: bytes, aad: bytes, tag: bytes) -> bytes:
+    from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+
+    try:
+        return ChaCha20Poly1305(key).decrypt(nonce, data + tag, aad)
+    except Exception as exc:
+        raise CryptoError("invalid or corrupted data") from exc
+
+
 # ---------------------------------------------------------------------------
 # Envelope
 # ---------------------------------------------------------------------------
@@ -184,11 +202,19 @@ def _derive_pair(key: bytes) -> tuple[bytes, bytes]:
 def resolve_cipher(cipher: str = "auto") -> str:
     if cipher == "auto":
         return "aesgcm" if aesgcm_available() else "chacha"
-    if cipher not in {"aesgcm", "chacha"}:
-        raise ValueError("cipher must be aesgcm, chacha, or auto")
-    if cipher == "aesgcm" and not aesgcm_available():
-        raise ValueError("AES-GCM requires the 'cryptography' package; use --cipher chacha")
-    return cipher
+    if cipher == "chacha":
+        return "chacha20poly1305" if aesgcm_available() else "chacha"
+    if cipher == "chacha-pure":
+        return "chacha"
+    if cipher == "aesgcm":
+        if not aesgcm_available():
+            raise ValueError("AES-GCM requires the 'cryptography' package; use --cipher chacha")
+        return "aesgcm"
+    if cipher == "chacha20poly1305":
+        if not aesgcm_available():
+            raise ValueError("ChaCha20-Poly1305 requires the 'cryptography' package; use --cipher chacha-pure")
+        return "chacha20poly1305"
+    raise ValueError("cipher must be auto, chacha, chacha-pure, or aesgcm")
 
 
 def seal(key: bytes, plaintext: bytes, aad: bytes = b"", cipher: str = "auto") -> bytes:
@@ -197,13 +223,20 @@ def seal(key: bytes, plaintext: bytes, aad: bytes = b"", cipher: str = "auto") -
     cipher = resolve_cipher(cipher)
     encryption_key, mac_key = _derive_pair(key)
     nonce = random_bytes(_NONCE_LEN)
-    cipher_id = CIPHER_AESGCM if cipher == "aesgcm" else CIPHER_CHACHA
+    if cipher == "aesgcm":
+        cipher_id = CIPHER_AESGCM
+    elif cipher == "chacha20poly1305":
+        cipher_id = CIPHER_CHACHA_POLY
+    else:
+        cipher_id = CIPHER_CHACHA
     tag_length = _TAG_LEN[cipher_id]
     header = MAGIC + bytes([VERSION, cipher_id, _NONCE_LEN, tag_length])
     authenticated = header + aad
 
     if cipher_id == CIPHER_AESGCM:
         ciphertext, tag = _aesgcm_encrypt(encryption_key, nonce, plaintext, authenticated)
+    elif cipher_id == CIPHER_CHACHA_POLY:
+        ciphertext, tag = _chacha_poly_encrypt(encryption_key, nonce, plaintext, authenticated)
     else:
         ciphertext = chacha20_xor(encryption_key, nonce, plaintext)
         tag = hmac.new(mac_key, authenticated + ciphertext, hashlib.sha256).digest()
@@ -235,6 +268,11 @@ def open_envelope(key: bytes, envelope: bytes, aad: bytes = b"") -> bytes:
         if not aesgcm_available():
             raise CryptoError("this build uses AES-GCM; install the 'cryptography' package")
         return _aesgcm_decrypt(encryption_key, nonce, ciphertext, authenticated, tag)
+
+    if cipher_id == CIPHER_CHACHA_POLY:
+        if not aesgcm_available():
+            raise CryptoError("this build uses ChaCha20-Poly1305; install the 'cryptography' package")
+        return _chacha_poly_decrypt(encryption_key, nonce, ciphertext, authenticated, tag)
 
     expected = hmac.new(mac_key, authenticated + ciphertext, hashlib.sha256).digest()
     if not hmac.compare_digest(expected, tag):
@@ -289,11 +327,13 @@ def selftest() -> str:
 
     ciphers = ["chacha"]
     if aesgcm_available():
+        ciphers.append("chacha20poly1305")
         ciphers.append("aesgcm")
     for cipher in ciphers:
+        requested = "chacha-pure" if cipher == "chacha" else cipher
         for size in (0, 1, 14, 63, 64, 65, 4096):
             plaintext = bytes((i * 7 + size) & 0xFF for i in range(size))
-            envelope = seal(key, plaintext, b"module:demo", cipher=cipher)
+            envelope = seal(key, plaintext, b"module:demo", cipher=requested)
             if open_envelope(key, envelope, b"module:demo") != plaintext:
                 raise AssertionError(f"{cipher} round trip failed at size {size}")
             try:
