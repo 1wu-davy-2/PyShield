@@ -23,11 +23,12 @@
 | --- | --- |
 | `shield.py` | 命令行入口：build / issue / inspect / fingerprint / selftest |
 | `pyshield/builder.py` | 模块发现、密文与 stub、runtime 安装、许可证与产物校验 |
-| `pyshield/crypto.py` | HKDF、AEAD 信封、AES-256-GCM、ChaCha20 + HMAC-SHA256 |
-| `pyshield/licensing.py` | 许可证与构建密钥的读写、到期与指纹字段 |
+| `pyshield/crypto.py` | HKDF、AEAD 信封、AES-256-GCM、ChaCha20-Poly1305、ChaCha20 + HMAC-SHA256 |
+| `pyshield/ed25519.py` | 许可证签名与验签（RFC 8032，纯 Python，优先使用 `cryptography`） |
+| `pyshield/licensing.py` | 许可证与构建密钥的读写、签名、到期与指纹字段 |
 | `pyshield/fingerprint.py` | 跨平台机器指纹 |
-| `pyshield/runtime_template/` | 随包运行库模板 |
-| `tests/` | 加密、许可证、构建器测试 |
+| `pyshield/runtime_template/` | 随包运行库模板，含 Cython 原生 ChaCha 源文件 |
+| `tests/` | 加密、签名、许可证、构建器测试 |
 
 ## 3. 构建流程
 
@@ -79,39 +80,47 @@ _pyshield_load_module(
 
 ### 3.3 安装 runtime 与许可证
 
-- 复制 runtime 模板，把占位符替换为构建 ID、主密钥、算法和 Python 小版本；
+- 复制 runtime 模板，并注入 `crypto.py`、`fingerprint.py → _machine.py`、`ed25519.py → _ed25519.py` 三份源码；
+- 把占位符替换为构建 ID、主密钥、Ed25519 公钥、算法和 Python 小版本；
 - 可选 `--runtime-pyc`：把 runtime 编译为 `UNCHECKED_HASH` 的 `.pyc` 并删除 `.py`，减少随包明文；
-- 生成 32 字节 `build_key`，写入 `pyshield.lic`，用 `master_key` 派生出的许可证密钥加密；
+- 可选 `--runtime-native`：用 Cython 把 `_core`、`_crypto`、`_ed25519`、`_chacha_fast` 编译为 `.pyd`/`.so` 并删除对应 `.py`。构建机需要 Cython、setuptools 和 C 编译器；Windows 上会自动探测 MinGW-w64，也可用 `MINGW_PREFIX` 指定。原生扩展与操作系统、CPU 架构和 Python ABI 绑定，必须在与部署机一致的环境中构建；
+- `--runtime-native` 与 `--runtime-pyc` 互斥；`_machine.py` 和 `__init__.py` 保持明文，`_chacha_fast.pyx` 在安装结束后删除；
+- 构建时生成 32 字节 Ed25519 签名私钥，公钥写入 runtime；私钥只保存于构建密钥；
+- 生成 32 字节 `build_key`，写入 `pyshield.lic`，载荷先签名再用 `master_key` 派生出的许可证密钥加密；
 - 构建密钥另行写入输出目录同级的 `*.shield-secret.json`，用于后续重新签发；
-- 写入 `.pyshield-build.json` 标记，并默认在产物上运行 `manage.py check`。
+- 写入 `.pyshield-build.json` 标记（含 `runtime: native|pyc|source`），并默认在产物上运行 `manage.py check`。
 
 ## 4. 密钥体系与信封
 
 ### 4.1 密钥派生
 
 ```text
-master_key（内嵌 runtime）
-   │ HKDF(salt="pyshield-license-v1", info=build_id)
-   ▼
-license_key ──> pyshield.lic（内含 build_key）
-                   │ HKDF(salt=SHA256("pyshield-module-v1" + module_id),
-                   │      info="pyshield-module-key")
-                   ▼
-               module_key
-                   │ HKDF(salt="pyshield-envelope-v1",
-                   │      info="encryption", length=64)
-                   ├── 32 B 加密密钥
-                   └── 32 B MAC 密钥
+构建时生成：
+  master_key（内嵌 runtime）
+     │ HKDF(salt="pyshield-license-v1", info=build_id)
+     ▼
+  license_key ──> pyshield.lic（内含 build_key，载荷由 signing_key 签名）
+                     │ HKDF(salt=SHA256("pyshield-module-v1" + module_id),
+                     │      info="pyshield-module-key")
+                     ▼
+                 module_key
+                     │ HKDF(salt="pyshield-envelope-v1",
+                     │      info="encryption", length=64)
+                     ├── 32 B 加密密钥
+                     └── 32 B MAC 密钥
+
+  signing_key（只留在构建方）──签名──> pyshield.lic
+  signing_public_key（内嵌 runtime）──验签──> 拒绝伪造或篡改的许可证
 ```
 
-每个模块使用独立密钥，互相不可替换；`build_key` 不直接出现在模块文件中。许可证是获取 `build_key` 的唯一入口。
+每个模块使用独立密钥，互相不可替换；`build_key` 不直接出现在模块文件中。许可证是获取 `build_key` 的唯一入口，而许可证本身必须通过 Ed25519 验签才能被信任。
 
 ### 4.2 信封格式
 
 ```text
 MAGIC "PSX1"      4 B
 version           1 B
-cipher id         1 B
+cipher id         1 B   (1=AES-GCM, 2=ChaCha20+HMAC, 3=ChaCha20-Poly1305)
 nonce_len         1 B   (固定 12)
 tag_len           1 B   (16 或 32)
 nonce            12 B
@@ -121,8 +130,10 @@ tag           16/32 B
 AAD = 头部 8 字节 + "pyshield-module:<module_id>"
 ```
 
-- **AES-256-GCM**：`cryptography` 可用时使用，16 字节 tag；
-- **ChaCha20 + HMAC-SHA256**：纯 Python 实现，加密后对“头部 + AAD + 密文”做 HMAC，32 字节 tag，属于 encrypt-then-MAC；
+- **AES-256-GCM**（id 1）：`cryptography` 可用时使用，16 字节 tag；
+- **ChaCha20 + HMAC-SHA256**（id 2）：纯 Python 实现，加密后对“头部 + AAD + 密文”做 HMAC，32 字节 tag，属于 encrypt-then-MAC；若 runtime 中编译了 `_chacha_fast`，ChaCha20 部分走原生实现，帧格式不变；
+- **ChaCha20-Poly1305**（id 3）：`cryptography` 可用时使用，16 字节 tag，适合没有 AES 硬件加速的平台；
+- `--cipher` 的 `auto` 选择 AES-GCM（无 `cryptography` 时退回纯 ChaCha），`chacha` 优先 ChaCha20-Poly1305，`chacha-pure` 强制纯 ChaCha，`aesgcm` 强制 AES-GCM；
 - 解封前先验证认证标签，失败统一抛出“invalid or corrupted data”，不暴露内部原因；
 - nonce 每次随机生成；AAD 绑定模块 id，防止把 A 模块的密文移植到 B 模块。
 
@@ -132,34 +143,37 @@ AAD = 头部 8 字节 + "pyshield-module:<module_id>"
 
 1. 读取许可证：`PYSHELD_LICENSE` → `manage.py` 同目录 → runtime 包内；
 2. 校验当前解释器为 CPython，且小版本与构建时一致；
-3. 用 `master_key` 派生许可证密钥，解封并校验 `format`、`build_id`、`build_key` 长度；
-4. 校验到期日（到期日当天有效）和机器指纹（列表为空表示不限机器）；
+3. 用 `master_key` 派生许可证密钥并解封，校验 `format == 2`；再用内置的 Ed25519 公钥验证载荷签名，签名无效立即拒绝，之后的字段一律不信任；
+4. 校验 `build_id`、`build_key` 长度、到期日（到期日当天有效）和机器指纹（列表为空表示不限机器）；
 5. 按模块 id 派生模块密钥，解封模块信封；
 6. `zlib.decompress` → `marshal.loads`；
 7. 递归替换 code object 及其嵌套 code 的 `co_filename`，让 traceback 指向部署路径；
 8. 保留原模块对象上的 `__package__`、`__path__`、`__spec__`，把解出的代码 `exec` 到模块命名空间。
 
-许可证状态在首次加载后缓存，并用锁避免并发重复校验。任何一步失败都会抛出 `ImportError` / `LicenseError`，模块不会以明文形式落地。
+即使攻击者从 runtime 中提取了对称主密钥，也只能解密许可证、无法生成新的有效签名；修改到期日、机器指纹或 `build_key` 都会导致验签失败。许可证状态在首次加载后缓存，并用锁避免并发重复校验。任何一步失败都会抛出 `ImportError` / `LicenseError`，模块不会以明文形式落地。
 
 ## 6. 许可证与指纹
 
-许可证载荷（加密前）包含：
+许可证载荷（签名并加密前）包含：
 
 ```json
 {
-  "format": 1,
+  "format": 2,
   "build_id": "16 位十六进制",
   "build_key": "Base85",
-  "cipher": "aesgcm",
+  "cipher": "chacha20poly1305",
   "python": "3.12",
   "created": "2026-11-12T...",
   "expires": "2027-12-31 或 null",
   "fingerprints": ["..."],
-  "customer": "客户名称"
+  "customer": "客户名称",
+  "signature": "Base85 Ed25519 签名"
 }
 ```
 
-构建密钥 `*.shield-secret.json` 保存 `master_key`、`build_key`、构建 ID、许可证路径等信息；`issue` 只重写许可证，不重新加密代码。
+签名对象是“去掉 `signature` 后的载荷按 key 排序、无空白的紧凑 JSON”，前面加上域前缀 `pyshield-license-v2:`；签名值本身再放入载荷，最后整体用 AEAD 加密。`signing_key` 只在构建方保存，runtime 仅嵌入 `signing_public_key`。
+
+构建密钥 `*.shield-secret.json`（格式 2）保存 `master_key`、`build_key`、`signing_key`、`signing_public_key`、构建 ID、算法、Python 小版本、产物与许可证路径；`issue` 读取这些字段重新签名并重写许可证，不重新加密代码。旧格式（format 1）的许可证和构建密钥都会被拒绝，需要重新构建。
 
 机器指纹来源：
 
@@ -177,6 +191,8 @@ Django 大量依赖导入、反射和代码内省，因此 PyShield 刻意避免
 | 编译成 code object 后加密 | 不发布源码，同时保持 CPython 语义 |
 | 逐模块 AEAD 与独立密钥 | 单模块泄露不影响其他模块，可检测移植 |
 | 构建级密钥与离线许可证 | 支持到期、设备绑定、离线重发 |
+| Ed25519 许可证签名 | 主密钥泄露也无法伪造或篡改许可证 |
+| 可选 Cython 原生 runtime | 把密钥与验签逻辑藏进二进制，并加速纯 ChaCha 回退 |
 | Django 友好的排除规则 | 迁移、模板、静态资源保持可用 |
 
 | 舍弃 | 原因 |
@@ -184,11 +200,15 @@ Django 大量依赖导入、反射和代码内省，因此 PyShield 刻意避免
 | 名称混淆、调用断言、`--restrict` | 破坏 Django 反射、模板和 ORM 内省 |
 | 在线注册、试用限制 | 依赖网络，增加部署复杂度 |
 | 反调试、反注入 | 维护成本高，收益有限 |
-| 预编译跨平台 runtime | 与 Python 小版本强绑定，改为随包生成 |
+| 预编译跨平台 runtime | 与平台和 Python ABI 强绑定，改为在目标环境用 Cython 现场编译 |
 
 ## 8. 验证方式
 
 - `python -m unittest discover -s tests -v`：覆盖算法向量、密钥隔离、许可证、构建器结构、stub 可执行与输出目录保护；
+- Ed25519 RFC 8032 标准向量，纯 Python 与 `cryptography` 实现交叉一致，篡改签名被拒绝；
+- 伪造场景：提取 `master_key`、解密许可证、去掉到期日再重新封装，runtime 仍因签名无效拒绝加载；
+- 原生算法：ChaCha20-Poly1305 与 AES-GCM 的往返、AAD 绑定和密文防篡改；native ChaCha 回退与纯 Python 结果逐字节一致；
+- 原生 runtime：构建产物包含 `.pyd`/`.so` 且删除对应 `.py`，`--cipher chacha-pure` 产物可正常 `manage.py check`；
 - 构建阶段在产物上运行 `manage.py check`；
 - 篡改验证：修改 stub 中任意密文字符后加载失败，报“cannot decrypt protected module”；
 - 许可证验证：过期拒绝、换绑生效、重新签发无需重新构建；
@@ -196,8 +216,9 @@ Django 大量依赖导入、反射和代码内省，因此 PyShield 刻意避免
 
 ## 9. 已知边界与演进方向
 
-- 服务端代码最终要在内存中解密，runtime 中的 `master_key` 也可能被提取；安全强度依赖攻击成本与配套授权手段。
-- 构建与部署必须使用相同的 Python 小版本。
-- AES-GCM 依赖 `cryptography`；纯 Python 的 ChaCha20 性能较低但零依赖。
+- 服务端代码最终要在内存中解密，runtime 中的 `master_key` 也可能被提取；Ed25519 签名能阻止伪造许可证，但无法阻止攻击者绕过校验逻辑或 dump 已解密的代码。安全强度依赖攻击成本与配套授权手段。
+- 构建与部署必须使用相同的 Python 小版本；原生 runtime 还要求相同操作系统、CPU 架构和 Python ABI。
+- AES-GCM 与 ChaCha20-Poly1305 依赖 `cryptography`；纯 Python ChaCha 零依赖但速度低，`--runtime-native` 会编译 `_chacha_fast` 作为快速回退。
+- `--runtime-native` 显著提高静态提取门槛，但 `.pyd`/`.so` 仍可被逆向；它适合提高攻击成本，不适合当作绝对防护。
 - 迁移与测试默认不加密；模板与静态资源不加密，前端代码对用户可见。
-- 可继续演进：runtime 更强的混淆与完整性自检、许可证签名、模板按需加密、构建产物清单签名、自动化发布流水线。
+- 可继续演进：runtime 完整性自检与更强的二进制混淆、构建产物清单签名、模板按需加密、可选的在线激活、自动化发布流水线。
