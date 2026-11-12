@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -63,14 +64,14 @@ class BuilderTests(unittest.TestCase):
         self.temp.cleanup()
 
     def build(self, **kwargs) -> builder.BuildResult:
-        options = builder.BuildOptions(
-            project=str(self.project),
-            output=str(self.output),
-            cipher="chacha",
-            no_verify=True,
-            **kwargs,
-        )
-        return builder.build(options)
+        options = {
+            "project": str(self.project),
+            "output": str(self.output),
+            "cipher": "chacha",
+            "no_verify": True,
+        }
+        options.update(kwargs)
+        return builder.build(builder.BuildOptions(**options))
 
     def run_project(self, *args: str, license_path: Path | None = None) -> subprocess.CompletedProcess:
         env = os.environ.copy()
@@ -155,6 +156,29 @@ class BuilderTests(unittest.TestCase):
         runtime = self.output / "_shield_runtime"
         self.assertFalse((runtime / "_core.py").exists())
         self.assertTrue((runtime / "_core.pyc").exists())
+        self.assertFalse((runtime / "_chacha_fast.pyx").exists())
+        completed = self.run_project("check")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_runtime_native(self) -> None:
+        try:
+            import Cython  # noqa: F401
+            import setuptools  # noqa: F401
+        except ImportError:
+            self.skipTest("Cython and setuptools are not installed")
+        if builder.find_mingw() is None and not shutil.which("cc") and not shutil.which("gcc"):
+            self.skipTest("no C compiler is available")
+
+        self.build(runtime_native=True, cipher="chacha-pure")
+        runtime = self.output / "_shield_runtime"
+        self.assertFalse((runtime / "_core.py").exists())
+        self.assertFalse((runtime / "_crypto.py").exists())
+        self.assertFalse((runtime / "_ed25519.py").exists())
+        self.assertFalse((runtime / "_chacha_fast.pyx").exists())
+        self.assertTrue(
+            any(runtime.glob("_core*.pyd")) or any(runtime.glob("_core*.so")),
+            "native runtime extension was not produced",
+        )
         completed = self.run_project("check")
         self.assertEqual(completed.returncode, 0, completed.stderr)
 

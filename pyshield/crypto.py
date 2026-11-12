@@ -20,6 +20,11 @@ import json
 import secrets
 import struct
 
+try:
+    from . import _chacha_fast as _fast_chacha
+except ImportError:
+    _fast_chacha = None
+
 MAGIC = b"PSX1"
 VERSION = 1
 
@@ -122,6 +127,8 @@ def _chacha20_block(key: bytes, counter: int, nonce: bytes) -> bytes:
 
 
 def chacha20_xor(key: bytes, nonce: bytes, data: bytes, counter: int = 1) -> bytes:
+    if _fast_chacha is not None:
+        return _fast_chacha.chacha20_xor(key, nonce, data, counter)
     if len(key) != 32:
         raise ValueError("ChaCha20 key must be 32 bytes")
     if len(nonce) != 12:

@@ -38,7 +38,12 @@ def build_parser() -> argparse.ArgumentParser:
              "chacha uses ChaCha20-Poly1305 when available, chacha-pure is dependency-free",
     )
     _add_license_arguments(build)
-    build.add_argument("--runtime-pyc", action="store_true", help="ship the runtime as sourceless bytecode")
+    runtime = build.add_mutually_exclusive_group()
+    runtime.add_argument("--runtime-pyc", action="store_true", help="ship the runtime as sourceless bytecode")
+    runtime.add_argument(
+        "--runtime-native", action="store_true",
+        help="compile the runtime with Cython (requires Cython, setuptools and a C compiler)",
+    )
     build.add_argument("--no-verify", action="store_true", help="skip manage.py check on the output")
     build.add_argument("--force", action="store_true", help="replace an existing, non-PyShield output directory")
     build.add_argument("--dry-run", action="store_true", help="print the plan without writing files")
@@ -74,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
                 cipher=args.cipher,
                 customer=args.customer,
                 runtime_pyc=args.runtime_pyc,
+                runtime_native=args.runtime_native,
                 no_verify=args.no_verify,
                 force=args.force,
                 dry_run=args.dry_run,

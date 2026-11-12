@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fnmatch
+import importlib.machinery
 import json
 import marshal
 import os
@@ -21,6 +22,42 @@ RUNTIME_PACKAGE = "_shield_runtime"
 MARKER_FILE = ".pyshield-build.json"
 LICENSE_FILE = licensing.LICENSE_FILENAME
 PAYLOAD_CHUNK = 1000
+NATIVE_MODULES = ("_core", "_crypto", "_ed25519", "_chacha_fast")
+NATIVE_SETUP = """\
+import os
+
+from setuptools import Extension, setup
+from Cython.Build import cythonize
+
+PACKAGE = "_shield_runtime"
+MODULES = ("_core", "_crypto", "_ed25519", "_chacha_fast")
+BASE = os.path.join("src", PACKAGE)
+SOURCES = []
+for name in MODULES:
+    pyx = os.path.join(BASE, name + ".pyx")
+    py = os.path.join(BASE, name + ".py")
+    if os.path.exists(pyx):
+        SOURCES.append((name, pyx))
+    elif os.path.exists(py):
+        SOURCES.append((name, py))
+
+EXTENSIONS = [Extension(PACKAGE + "." + name, [path]) for name, path in SOURCES]
+setup(
+    name="pyshield-runtime-native",
+    packages=[PACKAGE],
+    package_dir={"": "src"},
+    ext_modules=cythonize(
+        EXTENSIONS,
+        language_level=3,
+        compiler_directives={
+            "language_level": 3,
+            "boundscheck": False,
+            "wraparound": False,
+            "initializedcheck": False,
+        },
+    ),
+)
+"""
 
 IGNORED_DIRS = {
     ".git", ".hg", ".svn", ".venv", "venv", "env", "__pycache__",
@@ -54,6 +91,7 @@ class BuildOptions:
     cipher: str = "auto"
     customer: str | None = None
     runtime_pyc: bool = False
+    runtime_native: bool = False
     no_verify: bool = False
     force: bool = False
     dry_run: bool = False
@@ -209,6 +247,7 @@ def install_runtime(
     signing_public_key: bytes,
     cipher: str,
     runtime_pyc: bool,
+    runtime_native: bool,
 ) -> None:
     source_dir = Path(__file__).resolve().parent
     template = source_dir / "runtime_template" / RUNTIME_PACKAGE
@@ -235,8 +274,84 @@ def install_runtime(
         raise BuildError("runtime template contains unresolved placeholders")
     core.write_text(text, encoding="utf-8", newline="\n")
 
-    if runtime_pyc:
+    if runtime_native:
+        compile_runtime_native(runtime)
+    elif runtime_pyc:
         compile_runtime(runtime)
+    (runtime / "_chacha_fast.pyx").unlink(missing_ok=True)
+
+
+def find_mingw() -> Path | None:
+    candidates: list[Path] = []
+    prefix = os.environ.get("MINGW_PREFIX")
+    if prefix:
+        candidates.append(Path(prefix) / "bin")
+    if os.name == "nt":
+        candidates.extend([
+            Path("C:/mingw64/bin"),
+            Path("C:/msys64/mingw64/bin"),
+            Path("C:/ProgramData/mingw64/mingw64/bin"),
+        ])
+    for candidate in candidates:
+        if (candidate / "gcc.exe").is_file():
+            return candidate
+    compiler = shutil.which("gcc") or shutil.which("cc")
+    return Path(compiler).parent if compiler else None
+
+
+def compile_runtime_native(runtime: Path) -> None:
+    try:
+        import Cython  # noqa: F401
+        import setuptools  # noqa: F401
+    except ImportError as exc:
+        raise BuildError(
+            "--runtime-native requires Cython and setuptools; "
+            "install them with: pip install cython setuptools"
+        ) from exc
+
+    build_dir = runtime.parent / ".pyshield-native"
+    shutil.rmtree(build_dir, ignore_errors=True)
+    try:
+        package_source = build_dir / "src" / RUNTIME_PACKAGE
+        shutil.copytree(runtime, package_source)
+        (build_dir / "setup.py").write_text(NATIVE_SETUP, encoding="utf-8", newline="\n")
+
+        command = [sys.executable, "setup.py", "build_ext"]
+        env = os.environ.copy()
+        mingw = find_mingw() if os.name == "nt" else None
+        if mingw is not None:
+            env["PATH"] = str(mingw) + os.pathsep + env.get("PATH", "")
+            command.append("--compiler=mingw32")
+
+        log("compiling native runtime with Cython")
+        completed = subprocess.run(
+            command, cwd=build_dir, env=env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        )
+        if completed.returncode != 0:
+            details = (completed.stdout + completed.stderr).strip()
+            raise BuildError("cannot compile native runtime:\n" + details[-4000:])
+
+        library_root = next(
+            (path for path in build_dir.glob("build/lib*") if path.is_dir()), None
+        )
+        if library_root is None:
+            raise BuildError("native runtime build produced no library directory")
+
+        for name in NATIVE_MODULES:
+            for suffix in importlib.machinery.EXTENSION_SUFFIXES:
+                candidate = library_root / RUNTIME_PACKAGE / (name + suffix)
+                if candidate.is_file():
+                    shutil.copy2(candidate, runtime / candidate.name)
+                    break
+            else:
+                raise BuildError(f"native runtime did not produce {name} extension")
+
+        for name in NATIVE_MODULES:
+            (runtime / (name + ".py")).unlink(missing_ok=True)
+            (runtime / (name + ".pyx")).unlink(missing_ok=True)
+    finally:
+        shutil.rmtree(build_dir, ignore_errors=True)
 
 
 def compile_runtime(runtime: Path) -> None:
@@ -256,12 +371,13 @@ def compile_runtime(runtime: Path) -> None:
         init_source.unlink()
 
 
-def write_marker(output: Path, build_id: str, cipher: str, module_count: int) -> None:
+def write_marker(output: Path, build_id: str, cipher: str, module_count: int, runtime_mode: str) -> None:
     marker = {
         "format": 1,
         "tool": f"pyshield {__version__}",
         "build_id": build_id,
         "cipher": cipher,
+        "runtime": runtime_mode,
         "python": f"{sys.version_info[0]}.{sys.version_info[1]}",
         "modules": module_count,
         "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -312,6 +428,9 @@ def build(options: BuildOptions) -> BuildResult:
 
     if not (project / "manage.py").is_file():
         raise BuildError(f"manage.py not found in {project}")
+    if options.runtime_native and options.runtime_pyc:
+        raise BuildError("--runtime-native and --runtime-pyc are mutually exclusive")
+    runtime_mode = "native" if options.runtime_native else "pyc" if options.runtime_pyc else "source"
     if output == project or path_is_within(project, output):
         raise BuildError("output directory must not be the project directory or one of its parents")
     if path_is_within(output, project):
@@ -338,6 +457,7 @@ def build(options: BuildOptions) -> BuildResult:
     log(f"project:  {project}")
     log(f"output:   {output}")
     log(f"cipher:   {cipher}")
+    log(f"runtime:  {runtime_mode}")
     if cipher in {"aesgcm", "chacha20poly1305"}:
         log(f"note: {cipher} builds require the 'cryptography' package on the deployment machine")
     log(f"expire:   {expire_date.isoformat() if expire_date else 'never'}")
@@ -379,7 +499,10 @@ def build(options: BuildOptions) -> BuildResult:
             target.write_text(stub, encoding="utf-8", newline="\n")
 
         log("installing runtime")
-        install_runtime(temp, build_id, master_key, signing_public_key, cipher, options.runtime_pyc)
+        install_runtime(
+            temp, build_id, master_key, signing_public_key, cipher,
+            options.runtime_pyc, options.runtime_native,
+        )
 
         python_version = f"{sys.version_info[0]}.{sys.version_info[1]}"
         log("writing license")
@@ -388,7 +511,7 @@ def build(options: BuildOptions) -> BuildResult:
             expires=expire_date, fingerprints=fingerprints, customer=options.customer,
         )
         licensing.write_license(temp / LICENSE_FILE, sealed)
-        write_marker(temp, build_id, cipher, len(modules))
+        write_marker(temp, build_id, cipher, len(modules), runtime_mode)
 
         if output.exists():
             shutil.rmtree(output)
