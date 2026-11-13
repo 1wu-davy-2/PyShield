@@ -292,17 +292,31 @@ def derive_module_key(build_key: bytes, module_id: str) -> bytes:
     return hkdf_sha256(build_key, salt=salt, info=b"pyshield-module-key", length=32)
 
 
-def module_aad(module_id: str) -> bytes:
-    return b"pyshield-module:" + module_id.encode("utf-8")
+def module_aad(build_id: str, module_id: str) -> bytes:
+    return (
+        b"pyshield-module:"
+        + build_id.encode("utf-8")
+        + b":"
+        + module_id.encode("utf-8")
+    )
 
 
 LICENSE_SIGNATURE_PREFIX = b"pyshield-license-v2:"
+MANIFEST_SIGNATURE_PREFIX = b"pyshield-manifest-v1:"
+
+
+def _signing_message(prefix: bytes, payload: dict) -> bytes:
+    unsigned = {key: value for key, value in payload.items() if key != "signature"}
+    data = json.dumps(unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    return prefix + data
 
 
 def license_signing_message(payload: dict) -> bytes:
-    unsigned = {key: value for key, value in payload.items() if key != "signature"}
-    data = json.dumps(unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
-    return LICENSE_SIGNATURE_PREFIX + data
+    return _signing_message(LICENSE_SIGNATURE_PREFIX, payload)
+
+
+def manifest_signing_message(payload: dict) -> bytes:
+    return _signing_message(MANIFEST_SIGNATURE_PREFIX, payload)
 
 
 def b85encode(data: bytes) -> str:

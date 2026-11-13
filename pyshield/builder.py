@@ -16,13 +16,15 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from . import __version__, crypto, ed25519, fingerprint, licensing
+from . import __version__, crypto, ed25519, fingerprint, licensing, manifest
 
 RUNTIME_PACKAGE = "_shield_runtime"
 MARKER_FILE = ".pyshield-build.json"
+MANIFEST_FILE = manifest.MANIFEST_FILENAME
 LICENSE_FILE = licensing.LICENSE_FILENAME
 PAYLOAD_CHUNK = 1000
 NATIVE_MODULES = ("_core", "_crypto", "_ed25519", "_chacha_fast")
+INTEGRITY_MODES = ("protected", "full", "off")
 NATIVE_SETUP = """\
 import os
 
@@ -84,12 +86,15 @@ class BuildOptions:
     project: str = "demo"
     output: str = "dist-pyshield"
     excludes: list[str] = field(default_factory=list)
+    mutable_patterns: list[str] = field(default_factory=list)
     encrypt_migrations: bool = False
     encrypt_tests: bool = False
     expire: str | None = None
+    grace_days: int = 0
     bind_device: list[str] = field(default_factory=list)
     cipher: str = "auto"
     customer: str | None = None
+    integrity: str = "protected"
     runtime_pyc: bool = False
     runtime_native: bool = False
     no_verify: bool = False
@@ -132,7 +137,7 @@ def copy_ignore(directory: str, names: list[str]) -> set[str]:
             ignored.add(name)
         elif path.suffix in IGNORED_SUFFIXES or path.suffix == ".pyc":
             ignored.add(name)
-        elif name in {"db.sqlite3", LICENSE_FILE, MARKER_FILE}:
+        elif name in {"db.sqlite3", LICENSE_FILE, MARKER_FILE, MANIFEST_FILE}:
             ignored.add(name)
         elif name.endswith(licensing.SECRET_SUFFIX):
             ignored.add(name)
@@ -140,7 +145,13 @@ def copy_ignore(directory: str, names: list[str]) -> set[str]:
 
 
 def default_excludes(encrypt_migrations: bool = False, encrypt_tests: bool = False) -> list[str]:
-    patterns: list[str] = []
+    # Site-local configuration stays plaintext so it can be edited after deployment.
+    patterns: list[str] = [
+        "local_settings.py",
+        "*/local_settings.py",
+        "settings_local.py",
+        "*/settings_local.py",
+    ]
     if not encrypt_migrations:
         patterns += ["migrations", "*/migrations/*", "*/migrations.py"]
     if not encrypt_tests:
@@ -224,7 +235,7 @@ def make_stub(payload: str, module_id: str) -> str:
     return "\n".join(lines) + "\n"
 
 
-def protect_module(module: Module, build_key: bytes, cipher: str) -> str:
+def protect_module(module: Module, build_key: bytes, build_id: str, cipher: str) -> str:
     source = module.path.read_bytes()
     filename = module.relative.as_posix()
     try:
@@ -236,7 +247,7 @@ def protect_module(module: Module, build_key: bytes, cipher: str) -> str:
     except (ValueError, TypeError) as exc:
         raise BuildError(f"cannot serialize {module.relative}: {exc}") from exc
     key = crypto.derive_module_key(build_key, module.module_id)
-    sealed = crypto.seal(key, raw, crypto.module_aad(module.module_id), cipher=cipher)
+    sealed = crypto.seal(key, raw, crypto.module_aad(build_id, module.module_id), cipher=cipher)
     return crypto.b85encode(sealed)
 
 
@@ -246,6 +257,7 @@ def install_runtime(
     master_key: bytes,
     signing_public_key: bytes,
     cipher: str,
+    integrity: str,
     runtime_pyc: bool,
     runtime_native: bool,
 ) -> None:
@@ -265,6 +277,7 @@ def install_runtime(
         "__PYSHELD_SIGNING_PUBLIC_KEY__": crypto.b85encode(signing_public_key),
         "__PYSHELD_PYTHON_VERSION__": f"{sys.version_info[0]}.{sys.version_info[1]}",
         "__PYSHELD_CIPHER__": cipher,
+        "__PYSHELD_INTEGRITY__": integrity,
     }
     for placeholder, value in replacements.items():
         if placeholder not in text:
@@ -371,12 +384,13 @@ def compile_runtime(runtime: Path) -> None:
         init_source.unlink()
 
 
-def write_marker(output: Path, build_id: str, cipher: str, module_count: int, runtime_mode: str) -> None:
+def write_marker(output: Path, build_id: str, cipher: str, integrity: str, module_count: int, runtime_mode: str) -> None:
     marker = {
         "format": 1,
         "tool": f"pyshield {__version__}",
         "build_id": build_id,
         "cipher": cipher,
+        "integrity": integrity,
         "runtime": runtime_mode,
         "python": f"{sys.version_info[0]}.{sys.version_info[1]}",
         "modules": module_count,
@@ -430,6 +444,12 @@ def build(options: BuildOptions) -> BuildResult:
         raise BuildError(f"manage.py not found in {project}")
     if options.runtime_native and options.runtime_pyc:
         raise BuildError("--runtime-native and --runtime-pyc are mutually exclusive")
+    if options.integrity not in INTEGRITY_MODES:
+        raise BuildError(f"integrity must be one of: {', '.join(INTEGRITY_MODES)}")
+    try:
+        grace_days = licensing.parse_grace_days(options.grace_days)
+    except licensing.LicenseError as exc:
+        raise BuildError(str(exc)) from exc
     runtime_mode = "native" if options.runtime_native else "pyc" if options.runtime_pyc else "source"
     if output == project or path_is_within(project, output):
         raise BuildError("output directory must not be the project directory or one of its parents")
@@ -458,9 +478,14 @@ def build(options: BuildOptions) -> BuildResult:
     log(f"output:   {output}")
     log(f"cipher:   {cipher}")
     log(f"runtime:  {runtime_mode}")
+    log(f"integrity: {options.integrity}")
+    if options.integrity == "full":
+        log("note: full integrity verifies templates and static data on every start")
     if cipher in {"aesgcm", "chacha20poly1305"}:
         log(f"note: {cipher} builds require the 'cryptography' package on the deployment machine")
     log(f"expire:   {expire_date.isoformat() if expire_date else 'never'}")
+    if grace_days:
+        log(f"grace:    {grace_days} days after expiry")
     log(f"bound to: {', '.join(fingerprints) if fingerprints else 'any machine'}")
     if options.bind_device and local not in fingerprints:
         log(f"note: this machine's fingerprint is {local}")
@@ -492,7 +517,7 @@ def build(options: BuildOptions) -> BuildResult:
 
         log("encrypting Python modules")
         for module in modules:
-            payload = protect_module(module, build_key, cipher)
+            payload = protect_module(module, build_key, build_id, cipher)
             stub = make_stub(payload, module.module_id)
             target = temp / module.relative
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -501,7 +526,7 @@ def build(options: BuildOptions) -> BuildResult:
         log("installing runtime")
         install_runtime(
             temp, build_id, master_key, signing_public_key, cipher,
-            options.runtime_pyc, options.runtime_native,
+            options.integrity, options.runtime_pyc, options.runtime_native,
         )
 
         python_version = f"{sys.version_info[0]}.{sys.version_info[1]}"
@@ -509,9 +534,26 @@ def build(options: BuildOptions) -> BuildResult:
         sealed = licensing.create_license(
             master_key, build_id, build_key, cipher, python_version, signing_key,
             expires=expire_date, fingerprints=fingerprints, customer=options.customer,
+            grace_days=grace_days,
         )
         licensing.write_license(temp / LICENSE_FILE, sealed)
-        write_marker(temp, build_id, cipher, len(modules), runtime_mode)
+        write_marker(
+            temp, build_id, cipher, options.integrity, len(modules), runtime_mode
+        )
+
+        if options.integrity != "off":
+            log("writing signed package manifest")
+            payload = manifest.build_payload(
+                temp,
+                build_id,
+                cipher,
+                python_version,
+                signing_key,
+                options.integrity,
+                [module.relative.as_posix() for module in modules],
+                options.mutable_patterns,
+            )
+            manifest.write_manifest(temp / MANIFEST_FILE, payload)
 
         if output.exists():
             shutil.rmtree(output)
@@ -530,6 +572,9 @@ def build(options: BuildOptions) -> BuildResult:
         "signing_key": crypto.b85encode(signing_key),
         "signing_public_key": crypto.b85encode(signing_public_key),
         "cipher": cipher,
+        "integrity": options.integrity,
+        "manifest": str(output / MANIFEST_FILE) if options.integrity != "off" else None,
+        "grace_days": grace_days,
         "python": f"{sys.version_info[0]}.{sys.version_info[1]}",
         "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "output": str(output),
@@ -553,6 +598,7 @@ class IssueOptions:
     secret: str
     out: str | None = None
     expire: str | None = None
+    grace_days: int | None = None
     bind_device: list[str] = field(default_factory=list)
     customer: str | None = None
     no_restrictions: bool = False
@@ -569,6 +615,13 @@ def issue(options: IssueOptions) -> tuple[Path, dict]:
     cipher = secret.get("cipher", "chacha")
     python_version = secret.get("python", f"{sys.version_info[0]}.{sys.version_info[1]}")
 
+    try:
+        grace_days = licensing.parse_grace_days(
+            secret.get("grace_days", 0) if options.grace_days is None else options.grace_days
+        )
+    except licensing.LicenseError as exc:
+        raise BuildError(str(exc)) from exc
+
     if options.no_restrictions:
         expire_date = None
         fingerprints: list[str] = []
@@ -582,6 +635,7 @@ def issue(options: IssueOptions) -> tuple[Path, dict]:
     sealed = licensing.create_license(
         master_key, build_id, build_key, cipher, python_version, signing_key,
         expires=expire_date, fingerprints=fingerprints, customer=options.customer,
+        grace_days=grace_days,
     )
 
     if options.out:
@@ -605,6 +659,118 @@ def inspect(options: IssueOptions) -> dict:
     payload = licensing.open_license(master_key, build_id, target.read_bytes(), licensing.secret_public_key(secret))
     log(f"secret:  {secret_path}")
     log(f"build:   {secret.get('output', '?')}")
+    log(f"integrity: {secret.get('integrity', 'protected')}")
+    if secret.get("manifest"):
+        log(f"manifest: {secret['manifest']}")
     log(f"license: {target}")
     log(licensing.describe(payload))
     return payload
+
+
+@dataclass
+class VerifyOptions:
+    dist: str
+    secret: str | None = None
+    public_key: str | None = None
+    license: str | None = None
+    full: bool = False
+    skip_license: bool = False
+
+
+def verify(options: VerifyOptions) -> dict:
+    """Check a protected distribution the way an on-site operator would."""
+    root = Path(options.dist).resolve()
+    if not root.is_dir():
+        raise BuildError(f"distribution directory not found: {root}")
+
+    marker: dict = {}
+    marker_path = root / MARKER_FILE
+    if marker_path.is_file():
+        try:
+            marker = json.loads(marker_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise BuildError(f"cannot read build marker {marker_path}: {exc}") from exc
+
+    secret: dict | None = None
+    if options.secret:
+        secret = licensing.read_secret(Path(options.secret).resolve())
+
+    public_key: bytes | None = None
+    if secret is not None:
+        public_key = licensing.secret_public_key(secret)
+    if options.public_key:
+        try:
+            public_key = crypto.b85decode(options.public_key)
+        except Exception as exc:
+            raise BuildError("--public-key must be a base85 encoded Ed25519 public key") from exc
+    if public_key is None:
+        raise BuildError("pass --secret or --public-key so the manifest signature can be checked")
+
+    integrity = str((secret or {}).get("integrity") or marker.get("integrity") or "protected")
+    build_id = marker.get("build_id") or (secret or {}).get("build_id")
+    report: dict = {
+        "dist": str(root),
+        "build_id": build_id,
+        "integrity": integrity,
+        "manifest": None,
+        "license": None,
+        "failures": [],
+    }
+
+    if secret is not None and marker.get("build_id") and secret["build_id"] != marker["build_id"]:
+        report["failures"].append("build secret does not belong to this distribution")
+
+    manifest_path = root / MANIFEST_FILE
+    if integrity == "off":
+        report["manifest"] = {"enabled": False}
+    elif not manifest_path.is_file():
+        report["failures"].append(f"package manifest is missing: {MANIFEST_FILE}")
+    else:
+        try:
+            payload = manifest.load_manifest(manifest_path, public_key)
+        except manifest.ManifestError as exc:
+            report["failures"].append(str(exc))
+        else:
+            if build_id and payload.get("build_id") != build_id:
+                report["failures"].append("package manifest belongs to a different build")
+            report["manifest"] = {
+                "enabled": True,
+                "files": len(payload["files"]),
+                "build_id": payload.get("build_id"),
+                "integrity": payload.get("integrity"),
+            }
+            report["failures"].extend(
+                manifest.verify_files(root, payload, full=options.full or integrity == "full")
+            )
+
+    if not options.skip_license and secret is not None:
+        license_path = (
+            Path(options.license).resolve()
+            if options.license
+            else Path(secret.get("license") or root / LICENSE_FILE).resolve()
+        )
+        if not license_path.is_file():
+            report["failures"].append(f"license is missing: {license_path}")
+        else:
+            try:
+                payload = licensing.open_license(
+                    crypto.b85decode(secret["master_key"]), secret["build_id"],
+                    license_path.read_bytes(), licensing.secret_public_key(secret),
+                )
+            except licensing.LicenseError as exc:
+                report["failures"].append(str(exc))
+            else:
+                problems = licensing.validate_payload(payload)
+                report["failures"].extend(problems)
+                report["license"] = {
+                    "path": str(license_path),
+                    "expires": payload.get("expires"),
+                    "not_before": payload.get("not_before"),
+                    "grace_days": payload.get("grace_days", 0),
+                    "fingerprints": payload.get("fingerprints") or [],
+                    "customer": payload.get("customer"),
+                }
+
+    report["ok"] = not report["failures"]
+    return report
+

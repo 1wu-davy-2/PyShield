@@ -8,7 +8,8 @@
 
 - 发布目录中不出现可读的 Python 业务源码；
 - 保持 CPython 与 Django 的正常行为：导入、反射、模板、ORM、URL 路由、管理命令；
-- 支持离线许可证、到期时间与机器绑定；
+- 支持离线许可证、到期时间、宽限期、签发日期与机器绑定；
+- 检测现场对受保护文件与 runtime 的未授权修改；
 - 构建与部署流程可重复、可验证。
 
 非目标：
@@ -21,14 +22,15 @@
 
 | 组件 | 职责 |
 | --- | --- |
-| `shield.py` | 命令行入口：build / issue / inspect / fingerprint / selftest |
-| `pyshield/builder.py` | 模块发现、密文与 stub、runtime 安装、许可证与产物校验 |
-| `pyshield/crypto.py` | HKDF、AEAD 信封、AES-256-GCM、ChaCha20-Poly1305、ChaCha20 + HMAC-SHA256 |
-| `pyshield/ed25519.py` | 许可证签名与验签（RFC 8032，纯 Python，优先使用 `cryptography`） |
-| `pyshield/licensing.py` | 许可证与构建密钥的读写、签名、到期与指纹字段 |
+| `shield.py` | 命令行入口：build / issue / verify / inspect / fingerprint / selftest |
+| `pyshield/builder.py` | 模块发现、密文与 stub、runtime 安装、许可证、清单与产物校验 |
+| `pyshield/crypto.py` | HKDF、AEAD 信封、AES-256-GCM、ChaCha20-Poly1305、ChaCha20 + HMAC-SHA256、签名消息编码 |
+| `pyshield/ed25519.py` | 许可证与清单签名、验签（RFC 8032，纯 Python，优先使用 `cryptography`） |
+| `pyshield/licensing.py` | 许可证与构建密钥的读写、签名、签发日期、宽限期、到期与指纹字段 |
+| `pyshield/manifest.py` | 签名完整性清单：文件发现、分类、SHA-256、签名与校验 |
 | `pyshield/fingerprint.py` | 跨平台机器指纹 |
-| `pyshield/runtime_template/` | 随包运行库模板，含 Cython 原生 ChaCha 源文件 |
-| `tests/` | 加密、签名、许可证、构建器测试 |
+| `pyshield/runtime_template/` | 随包运行库模板，含完整性校验、时钟状态、`python -m _shield_runtime` 诊断入口与 Cython 原生 ChaCha 源文件 |
+| `tests/` | 加密、签名、许可证、清单、构建器与现场行为测试 |
 
 ## 3. 构建流程
 
@@ -47,7 +49,7 @@
 - 项目根必须存在 `manage.py`；
 - 根目录下带 `__init__.py` 的目录视为包，递归收集其中的 `.py`；
 - 模块 id 由相对路径推导：`blog/views.py → blog.views`，`blog/__init__.py → blog`，`manage.py → manage`；
-- 默认排除 `migrations`、`tests` 与常见测试文件名；
+- 默认排除 `migrations`、`tests`、常见测试文件名，以及 `local_settings.py` / `settings_local.py`（现场配置保持明文）；
 - 复制阶段忽略 `.git`、虚拟环境、`__pycache__`、`node_modules`、`staticfiles`、`db.sqlite3`、`.pyc/.pyo`、日志和旧许可证；
 - `.pyd`/`.so` 等二进制扩展原样复制，模板、静态资源、JSON 等数据文件原样复制。
 
@@ -58,7 +60,7 @@
 1. 以 POSIX 相对路径作为 `co_filename` 调用 `compile(source, filename, "exec", dont_inherit=True)`；
 2. 使用 `marshal.dumps` 序列化 code object；
 3. 使用 `zlib.compress(level=9)` 压缩；
-4. 按模块 id 派生模块密钥，把压缩后的字节封装为 AEAD 信封；
+4. 按模块 id 派生模块密钥，把压缩后的字节封装为 AEAD 信封，AAD 同时绑定 `build_id` 与模块 id；
 5. 对信封做 Base85 编码，写入只有加载调用的 stub。
 
 stub 的结构：
@@ -87,8 +89,9 @@ _pyshield_load_module(
 - `--runtime-native` 与 `--runtime-pyc` 互斥；`_machine.py` 和 `__init__.py` 保持明文，`_chacha_fast.pyx` 在安装结束后删除；
 - 构建时生成 32 字节 Ed25519 签名私钥，公钥写入 runtime；私钥只保存于构建密钥；
 - 生成 32 字节 `build_key`，写入 `pyshield.lic`，载荷先签名再用 `master_key` 派生出的许可证密钥加密；
-- 构建密钥另行写入输出目录同级的 `*.shield-secret.json`，用于后续重新签发；
-- 写入 `.pyshield-build.json` 标记（含 `runtime: native|pyc|source`），并默认在产物上运行 `manage.py check`。
+- 生成并签名 `.pyshield-manifest.json`：默认登记 stub（`code`）与 `_shield_runtime/`（`runtime`），`full` 模式再登记模板与数据文件（`data`）；许可证、本地配置、数据库、日志、媒体、staticfiles 等可变文件不登记；
+- 构建密钥另行写入输出目录同级的 `*.shield-secret.json`，记录 `integrity`、`manifest` 路径与 `grace_days`，用于后续重新签发与复核；
+- 写入 `.pyshield-build.json` 标记（含 `runtime` 与 `integrity`），并默认在产物上运行 `manage.py check`。
 
 ## 4. 密钥体系与信封
 
@@ -127,7 +130,7 @@ nonce            12 B
 ciphertext        N B
 tag           16/32 B
 
-AAD = 头部 8 字节 + "pyshield-module:<module_id>"
+AAD = 头部 8 字节 + "pyshield-module:<build_id>:<module_id>"
 ```
 
 - **AES-256-GCM**（id 1）：`cryptography` 可用时使用，16 字节 tag；
@@ -135,22 +138,55 @@ AAD = 头部 8 字节 + "pyshield-module:<module_id>"
 - **ChaCha20-Poly1305**（id 3）：`cryptography` 可用时使用，16 字节 tag，适合没有 AES 硬件加速的平台；
 - `--cipher` 的 `auto` 选择 AES-GCM（无 `cryptography` 时退回纯 ChaCha），`chacha` 优先 ChaCha20-Poly1305，`chacha-pure` 强制纯 ChaCha，`aesgcm` 强制 AES-GCM；
 - 解封前先验证认证标签，失败统一抛出“invalid or corrupted data”，不暴露内部原因；
-- nonce 每次随机生成；AAD 绑定模块 id，防止把 A 模块的密文移植到 B 模块。
+- nonce 每次随机生成；AAD 绑定 `build_id` 与模块 id，既防止把 A 模块的密文移植到 B 模块，也防止把一个构建的密文移植到另一个构建。
+
+### 4.3 完整性清单
+
+清单格式 1，文件名 `.pyshield-manifest.json`。签名对象是去掉 `signature` 后的规范 JSON，前缀为 `pyshield-manifest-v1:`；文件内容形如：
+
+```json
+{
+  "format": 1,
+  "build_id": "674e218b99ac24c5",
+  "cipher": "chacha20poly1305",
+  "integrity": "protected",
+  "files": {
+    "manage.py": {"sha256": "…", "size": 123, "category": "code"},
+    "_shield_runtime/_core.py": {"sha256": "…", "size": 456, "category": "runtime"},
+    "app/templates/page.html": {"sha256": "…", "size": 78, "category": "data"}
+  }
+}
+```
+
+构建期分类规则：
+
+- 实际加密的模块 stub 记为 `code`；
+- `_shield_runtime/` 下的文件记为 `runtime`；
+- 其余数据文件记为 `data`；
+- 默认可变模式（许可证、本地配置、`.env`、数据库、日志、`media/`、`staticfiles/`、`__pycache__` 等）与 `--mutable` 额外模式不登记。
+
+runtime 在加载首个受保护模块前用内置公钥验签，再按模式校验 `code` + `runtime`（`full` 模式再加 `data`）：路径必须安全、文件必须存在、大小与 SHA-256 必须一致。新增文件不报错，登记文件缺失或被修改即拒绝加载。清单在临时输出目录中生成，不包含自身、许可证与构建标记。
 
 ## 5. 运行时加载
 
 `load_module()` 的流程：
 
-1. 读取许可证：`PYSHELD_LICENSE` → `manage.py` 同目录 → runtime 包内；
-2. 校验当前解释器为 CPython，且小版本与构建时一致；
-3. 用 `master_key` 派生许可证密钥并解封，校验 `format == 2`；再用内置的 Ed25519 公钥验证载荷签名，签名无效立即拒绝，之后的字段一律不信任；
-4. 校验 `build_id`、`build_key` 长度、到期日（到期日当天有效）和机器指纹（列表为空表示不限机器）；
-5. 按模块 id 派生模块密钥，解封模块信封；
-6. `zlib.decompress` → `marshal.loads`；
-7. 递归替换 code object 及其嵌套 code 的 `co_filename`，让 traceback 指向部署路径；
-8. 保留原模块对象上的 `__package__`、`__path__`、`__spec__`，把解出的代码 `exec` 到模块命名空间。
+1. 校验运行环境为目标 CPython 小版本；
+2. 读取 `.pyshield-manifest.json`，校验格式、`build_id`、算法、完整性模式与 Ed25519 签名；
+3. 按模式计算 `code`、`runtime`（以及 `full` 模式下的 `data`）文件的 SHA-256；
+4. 读取许可证：`PYSHELD_LICENSE` → `manage.py` 同目录 → runtime 包内；
+5. 用 `master_key` 派生许可证密钥并解封，校验 `format == 2`；再用内置的 Ed25519 公钥验证载荷签名，签名无效立即拒绝，之后的字段一律不信任；
+6. 校验 `build_id` 并取出 `build_key`；
+7. 读取 `~/.pyshield/<build_id>.state`（或 `PYSHELD_STATE_DIR`），用 `build_key` 派生的 HMAC 密钥验证 `last_seen`；今天早于 `last_seen` 超过 1 天即判定时钟回拨，否则在日期前进时更新状态；
+8. 校验 `not_before`（允许 1 天误差）、到期日与宽限期（`expires + grace_days` 之前放行，宽限期内标记 `in_grace`）以及机器指纹；
+9. 按模块 id 派生模块密钥，用绑定 `build_id + module_id` 的 AAD 解封模块信封；
+10. `zlib.decompress` → `marshal.loads`；
+11. 递归替换 code object 及其嵌套 code 的 `co_filename`，让 traceback 指向部署路径；
+12. 保留原模块对象上的 `__package__`、`__path__`、`__spec__`，把解出的代码 `exec` 到模块命名空间。
 
-即使攻击者从 runtime 中提取了对称主密钥，也只能解密许可证、无法生成新的有效签名；修改到期日、机器指纹或 `build_key` 都会导致验签失败。许可证状态在首次加载后缓存，并用锁避免并发重复校验。任何一步失败都会抛出 `ImportError` / `LicenseError`，模块不会以明文形式落地。
+即使攻击者从 runtime 中提取了对称主密钥，也只能解密许可证、无法生成新的有效签名；修改到期日、机器指纹或 `build_key` 都会导致验签失败。许可证、清单与时钟状态在首次校验后缓存，并用锁避免并发重复校验。`reload_license()` / `license_status(refresh=True)` 会清空缓存并重新校验，便于替换续期后的许可证；清单校验结果独立缓存，不随许可证刷新重新计算哈希。
+
+任何一步失败都会抛出 `ImportError` / `LicenseError`，模块不会以明文形式落地。`python -m _shield_runtime status|verify` 复用同一套校验逻辑，供现场部署检查。
 
 ## 6. 许可证与指纹
 
@@ -164,7 +200,9 @@ AAD = 头部 8 字节 + "pyshield-module:<module_id>"
   "cipher": "chacha20poly1305",
   "python": "3.12",
   "created": "2026-11-12T...",
+  "not_before": "2026-11-13",
   "expires": "2027-12-31 或 null",
+  "grace_days": 14,
   "fingerprints": ["..."],
   "customer": "客户名称",
   "signature": "Base85 Ed25519 签名"
@@ -173,7 +211,16 @@ AAD = 头部 8 字节 + "pyshield-module:<module_id>"
 
 签名对象是“去掉 `signature` 后的载荷按 key 排序、无空白的紧凑 JSON”，前面加上域前缀 `pyshield-license-v2:`；签名值本身再放入载荷，最后整体用 AEAD 加密。`signing_key` 只在构建方保存，runtime 仅嵌入 `signing_public_key`。
 
-构建密钥 `*.shield-secret.json`（格式 2）保存 `master_key`、`build_key`、`signing_key`、`signing_public_key`、构建 ID、算法、Python 小版本、产物与许可证路径；`issue` 读取这些字段重新签名并重写许可证，不重新加密代码。旧格式（format 1）的许可证和构建密钥都会被拒绝，需要重新构建。
+构建密钥 `*.shield-secret.json`（格式 2）保存 `master_key`、`build_key`、`signing_key`、`signing_public_key`、构建 ID、算法、`integrity`、`manifest`、`grace_days`、Python 小版本、产物与许可证路径；`issue` 读取这些字段重新签名并重写许可证，不重新加密代码。旧格式（format 1）的许可证和构建密钥都会被拒绝，需要重新构建。
+
+时钟状态文件包含 `build_id`、`last_seen` 和 `mac`：
+
+```text
+state_key = HKDF(build_key, salt="pyshield-state-v1", info=build_id, length=32)
+mac       = HMAC-SHA256(state_key, build_id + "|" + last_seen)
+```
+
+runtime 只信任 MAC 匹配的状态；日期前进时原子更新状态文件。状态目录优先取 `PYSHELD_STATE_DIR`，否则为 `~/.pyshield/`，不可写时回拨检测降级但不影响启动。
 
 机器指纹来源：
 
@@ -192,6 +239,9 @@ Django 大量依赖导入、反射和代码内省，因此 PyShield 刻意避免
 | 逐模块 AEAD 与独立密钥 | 单模块泄露不影响其他模块，可检测移植 |
 | 构建级密钥与离线许可证 | 支持到期、设备绑定、离线重发 |
 | Ed25519 许可证签名 | 主密钥泄露也无法伪造或篡改许可证 |
+| 签名完整性清单 | 发现受保护文件与 runtime 的现场修改、删除或跨构建移植 |
+| 模块 AAD 绑定 `build_id` | 一个构建的密文无法移植到另一个构建 |
+| 带 HMAC 的时钟状态 | 检测明显的系统时钟回拨，抬高改时钟绕过到期的成本 |
 | 可选 Cython 原生 runtime | 把密钥与验签逻辑藏进二进制，并加速纯 ChaCha 回退 |
 | Django 友好的排除规则 | 迁移、模板、静态资源保持可用 |
 
@@ -210,8 +260,11 @@ Django 大量依赖导入、反射和代码内省，因此 PyShield 刻意避免
 - 原生算法：ChaCha20-Poly1305 与 AES-GCM 的往返、AAD 绑定和密文防篡改；native ChaCha 回退与纯 Python 结果逐字节一致；
 - 原生 runtime：构建产物包含 `.pyd`/`.so` 且删除对应 `.py`，`--cipher chacha-pure` 产物可正常 `manage.py check`；
 - 构建阶段在产物上运行 `manage.py check`；
-- 篡改验证：修改 stub 中任意密文字符后加载失败，报“cannot decrypt protected module”；
-- 许可证验证：过期拒绝、换绑生效、重新签发无需重新构建；
+- 篡改验证：修改受保护文件后加载失败，报“package integrity check failed”；`--integrity off` 时改为密文认证失败；
+- 清单验证：签名错误、清单缺失、登记文件大小/哈希变化、跨构建清单均被拒绝；可变文件与新增文件不破坏启动；
+- 时钟验证：伪造 `last_seen` 会因 HMAC 不符被拒；时钟早于 `last_seen` 超过 1 天被拒；宽限期边界与 `not_before` 有单元测试；
+- 许可证验证：过期拒绝、宽限期放行、换绑生效、重新签发无需重新构建、热重载生效；
+- 现场验证：`python -m _shield_runtime verify` 与 `python shield.py verify` 覆盖清单、文件与许可证；
 - Django 集成验证：模板、静态文件、迁移、ORM 与路由在加密产物中正常工作。
 
 ## 9. 已知边界与演进方向
@@ -221,4 +274,5 @@ Django 大量依赖导入、反射和代码内省，因此 PyShield 刻意避免
 - AES-GCM 与 ChaCha20-Poly1305 依赖 `cryptography`；纯 Python ChaCha 零依赖但速度低，`--runtime-native` 会编译 `_chacha_fast` 作为快速回退。
 - `--runtime-native` 显著提高静态提取门槛，但 `.pyd`/`.so` 仍可被逆向；它适合提高攻击成本，不适合当作绝对防护。
 - 迁移与测试默认不加密；模板与静态资源不加密，前端代码对用户可见。
-- 可继续演进：runtime 完整性自检与更强的二进制混淆、构建产物清单签名、模板按需加密、可选的在线激活、自动化发布流水线。
+- 完整性清单由 runtime 自身执行，不能防御“整体替换 runtime”的攻击；时钟状态可被删除以重置历史。两者用于抬高成本与发现误改，不是绝对 DRM。
+- 可继续演进：更强的二进制混淆、模板按需加密、可选的在线激活、自动化发布流水线。

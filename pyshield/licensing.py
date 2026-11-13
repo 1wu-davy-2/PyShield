@@ -19,6 +19,7 @@ from . import crypto, ed25519
 LICENSE_FILENAME = "pyshield.lic"
 SECRET_SUFFIX = ".shield-secret.json"
 FORMAT = 2
+MAX_GRACE_DAYS = 3650
 
 LICENSE_SALT = b"pyshield-license-v1"
 LICENSE_AAD_PREFIX = b"pyshield-license:"
@@ -47,6 +48,18 @@ def parse_expire(value: str | None, today: date | None = None) -> date | None:
         return date.fromisoformat(text)
     except ValueError as exc:
         raise LicenseError(f"invalid expire value {value!r}; use days or YYYY-MM-DD") from exc
+
+
+def parse_grace_days(value: int | str | None) -> int:
+    if value is None or value == "":
+        return 0
+    try:
+        days = int(value)
+    except (TypeError, ValueError) as exc:
+        raise LicenseError(f"invalid grace days {value!r}") from exc
+    if days < 0 or days > MAX_GRACE_DAYS:
+        raise LicenseError(f"grace days must be between 0 and {MAX_GRACE_DAYS}")
+    return days
 
 
 def normalize_fingerprints(values: list[str] | tuple[str, ...]) -> list[str]:
@@ -89,6 +102,8 @@ def build_payload(
     expires: date | None,
     fingerprints: list[str],
     customer: str | None,
+    not_before: date | None = None,
+    grace_days: int | str | None = 0,
 ) -> dict:
     return {
         "format": FORMAT,
@@ -97,7 +112,9 @@ def build_payload(
         "cipher": cipher,
         "python": python_version,
         "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "not_before": (not_before or date.today()).isoformat(),
         "expires": expires.isoformat() if expires else None,
+        "grace_days": parse_grace_days(grace_days),
         "fingerprints": list(fingerprints),
         "customer": customer or None,
     }
@@ -113,10 +130,12 @@ def create_license(
     expires: date | None = None,
     fingerprints: list[str] | tuple[str, ...] = (),
     customer: str | None = None,
+    not_before: date | None = None,
+    grace_days: int | str | None = 0,
 ) -> bytes:
     payload = sign_payload(build_payload(
         build_id, build_key, cipher, python_version, expires,
-        normalize_fingerprints(fingerprints), customer,
+        normalize_fingerprints(fingerprints), customer, not_before, grace_days,
     ), signing_key)
     data = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     try:
@@ -145,6 +164,50 @@ def open_license(master_key: bytes, build_id: str, sealed: bytes, public_key: by
     except Exception as exc:
         raise LicenseError("license is missing a valid build key") from exc
     return payload
+
+
+def validate_payload(
+    payload: dict,
+    today: date | None = None,
+    machine_fingerprint: str | None = None,
+) -> list[str]:
+    """Return human-readable problems without raising; used by vendor verification."""
+    today = today or date.today()
+    problems: list[str] = []
+
+    not_before = payload.get("not_before")
+    if not_before:
+        try:
+            issued = date.fromisoformat(str(not_before))
+        except ValueError:
+            problems.append("license has an invalid issue date")
+        else:
+            if today + timedelta(days=1) < issued:
+                problems.append(f"system clock is earlier than the license issue date {issued}")
+
+    try:
+        grace = parse_grace_days(payload.get("grace_days"))
+    except LicenseError as exc:
+        problems.append(str(exc))
+        grace = 0
+
+    expires = payload.get("expires")
+    if expires:
+        try:
+            expires_date = date.fromisoformat(str(expires))
+        except ValueError:
+            problems.append("license has an invalid expiry date")
+        else:
+            if today > expires_date + timedelta(days=grace):
+                if grace:
+                    problems.append(f"license expired on {expires} (grace period ended)")
+                else:
+                    problems.append(f"license expired on {expires}")
+
+    fingerprints = [str(item).lower() for item in payload.get("fingerprints") or []]
+    if machine_fingerprint and fingerprints and machine_fingerprint.lower() not in fingerprints:
+        problems.append(f"machine {machine_fingerprint} is not licensed")
+    return problems
 
 
 def write_license(path: Path, sealed: bytes) -> None:
@@ -207,7 +270,9 @@ def describe(payload: dict) -> str:
         f"cipher:      {payload.get('cipher', '?')}",
         f"python:      {payload.get('python', '?')}",
         f"created:     {payload.get('created', '?')}",
+        f"not before:  {payload.get('not_before') or '?'}",
         f"expires:     {payload.get('expires') or 'never'}",
+        f"grace days:  {payload.get('grace_days', 0)}",
         f"customer:    {payload.get('customer') or '-'}",
     ]
     fingerprints = payload.get("fingerprints") or []

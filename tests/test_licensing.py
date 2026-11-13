@@ -86,6 +86,45 @@ class LicensingTests(unittest.TestCase):
         with self.assertRaises(licensing.LicenseError):
             licensing.parse_expire("soon", today)
 
+    def test_parse_grace_days(self) -> None:
+        self.assertEqual(licensing.parse_grace_days(None), 0)
+        self.assertEqual(licensing.parse_grace_days("30"), 30)
+        with self.assertRaises(licensing.LicenseError):
+            licensing.parse_grace_days(-1)
+        with self.assertRaises(licensing.LicenseError):
+            licensing.parse_grace_days(licensing.MAX_GRACE_DAYS + 1)
+
+    def test_not_before_is_reported(self) -> None:
+        today = date(2026, 5, 1)
+        sealed = self.make(not_before=today + timedelta(days=3))
+        payload = licensing.open_license(self.master, self.build_id, sealed, self.public)
+        self.assertEqual(payload["not_before"], "2026-05-04")
+        problems = licensing.validate_payload(payload, today=today)
+        self.assertTrue(any("issue date" in item for item in problems))
+        self.assertEqual(
+            licensing.validate_payload(payload, today=today + timedelta(days=3)), []
+        )
+
+    def test_grace_period(self) -> None:
+        today = date(2026, 5, 10)
+        sealed = self.make(
+            expires=today - timedelta(days=2), grace_days=7, not_before=today
+        )
+        payload = licensing.open_license(self.master, self.build_id, sealed, self.public)
+        self.assertEqual(payload["grace_days"], 7)
+        self.assertEqual(licensing.validate_payload(payload, today=today), [])
+        self.assertEqual(
+            licensing.validate_payload(payload, today=today + timedelta(days=5)), []
+        )
+        problems = licensing.validate_payload(payload, today=today + timedelta(days=6))
+        self.assertTrue(any("grace period" in item for item in problems))
+
+    def test_validate_fingerprints(self) -> None:
+        sealed = self.make(fingerprints=["ABC"])
+        payload = licensing.open_license(self.master, self.build_id, sealed, self.public)
+        self.assertEqual(licensing.validate_payload(payload, machine_fingerprint="abc"), [])
+        self.assertTrue(licensing.validate_payload(payload, machine_fingerprint="zzz"))
+
     def test_fingerprint_normalization(self) -> None:
         values = licensing.normalize_fingerprints([" ABC ", "abc", "", "DEF"])
         self.assertEqual(values, ["abc", "def"])

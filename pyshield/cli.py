@@ -33,6 +33,18 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--encrypt-migrations", action="store_true", help="encrypt Django migrations too")
     build.add_argument("--encrypt-tests", action="store_true", help="encrypt test modules too")
     build.add_argument(
+        "--integrity", choices=["protected", "full", "off"], default="protected",
+        help="signed manifest coverage: protected code and runtime, full (also data files), or off",
+    )
+    build.add_argument(
+        "--mutable", action="append", default=[], metavar="PATTERN",
+        help="extra fnmatch pattern for files that may change on site; repeatable",
+    )
+    build.add_argument(
+        "--grace-days", type=int, default=0,
+        help="days after expiry during which the build still runs",
+    )
+    build.add_argument(
         "--cipher", choices=["auto", "chacha", "chacha-pure", "aesgcm"], default="auto",
         help="module cipher; auto uses aesgcm when cryptography is installed, "
              "chacha uses ChaCha20-Poly1305 when available, chacha-pure is dependency-free",
@@ -52,7 +64,20 @@ def build_parser() -> argparse.ArgumentParser:
     issue.add_argument("--secret", required=True, help="path to the *.shield-secret.json file")
     issue.add_argument("--out", help="license output path (defaults to the path recorded in the secret)")
     _add_license_arguments(issue)
+    issue.add_argument(
+        "--grace-days", type=int, default=None,
+        help="days after expiry during which the build still runs (defaults to the build value)",
+    )
     issue.add_argument("--no-restrictions", action="store_true", help="issue an unlimited license")
+
+    verify = subparsers.add_parser("verify", help="verify a protected distribution on site")
+    verify.add_argument("-d", "--dist", required=True, help="protected distribution directory")
+    verify.add_argument("--secret", help="build secret used to check the manifest signature and license")
+    verify.add_argument("--public-key", help="base85 Ed25519 public key instead of a build secret")
+    verify.add_argument("--license", help="license file to check (defaults to the one recorded in the secret)")
+    verify.add_argument("--full", action="store_true", help="also verify templates and data files")
+    verify.add_argument("--skip-license", action="store_true", help="only verify package integrity")
+    verify.add_argument("--json", action="store_true", help="print a JSON report")
 
     fp = subparsers.add_parser("fingerprint", help="print this machine's fingerprint")
     fp.add_argument("--json", action="store_true", help="print JSON instead of plain text")
@@ -72,12 +97,15 @@ def main(argv: list[str] | None = None) -> int:
                 project=args.project,
                 output=args.output,
                 excludes=args.exclude,
+                mutable_patterns=args.mutable,
                 encrypt_migrations=args.encrypt_migrations,
                 encrypt_tests=args.encrypt_tests,
                 expire=args.expire,
+                grace_days=args.grace_days,
                 bind_device=args.bind_device,
                 cipher=args.cipher,
                 customer=args.customer,
+                integrity=args.integrity,
                 runtime_pyc=args.runtime_pyc,
                 runtime_native=args.runtime_native,
                 no_verify=args.no_verify,
@@ -89,12 +117,46 @@ def main(argv: list[str] | None = None) -> int:
                 secret=args.secret,
                 out=args.out,
                 expire=args.expire,
+                grace_days=args.grace_days,
                 bind_device=args.bind_device,
                 customer=args.customer,
                 no_restrictions=args.no_restrictions,
             ))
         elif args.command == "inspect":
             builder.inspect(builder.IssueOptions(secret=args.secret))
+        elif args.command == "verify":
+            report = builder.verify(builder.VerifyOptions(
+                dist=args.dist,
+                secret=args.secret,
+                public_key=args.public_key,
+                license=args.license,
+                full=args.full,
+                skip_license=args.skip_license,
+            ))
+            if args.json:
+                print(json.dumps(report, indent=2, sort_keys=True))
+            else:
+                print(f"distribution: {report['dist']}")
+                print(f"build id:     {report['build_id'] or '-'}")
+                print(f"integrity:    {report['integrity']}")
+                if report["manifest"] is None:
+                    print("manifest:     not checked")
+                elif not report["manifest"].get("enabled", True):
+                    print("manifest:     disabled")
+                else:
+                    print(f"manifest:     {report['manifest']['files']} files, "
+                          f"{report['manifest'].get('integrity')}")
+                if report["license"] is None:
+                    print("license:      not checked")
+                else:
+                    print(f"license:      expires {report['license'].get('expires') or 'never'}")
+                if report["failures"]:
+                    print("failures:")
+                    for failure in report["failures"]:
+                        print(f"  - {failure}")
+                else:
+                    print("result:       OK")
+            return 0 if report["ok"] else 1
         elif args.command == "fingerprint":
             value = fingerprint.machine_fingerprint()
             print(json.dumps({"fingerprint": value}) if args.json else value)
