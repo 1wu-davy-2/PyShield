@@ -16,9 +16,10 @@ from tests.test_builder import make_project
 
 class CoreHelperTests(unittest.TestCase):
     def test_default_output_and_secret_path(self) -> None:
-        output = core.default_output("E:/work/demo", "-shielded")
+        root = Path(tempfile.gettempdir()) / "pyshield-core"
+        output = core.default_output(str(root / "demo"), "-shielded")
         self.assertEqual(output.name, "demo-shielded")
-        self.assertEqual(output.parent.as_posix(), "E:/work")
+        self.assertEqual(output.parent, root)
         secret = core.secret_path_for(output)
         self.assertEqual(secret.name, "demo-shielded.shield-secret.json")
         self.assertEqual(secret.parent, output.parent)

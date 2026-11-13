@@ -84,6 +84,7 @@ class BuilderTests(unittest.TestCase):
         env = os.environ.copy()
         env["PYSHELD_LICENSE"] = str(license_path or self.output / "pyshield.lic")
         env["PYSHELD_STATE_DIR"] = str(self.state_dir)
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
         return subprocess.run(
             [sys.executable, str(self.output / "manage.py"), *args],
             cwd=self.output, env=env, capture_output=True, text=True,
@@ -93,6 +94,7 @@ class BuilderTests(unittest.TestCase):
         env = os.environ.copy()
         env["PYSHELD_LICENSE"] = str(license_path or self.output / "pyshield.lic")
         env["PYSHELD_STATE_DIR"] = str(self.state_dir)
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
         return subprocess.run(
             [sys.executable, "-m", "_shield_runtime", *args],
             cwd=self.output, env=env, capture_output=True, text=True,
