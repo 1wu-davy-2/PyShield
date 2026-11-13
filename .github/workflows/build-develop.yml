@@ -203,6 +203,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     needs: test
+    env:
+      # The builder requires an activated tool license; this job only checks
+      # that the protection engine still produces a working package.
+      PYSHELD_DEV: "1"
     steps:
       - uses: actions/checkout@v7
 

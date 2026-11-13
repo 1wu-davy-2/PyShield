@@ -28,6 +28,9 @@ else:
 if (ROOT / "pyshield" / "_tool_key.py").is_file():
     hiddenimports.append("pyshield._tool_key")
 
+if (ROOT / "pyshield" / "_site.py").is_file():
+    hiddenimports.append("pyshield._site")
+
 excludes = [
     "tkinter",
     "PyQt5",
