@@ -218,6 +218,7 @@ jobs:
         with:
           name: protected-demo
           path: dist-demo
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
 
