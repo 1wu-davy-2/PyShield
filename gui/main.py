@@ -14,10 +14,12 @@ from gui.backend import Api  # noqa: E402
 
 
 def resource_root() -> Path:
-    if getattr(sys, "frozen", False):
-        base = getattr(sys, "_MEIPASS", None)
-        if base:
-            return Path(base)
+    base = getattr(sys, "_MEIPASS", None)
+    if base:
+        return Path(base)
+    if globals().get("__compiled__") is not None:
+        # Nuitka onefile runs as <temp>/onefile_*/python.exe; its parent holds
+        # the extracted data files. containing_dir points at the original exe.
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parents[1]
 

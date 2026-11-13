@@ -9,6 +9,7 @@ read by this script; only ``root.pub`` (or the Base85 public key itself).
 from __future__ import annotations
 
 import argparse
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -95,23 +96,31 @@ def build_pyinstaller(clean: bool) -> Path | None:
     return find_output([ROOT / "dist" / f"{APP_NAME}{suffix}", ROOT / "dist" / APP_NAME])
 
 
+def clean_runtime_template() -> None:
+    template = ROOT / "pyshield" / "runtime_template"
+    for cache in template.rglob("__pycache__"):
+        shutil.rmtree(cache, ignore_errors=True)
+
+
 def build_nuitka(clean: bool) -> Path | None:
     output_dir = ROOT / "dist-nuitka"
     if clean and output_dir.exists():
-        import shutil
-
         shutil.rmtree(output_dir)
     command = [
         sys.executable, "-m", "nuitka",
         "--standalone",
         "--onefile",
+        "--onefile-no-compression",
         "--assume-yes-for-downloads",
-        "--include-package=webview",
+        "--jobs=4",
         "--include-package=pyshield",
         "--include-package=gui",
+        "--nofollow-import-to=jinja2",
+        "--nofollow-import-to=setuptools",
+        "--nofollow-import-to=Cython",
         "--include-data-dir=gui/web=gui/web",
         "--include-data-dir=gui/assets=gui/assets",
-        "--include-data-dir=pyshield/runtime_template=pyshield/runtime_template",
+        "--include-raw-dir=pyshield/runtime_template=pyshield/runtime_template",
         "--include-data-files=pyshield/crypto.py=pyshield/crypto.py",
         "--include-data-files=pyshield/fingerprint.py=pyshield/fingerprint.py",
         "--include-data-files=pyshield/ed25519.py=pyshield/ed25519.py",
@@ -127,13 +136,10 @@ def build_nuitka(clean: bool) -> Path | None:
             f"--output-filename={APP_NAME}.exe",
             "--windows-console-mode=disable",
             "--windows-icon-from-ico=gui/assets/icon.ico",
-            "--include-package=webview.platforms.edgechromium",
-            "--include-package=webview.platforms.winforms",
         ])
     else:
         command.extend([
             f"--output-filename={APP_NAME}",
-            "--include-package=webview.platforms.gtk",
         ])
     command.append("gui/main.py")
     run(command)
@@ -183,6 +189,7 @@ def main(argv: list[str] | None = None) -> int:
                 "pyshield/_tool_key.py is missing; pass --public-key or the packaged "
                 "builder will run in development mode"
             )
+        clean_runtime_template()
         binary = (
             build_nuitka(not args.no_clean)
             if args.backend == "nuitka"
