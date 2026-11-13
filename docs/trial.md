@@ -120,18 +120,40 @@ events(id, at, serial, machine, action, remote, detail)
 - `max_builds_per_month=3` 配合 `quota.json` 限制构建次数；
 - 到期后 `active_on()` 失败，构建被拒绝，但已生成的产物不受影响。
 
-界面会把 `edition=trial` 显示成「试用版」，在侧栏、顶部胶囊和构建页横幅三处提示剩余天数与次数。
+试用版**比专业版限制更多**，由 `tool_license.trial_policy()` 统一定义：
+
+| 项目 | 试用版 | 专业版 |
+| --- | --- | --- |
+| 加密算法 | 仅 ChaCha20 纯 Python | 三种算法 |
+| 完整性清单 | `protected` / `off` | 含 `full` |
+| 构件配额 | 3 次（14 天内） | 按合同 |
+| 原生运行时 | 不可用 | 可用 |
+| 产物许可证签发 | 不可用 | 可用 |
+| 客户名称水印 | 不可写入 | 可写入 |
+| 产物标记 | `.pyshield-build.json` 里 `trial: true` | 记录授权编号 |
+
+界面在选中试用版时会禁用对应选项并加 `Pro` 标签，CLI 侧由 `trial_build_problems()` 直接拒绝，两端使用同一份策略。
+
+界面会把 `edition=trial` 显示成「试用版」，在侧栏、顶部胶囊和构建页横幅三处提示剩余天数与次数。额度用尽或到期后，`check()` 返回 `code=quota_exhausted` / `trial_expired`，应用启动时直接弹出「试用已结束」对话框，引导购买专业版。
 
 ## 6. 本地联调
 
+一条命令拉起整套演示环境（临时根密钥、SQLite、服务端，全部落在 `.pyshield-demo/`）：
+
 ```bash
-# 1. 根密钥
+python tools/trial_demo.py                 # 只起服务，浏览器打开打印出来的申请页
+python tools/trial_demo.py --gui           # 起服务并打开桌面应用
+python tools/trial_demo.py --exhaust --gui # 预先用掉 3 次额度，直接看「试用已结束」
+python tools/trial_demo.py --reset         # 清空演示数据重来
+```
+
+脚本会自己生成根密钥、把 `PYSHELD_HOME` / `PYSHELD_TOOL_PUBLIC_KEY` / `PYSHELD_TRIAL_SERVER` 注入应用进程，不碰真实的 `%APPDATA%\PyShield`。
+
+手工方式（用自己的密钥与目录）：
+
+```bash
 python -m pyshield.license_admin init --out /tmp/root-keys
-
-# 2. 起服务
 python -m pyshield.trial_server --root-key /tmp/root-keys/root.key --data-dir /tmp/trial-data --port 8090
-
-# 3. 让构建器信任这个根公钥（源码运行时）
 export PYSHELD_TOOL_PUBLIC_KEY="$(cat /tmp/root-keys/root.pub)"
 export PYSHELD_HOME=/tmp/pyshield-home
 python -m gui
@@ -140,6 +162,7 @@ python -m gui
 在「版本与试用」里把服务地址填成 `http://127.0.0.1:8090`，点「申请 14 天试用」即可走完整流程。
 
 > 设置 `PYSHELD_DEV=1` 会强制进入开发模式（不限构建），此时试用状态不会生效，只用于调试。
+> 未注入根公钥的源码运行时，会读取本地已安装的授权并在界面上显示试用/专业版，但 `reason` 里会标注「signature not verified」。打包发布版永远内置公钥，不存在这个分支。
 
 ## 7. 部署到腾讯云
 

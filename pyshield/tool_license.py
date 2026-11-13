@@ -64,6 +64,11 @@ ENV_TRIAL_BUILDS = "PYSHELD_TRIAL_BUILDS"
 
 DEFAULT_TRIAL_DAYS = 14
 DEFAULT_TRIAL_BUILDS = 10
+
+# The trial edition is deliberately narrower than Pro: it only ships the
+# dependency-free cipher and cannot claim the full integrity manifest.
+TRIAL_CIPHERS = ("chacha-pure",)
+TRIAL_INTEGRITY = ("protected", "off")
 MAX_GRACE_DAYS = 3650
 
 
@@ -116,7 +121,7 @@ class Entitlement:
             "license_id": self.license_id,
             "customer": self.customer or None,
             "edition": self.edition,
-            "trial": False,
+            "trial": self.edition == EDITION_TRIAL,
             "builds_used": 0,
         }
 
@@ -133,6 +138,7 @@ class ToolLicenseStatus:
     trial: dict | None = None
     quota: dict | None = None
     checked: str = ""
+    code: str = ""
 
     def allows(self, feature: str | None) -> bool:
         if not self.valid:
@@ -190,6 +196,7 @@ class ToolLicenseStatus:
             "trial": self.trial,
             "quota": self.quota,
             "checked": self.checked,
+            "code": self.code,
         }
 
 
@@ -358,6 +365,7 @@ def parse_entitlement(payload: dict) -> Entitlement:
 def load_entitlement(
     path: str | Path | None = None,
     public_key: bytes | None = None,
+    verify: bool = True,
 ) -> Entitlement | None:
     target = Path(path) if path is not None else tool_license_path()
     try:
@@ -370,10 +378,17 @@ def load_entitlement(
         document = json.loads(raw)
     except ValueError as exc:
         raise ToolLicenseError(f"tool license {target} is not valid JSON") from exc
-    key = public_key if public_key is not None else active_public_key()
-    if key is None:
-        raise ToolLicenseError("tool public key is not configured")
-    payload = verify_document(document, key, TOOL_LICENSE_FORMAT)
+    if not verify:
+        if not isinstance(document, dict) or document.get("format") != TOOL_LICENSE_FORMAT:
+            raise ToolLicenseError(f"tool license {target} has an unsupported format")
+        payload = document.get("payload")
+        if not isinstance(payload, dict):
+            raise ToolLicenseError(f"tool license {target} has no payload")
+    else:
+        key = public_key if public_key is not None else active_public_key()
+        if key is None:
+            raise ToolLicenseError("tool public key is not configured")
+        payload = verify_document(document, key, TOOL_LICENSE_FORMAT)
     return replace(parse_entitlement(payload), document=document)
 
 
@@ -532,6 +547,7 @@ def _invalid(
     public_key_configured: bool,
     entitlement: Entitlement | None = None,
     trial: dict | None = None,
+    code: str = "",
 ) -> ToolLicenseStatus:
     return ToolLicenseStatus(
         mode="invalid",
@@ -543,6 +559,7 @@ def _invalid(
         entitlement=entitlement,
         trial=trial,
         checked=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        code=code,
     )
 
 
@@ -561,59 +578,93 @@ def check(
     configured = key is not None
     checked = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
-    if _env_flag(ENV_DEV) or not configured:
+    if _env_flag(ENV_DEV):
         return ToolLicenseStatus(
             mode="development",
             valid=True,
-            reason="development mode: no tool public key configured",
+            reason="development mode: PYSHELD_DEV is set",
             machine=machine,
             license_path=str(path),
             public_key_configured=configured,
             checked=checked,
+            code="development",
         )
 
-    entitlement: Entitlement | None
-    try:
-        entitlement = load_entitlement(path, public_key=key)
-    except ToolLicenseError as exc:
-        return _invalid(str(exc), machine, path, configured)
+    unverified = not configured
+    entitlement: Entitlement | None = None
+    if unverified:
+        # Source runs ship no injected root key. Trust a locally installed
+        # license so the trial flow can be exercised end to end; packaged
+        # builds always embed the public key and verify signatures.
+        if path.is_file():
+            try:
+                entitlement = load_entitlement(path, verify=False)
+            except ToolLicenseError:
+                entitlement = None
+        if entitlement is None:
+            return ToolLicenseStatus(
+                mode="development",
+                valid=True,
+                reason="development mode: no tool public key configured",
+                machine=machine,
+                license_path=str(path),
+                public_key_configured=False,
+                checked=checked,
+                code="development",
+            )
+    else:
+        try:
+            entitlement = load_entitlement(path, public_key=key)
+        except ToolLicenseError as exc:
+            return _invalid(str(exc), machine, path, configured, code="license_invalid")
 
     if entitlement is not None:
+        trial_edition = entitlement.edition == EDITION_TRIAL
         active, reason = entitlement.active_on(today)
         if not active:
-            return _invalid(reason, machine, path, configured, entitlement)
+            code = "trial_expired" if trial_edition else "expired"
+            return _invalid(reason, machine, path, configured, entitlement, code=code)
         if entitlement.activation_required and entitlement.bind_mode != BIND_FIXED:
             return _invalid(
                 "tool license must be activated on this machine first",
-                machine, path, configured, entitlement,
+                machine, path, configured, entitlement, code="activation_required",
             )
         if not entitlement.machine_allowed(machine):
             return _invalid(
                 f"tool license is bound to another machine; this machine is {machine}",
-                machine, path, configured, entitlement,
+                machine, path, configured, entitlement, code="machine_mismatch",
             )
         try:
             revoked = _revocations(key)
         except ToolLicenseError as exc:
-            return _invalid(str(exc), machine, path, configured, entitlement)
+            return _invalid(str(exc), machine, path, configured, entitlement, code="revoked")
         if entitlement.license_id in revoked:
-            return _invalid("tool license has been revoked", machine, path, configured, entitlement)
+            return _invalid(
+                "tool license has been revoked", machine, path, configured, entitlement,
+                code="revoked",
+            )
         missing = [feature for feature in features if not entitlement.allows(feature)]
         if missing:
             return _invalid(
                 f"tool license does not include: {', '.join(missing)}",
-                machine, path, configured, entitlement,
+                machine, path, configured, entitlement, code="feature_missing",
             )
         try:
             quota = _quota_state(entitlement, machine, today)
         except ToolLicenseError as exc:
-            return _invalid(str(exc), machine, path, configured, entitlement)
+            return _invalid(str(exc), machine, path, configured, entitlement, code="license_invalid")
         used = int(quota.get("used", 0)) if quota else 0
         limit = entitlement.max_builds_per_month
         if limit and used >= limit:
+            if trial_edition:
+                message = (
+                    f"trial build limit reached ({used}/{limit}); "
+                    "purchase a Pro license to keep building"
+                )
+            else:
+                message = f"monthly build quota exhausted ({used}/{limit})"
             return _invalid(
-                f"monthly build quota exhausted ({used}/{limit})",
-                machine, path, configured, entitlement,
+                message, machine, path, configured, entitlement, code="quota_exhausted",
             )
         if quota:
             quota = {**quota, "limit": limit}
@@ -621,6 +672,8 @@ def check(
                 reason = f"{reason}; {limit - used} builds left this month"
             else:
                 reason = f"valid; {limit - used} builds left this month"
+        if unverified:
+            reason = f"{reason} (local license, signature not verified)"
         return ToolLicenseStatus(
             mode="licensed",
             valid=True,
@@ -631,21 +684,24 @@ def check(
             entitlement=entitlement,
             quota=quota or None,
             checked=checked,
+            code="trial" if trial_edition else "ok",
         )
 
     try:
         trial = _trial_state(machine, today)
         days_left = _trial_days_left(trial, today)
     except ToolLicenseError as exc:
-        return _invalid(str(exc), machine, path, configured)
+        return _invalid(str(exc), machine, path, configured, code="license_invalid")
     used = int(trial.get("builds") or 0)
     limit = int(trial.get("max_builds") or DEFAULT_TRIAL_BUILDS)
     if days_left <= 0:
-        return _invalid("trial period has expired", machine, path, configured, trial=trial)
+        return _invalid(
+            "trial period has expired", machine, path, configured, trial=trial, code="trial_expired",
+        )
     if used >= limit:
         return _invalid(
             f"trial build limit reached ({used}/{limit})",
-            machine, path, configured, trial=trial,
+            machine, path, configured, trial=trial, code="quota_exhausted",
         )
     blocked = [feature for feature in features if feature in {
         FEATURE_NATIVE_RUNTIME, FEATURE_LICENSE_ISSUANCE, FEATURE_CI, FEATURE_OEM,
@@ -653,7 +709,7 @@ def check(
     if blocked:
         return _invalid(
             f"trial does not include: {', '.join(blocked)}",
-            machine, path, configured, trial=trial,
+            machine, path, configured, trial=trial, code="feature_missing",
         )
     return ToolLicenseStatus(
         mode="trial",
@@ -664,7 +720,33 @@ def check(
         public_key_configured=configured,
         trial={**trial, "days_left": days_left, "builds_left": limit - used},
         checked=checked,
+        code="trial",
     )
+
+
+def trial_policy() -> dict:
+    """Return the limits that apply to the trial edition."""
+    return {
+        "ciphers": list(TRIAL_CIPHERS),
+        "integrity": list(TRIAL_INTEGRITY),
+        "features": [FEATURE_GUI],
+    }
+
+
+def trial_build_problems(
+    cipher: str | None,
+    integrity: str | None,
+    customer: str | None = None,
+) -> list[str]:
+    """Return human readable reasons why a build exceeds the trial limits."""
+    problems: list[str] = []
+    if cipher and cipher not in TRIAL_CIPHERS:
+        problems.append("试用版只能使用 ChaCha20 纯 Python（--cipher chacha-pure）")
+    if integrity and integrity not in TRIAL_INTEGRITY:
+        problems.append("试用版不支持完整校验清单（--integrity full）")
+    if customer and str(customer).strip():
+        problems.append("试用版不能在产物许可证中写入客户名称")
+    return problems
 
 
 def require(

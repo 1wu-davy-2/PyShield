@@ -222,6 +222,16 @@ def main(argv: list[str] | None = None) -> int:
             if args.ci:
                 required.append(tool_license.FEATURE_CI)
             license_status = tool_license.require(features=required)
+            cipher = args.cipher
+            entitlement = license_status.entitlement
+            if entitlement is not None and entitlement.edition == tool_license.EDITION_TRIAL:
+                if cipher == "auto":
+                    cipher = "chacha-pure"
+                problems = tool_license.trial_build_problems(
+                    cipher, args.integrity, args.customer,
+                )
+                if problems:
+                    raise tool_license.ToolLicenseError("；".join(problems))
             builder.build(builder.BuildOptions(
                 project=args.project,
                 output=args.output,
@@ -233,7 +243,7 @@ def main(argv: list[str] | None = None) -> int:
                 grace_days=args.grace_days,
                 bind_device=args.bind_device,
                 bind_first_run=args.bind_first_run,
-                cipher=args.cipher,
+                cipher=cipher,
                 customer=args.customer,
                 integrity=args.integrity,
                 runtime_pyc=args.runtime_pyc,

@@ -321,6 +321,8 @@ def status(server: str | None = None) -> dict:
         quota = license_status.quota or {}
         if entitlement.max_builds_per_month:
             used = int(quota.get("used", 0))
+            if not quota and getattr(license_status, "code", "") == "quota_exhausted":
+                used = entitlement.max_builds_per_month
             result["builds_left"] = max(0, entitlement.max_builds_per_month - used)
     elif license_status.mode == "trial":
         trial = license_status.trial or {}

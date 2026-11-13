@@ -99,6 +99,18 @@ class BuildManager:
                 "license": tool_license.status_dict(),
             }
 
+        entitlement = license_status.entitlement
+        if entitlement is not None and entitlement.edition == tool_license.EDITION_TRIAL:
+            problems = tool_license.trial_build_problems(
+                request.cipher, request.integrity, request.customer,
+            )
+            if problems:
+                return {
+                    "ok": False,
+                    "errors": problems,
+                    "license": license_status.to_dict(),
+                }
+
         options = builder.BuildOptions(
             project=str(Path(request.project).expanduser().resolve()),
             output=str(Path(request.output).expanduser().resolve()),
@@ -598,6 +610,9 @@ class Api:
     def trial_state(self) -> dict:
         data = self._trial_state()
         return {"ok": bool(data.get("ok")), "trial": data, "error": data.get("error")}
+
+    def trial_policy(self) -> dict:
+        return {"ok": True, "policy": tool_license.trial_policy()}
 
     def trial_set_server(self, server: str = "") -> dict:
         value = str(server or "").strip().rstrip("/")

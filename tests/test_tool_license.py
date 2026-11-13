@@ -4,11 +4,11 @@ import json
 import os
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from unittest import mock
 
-from pyshield import activation, crypto, license_admin, tool_license
+from pyshield import activation, crypto, fingerprint, license_admin, secure_store, tool_license
 
 
 class ToolLicenseTestCase(unittest.TestCase):
@@ -153,3 +153,98 @@ class ToolLicenseTestCase(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TrialEditionTests(unittest.TestCase):
+    """Trial entitlements must be stricter than Pro and survive a missing key."""
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name).resolve()
+        self.home = self.root / "home"
+        self.home.mkdir()
+        self.key_path, _, self.public_key = license_admin.generate_root(self.root / "keys")
+        self.root_key = license_admin.load_root_key(self.key_path)
+        self.patch = mock.patch.dict(os.environ, {
+            tool_license.ENV_HOME: str(self.home),
+            tool_license.ENV_PUBLIC_KEY: crypto.b85encode(self.public_key),
+        })
+        self.patch.start()
+        os.environ.pop(tool_license.ENV_DEV, None)
+        os.environ.pop(tool_license.ENV_LICENSE, None)
+
+    def tearDown(self) -> None:
+        self.patch.stop()
+        self.temp.cleanup()
+
+    def install_trial(self, days: int = 14, builds: int = 3) -> tool_license.Entitlement:
+        machine = fingerprint.machine_fingerprint()
+        document = license_admin.issue_entitlement(
+            self.root_key,
+            license_id="TRIAL-TEST-001",
+            edition=tool_license.EDITION_TRIAL,
+            features=[tool_license.FEATURE_GUI],
+            max_builds_per_month=builds,
+            bind_mode=tool_license.BIND_FIXED,
+            fingerprints=[machine],
+            activation_required=False,
+            expires=date.today() + timedelta(days=days),
+            grace_days=0,
+        )
+        secure_store.write_private(
+            tool_license.tool_license_path(),
+            json.dumps(document, indent=2, sort_keys=True).encode("utf-8") + b"\n",
+        )
+        return tool_license.load_entitlement()
+
+    def test_trial_policy_is_narrower_than_pro(self) -> None:
+        policy = tool_license.trial_policy()
+        self.assertEqual(policy["ciphers"], ["chacha-pure"])
+        self.assertNotIn("full", policy["integrity"])
+
+    def test_trial_build_problems(self) -> None:
+        self.assertEqual(tool_license.trial_build_problems("chacha-pure", "protected"), [])
+        self.assertEqual(tool_license.trial_build_problems("chacha-pure", "off"), [])
+        self.assertTrue(tool_license.trial_build_problems("aesgcm", "protected"))
+        self.assertTrue(tool_license.trial_build_problems("chacha-pure", "full"))
+        self.assertTrue(tool_license.trial_build_problems("chacha-pure", "protected", "ACME"))
+
+    def test_trial_status_reports_code_and_watermark(self) -> None:
+        self.install_trial()
+        status = tool_license.check()
+        self.assertTrue(status.valid)
+        self.assertEqual(status.code, "trial")
+        self.assertEqual(status.quota["limit"], 3)
+        self.assertTrue(status.watermark()["trial"])
+        self.assertEqual(status.watermark()["edition"], "trial")
+
+    def test_quota_exhaustion_returns_specific_code(self) -> None:
+        self.install_trial(builds=1)
+        status = tool_license.check()
+        tool_license.record_build(status)
+        exhausted = tool_license.check()
+        self.assertFalse(exhausted.valid)
+        self.assertEqual(exhausted.code, "quota_exhausted")
+        self.assertEqual(exhausted.entitlement.edition, tool_license.EDITION_TRIAL)
+        self.assertIn("purchase", exhausted.reason)
+
+    def test_expired_trial_returns_specific_code(self) -> None:
+        self.install_trial(days=-1)
+        expired = tool_license.check()
+        self.assertFalse(expired.valid)
+        self.assertEqual(expired.code, "trial_expired")
+
+    def test_local_license_is_used_without_public_key(self) -> None:
+        self.install_trial()
+        with mock.patch.dict(os.environ, {tool_license.ENV_PUBLIC_KEY: "off"}):
+            status = tool_license.check()
+        self.assertTrue(status.valid)
+        self.assertEqual(status.mode, "licensed")
+        self.assertEqual(status.entitlement.edition, tool_license.EDITION_TRIAL)
+        self.assertIn("not verified", status.reason)
+
+    def test_without_any_license_development_mode(self) -> None:
+        with mock.patch.dict(os.environ, {tool_license.ENV_PUBLIC_KEY: "off"}):
+            status = tool_license.check()
+        self.assertEqual(status.mode, "development")
+        self.assertTrue(status.valid)

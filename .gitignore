@@ -14,3 +14,6 @@ root.key
 root.pub
 license-data/
 .pyshield-native/
+
+# local trial playground (tools/trial_demo.py)
+.pyshield-demo/

@@ -68,6 +68,7 @@
     inspectSeq: 0,
     maximized: false,
     preview: new URLSearchParams(location.search).get("preview") === "1",
+    previewState: new URLSearchParams(location.search).get("state") || "",
     license: null,
     trial: null,
     trialTimer: null,
@@ -579,7 +580,7 @@
       state.lastStatus = "idle";
       $("#progressBlock").hidden = true;
       showErrors(response.errors || (response.error ? [response.error] : ["构建无法启动。"]));
-      toast("请先修正表单问题", "error");
+      if (!maybeShowTrialEnded(response.license)) toast("请先修正表单问题", "error");
       return;
     }
     if (response.note) appendLogLine(response.note);
@@ -906,6 +907,52 @@
     $("#licenseExpires").textContent = licenseExpiryText(data);
     $("#licenseQuota").textContent = licenseQuotaText(data);
     $("#licenseMachine").textContent = data.machine || state.machine || "—";
+    applyEditionLimits(data);
+  }
+
+  function isTrialEdition(license) {
+    return Boolean(license && license.edition === "trial");
+  }
+
+  function applyEditionLimits(license) {
+    const trial = isTrialEdition(license);
+    document.body.classList.toggle("is-trial", trial);
+    $$("#cipherGroup .segment").forEach((button) => {
+      const locked = trial && button.dataset.value !== "chacha-pure";
+      button.classList.toggle("is-locked", locked);
+      button.setAttribute("aria-disabled", locked ? "true" : "false");
+    });
+    $$("#integrityGroup .segment").forEach((button) => {
+      const locked = trial && button.dataset.value === "full";
+      button.classList.toggle("is-locked", locked);
+      button.setAttribute("aria-disabled", locked ? "true" : "false");
+    });
+    const customer = $("#customer");
+    if (customer) {
+      customer.disabled = trial;
+      if (trial && customer.value) customer.value = "";
+    }
+    if (!trial) return;
+    if (getSegment("cipherGroup") && getSegment("cipherGroup") !== "chacha-pure") {
+      setSegment("cipherGroup", "chacha-pure");
+    }
+    if (getSegment("integrityGroup") === "full") {
+      setSegment("integrityGroup", "protected");
+    }
+    syncSummary();
+  }
+
+  const TRIAL_END_CODES = ["quota_exhausted", "trial_expired", "expired"];
+
+  function maybeShowTrialEnded(license) {
+    if (!license || license.valid) return false;
+    if (!isTrialEdition(license)) return false;
+    if (!TRIAL_END_CODES.includes(license.code || "")) return false;
+    $("#trialEndedText").textContent = license.code === "quota_exhausted"
+      ? "3 次试用构建额度已用完。购买专业版后可以继续构建，并解锁原生运行时与产物许可证签发。"
+      : "14 天试用期已结束。购买专业版后可以继续构建，并解锁原生运行时与产物许可证签发。";
+    $("#trialEndedModal").hidden = false;
+    return true;
   }
 
   async function refreshLicense() {
@@ -1048,21 +1095,32 @@
     if (server && !$("#trialServer").value.trim()) $("#trialServer").value = server;
 
     const active = Boolean(data.active && data.trial);
+    const ended = Boolean(data.trial && !data.active);
     const licensed = data.mode === "licensed" && !data.trial;
     const invalid = data.mode === "invalid";
-    badge.className = `status-badge ${active ? "warning" : licensed ? "success" : invalid ? "danger" : ""}`;
-    badge.textContent = active ? "试用中" : licensed ? "正式授权" : TRIAL_MODE_TEXT[data.mode] || "未激活";
+    badge.className = `status-badge ${active ? "warning" : licensed ? "success" : invalid || ended ? "danger" : ""}`;
+    badge.textContent = active
+      ? "试用中"
+      : ended
+        ? "试用已结束"
+        : licensed
+          ? "正式授权"
+          : TRIAL_MODE_TEXT[data.mode] || "未激活";
 
     $("#trialHeadline").textContent = active
       ? "试用版已激活"
-      : licensed
-        ? "当前为正式授权"
-        : "选择适合你的版本";
+      : ended
+        ? "试用已结束"
+        : licensed
+          ? "当前为正式授权"
+          : "选择适合你的版本";
     $("#trialSub").textContent = active
       ? `剩余 ${data.days_left == null ? "—" : data.days_left} 天、${data.builds_left == null ? "—" : data.builds_left} 次构建。到期后加密构建会被拒绝，已生成的产物不受影响。`
-      : licensed
-        ? "已安装正式授权，可以继续使用全部已购买功能。"
-        : "免费版可自助开通：14 天、3 次加密构建，无需付款。";
+      : ended
+        ? "14 天试用期或 3 次构建额度已用完，购买专业版后可以继续构建。"
+        : licensed
+          ? "已安装正式授权，可以继续使用全部已购买功能。"
+          : "免费版可自助开通：14 天、3 次加密构建，无需付款。";
 
     $("#trialSerial").textContent = data.serial || "—";
     $("#trialMachine").textContent = shortMachine(data.machine);
@@ -1307,9 +1365,11 @@
     $("#machineFingerprint").value = state.machine;
     renderLicense(response.license || null);
     renderTrial({ trial: response.trial });
+    maybeShowTrialEnded(response.license);
     const initialView = new URLSearchParams(location.search).get("view");
     if (initialView && VIEW_META[initialView]) switchView(initialView);
     applyDefaultsToForm();
+    applyEditionLimits(state.license);
     fillAbout();
     renderHistory(response.history || []);
     applyLatestSummary();
@@ -1366,8 +1426,41 @@
     };
   }
 
-  function mockTrial() {
+  function mockLicense() {
+    const base = {
+      machine: "9f3c1a72b0d84e51c4a201e57d8b16a3",
+      license_path: "C:////Users////demo////AppData////Roaming////PyShield////tool-license.json",
+      public_key_configured: true,
+      license_id: "TRIAL-PS-7Q4M-2XK9-TL5B",
+      customer: "试用用户",
+      edition: "trial",
+      features: ["gui"],
+      expires: "2026-11-22",
+      grace_days: 0,
+      trial: null,
+      checked: new Date().toISOString(),
+    };
+    if (state.previewState === "exhausted") {
+      return {
+        ...base,
+        mode: "invalid",
+        valid: false,
+        code: "quota_exhausted",
+        reason: "trial build limit reached (3/3); purchase a Pro license to keep building",
+        quota: { used: 3, limit: 3 },
+      };
+    }
     return {
+      ...base,
+      mode: "licensed",
+      valid: true,
+      reason: "valid; 2 builds left this month",
+      quota: { used: 1, limit: 3 },
+    };
+  }
+
+  function mockTrial() {
+    const trial = {
       ok: true,
       serial: "PS-7Q4M-2XK9-TL5B",
       machine: "9f3c1a72b0d84e51c4a201e57d8b16a3",
@@ -1385,6 +1478,12 @@
       protocol: true,
       deep_link: "pyshield://activate?serial=PS-7Q4M-2XK9-TL5B",
     };
+    if (state.previewState === "exhausted") {
+      trial.mode = "invalid";
+      trial.active = false;
+      trial.builds_left = 0;
+    }
+    return trial;
   }
 
   function mockApi(name, args) {
@@ -1454,23 +1553,7 @@
         history: history,
         machine: "9f3c1a72b0d84e51c4a201e57d8b16a3",
         trial: mockTrial(),
-        license: {
-          mode: "licensed",
-          valid: true,
-          reason: "valid; 41 builds left this month",
-          machine: "9f3c1a72b0d84e51c4a201e57d8b16a3",
-          license_path: "C:\\Users\\demo\\AppData\\Roaming\\PyShield\\tool-license.json",
-          public_key_configured: true,
-          license_id: "TRIAL-PS-7Q4M-2XK9-TL5B",
-          customer: "试用用户",
-          edition: "trial",
-          features: ["gui"],
-          expires: "2026-11-22",
-          grace_days: 0,
-          trial: null,
-          quota: { used: 1, limit: 3 },
-          checked: new Date().toISOString(),
-        },
+        license: mockLicense(),
         state: { status: "idle", percent: 0, logs: [] },
       });
     }
@@ -1478,23 +1561,7 @@
       return Promise.resolve({
         ok: true,
         server: "",
-        license: {
-          mode: "licensed",
-          valid: true,
-          reason: "valid; 41 builds left this month",
-          machine: "9f3c1a72b0d84e51c4a201e57d8b16a3",
-          license_path: "C:\\Users\\demo\\AppData\\Roaming\\PyShield\\tool-license.json",
-          public_key_configured: true,
-          license_id: "TRIAL-PS-7Q4M-2XK9-TL5B",
-          customer: "试用用户",
-          edition: "trial",
-          features: ["gui"],
-          expires: "2026-11-22",
-          grace_days: 0,
-          trial: null,
-          quota: { used: 1, limit: 3 },
-          checked: new Date().toISOString(),
-        },
+        license: mockLicense(),
       });
     }
     if (name === "browse_license") {
@@ -1641,9 +1708,19 @@
   // ---------------------------------------------------------------- events
 
   function bindEvents() {
-    onSegment("cipherGroup", null);
+    onSegment("cipherGroup", (value) => {
+      if (isTrialEdition(state.license) && value !== "chacha-pure") {
+        setSegment("cipherGroup", "chacha-pure");
+        toast("试用版只能使用 ChaCha20 纯 Python", "error");
+      }
+    });
     onSegment("runtimeGroup", null);
-    onSegment("integrityGroup", null);
+    onSegment("integrityGroup", (value) => {
+      if (isTrialEdition(state.license) && value === "full") {
+        setSegment("integrityGroup", "protected");
+        toast("试用版不支持完整校验清单", "error");
+      }
+    });
     onSegment("expiryGroup", () => {
       syncExpiryFields();
       syncSummary();
@@ -1772,6 +1849,13 @@
       if (event.key === "Enter") trialApplyCode();
     });
     $("#trialBannerAction").addEventListener("click", () => switchView("trial"));
+    $("#trialEndedBuy").addEventListener("click", () => {
+      $("#trialEndedModal").hidden = true;
+      trialOpen("pro");
+    });
+    $("#trialEndedLater").addEventListener("click", () => {
+      $("#trialEndedModal").hidden = true;
+    });
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && state.busy) {
         event.preventDefault();
