@@ -1532,7 +1532,7 @@
       trial.active = false;
       trial.trial = false;
       trial.edition = null;
-      trial.server = "";
+      trial.server = "http://127.0.0.1:8090";
       trial.expires = null;
       trial.days_left = null;
       trial.builds_left = null;

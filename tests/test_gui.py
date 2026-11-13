@@ -11,7 +11,7 @@ from unittest import mock
 
 from gui import core
 from gui.backend import Api, BuildManager
-from pyshield import crypto, license_admin, licensing, tool_license
+from pyshield import crypto, devsite, license_admin, licensing, tool_license
 from tests.test_builder import make_project
 
 
@@ -344,9 +344,11 @@ class ApiTests(unittest.TestCase):
             },
         )
         self.patch.start()
+        devsite.stop()
         self.api = Api()
 
     def tearDown(self) -> None:
+        devsite.stop()
         self.patch.stop()
         self.temp.cleanup()
 

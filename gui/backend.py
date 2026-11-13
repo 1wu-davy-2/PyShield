@@ -15,7 +15,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from pyshield import __version__, activation, builder, fingerprint, tool_license, trial_license
+from pyshield import (
+    __version__, activation, builder, devsite, fingerprint, tool_license, trial_license,
+)
 
 from . import core, instance
 
@@ -591,11 +593,21 @@ class Api:
 
     def _trial_server(self) -> str:
         settings = core.load_settings()
-        return (
+        configured = (
             settings.get("trial_server")
             or settings.get("activation_server")
             or trial_license.default_server()
         )
+        if configured:
+            return configured
+        if devsite.enabled():
+            # Builds without a root public key are development builds: run a
+            # loopback site so the registration flow works with no setup.
+            try:
+                return devsite.ensure()
+            except OSError:
+                return ""
+        return ""
 
     def _trial_state(self) -> dict:
         server = self._trial_server()
@@ -640,6 +652,13 @@ class Api:
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "url": url, "trial": self._trial_state()}
 
+    def _claim_trial(self, server: str):
+        """Verify claims from the local dev site with its own key."""
+        public_key = None
+        if devsite.enabled() and server and server == devsite.url():
+            public_key = devsite.public_key()
+        return trial_license.claim_and_apply(server, public_key=public_key)
+
     def trial_poll(self) -> dict:
         server = self._trial_server()
         if not server:
@@ -652,7 +671,7 @@ class Api:
         if state != "granted":
             return {"ok": True, "granted": False, "status": state, "trial": self._trial_state()}
         try:
-            entitlement = trial_license.claim_and_apply(server)
+            entitlement = self._claim_trial(server)
         except (trial_license.TrialError, tool_license.ToolLicenseError, OSError) as exc:
             return {"ok": False, "error": str(exc), "trial": self._trial_state()}
         return {
