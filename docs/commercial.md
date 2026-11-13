@@ -87,7 +87,7 @@ python shield.py license activate --license customer-tool-license.json \
   --server https://license.example.com
 ```
 
-客户端把签名授权和本机指纹发送到 `/v1/activate`，服务端校验签名、到期、撤销和激活数量，返回绑定到该机器的授权。客户端保存到 `~/.pyshield/tool-license.json`（可用 `PYSHELD_TOOL_LICENSE` 覆盖）。
+客户端把签名授权和本机指纹发送到 `/v1/activate`，服务端校验签名、到期、撤销和激活数量，返回绑定到该机器的授权。客户端保存到 Windows 的 `%APPDATA%\PyShield\tool-license.json`（其他平台为 `~/.pyshield/tool-license.json`），可用 `PYSHELD_TOOL_LICENSE` 指定文件、`PYSHELD_HOME` 指定状态目录。
 
 ### 离线激活
 
@@ -147,10 +147,10 @@ python shield.py build -p . -o dist-ci --ci
 ## 5. 试用与配额
 
 - 未安装授权且已配置根公钥时进入试用模式。
-- 试用状态保存在 `~/.pyshield/trial.json`，使用机器指纹派生的 HMAC 保护。
+- 试用状态保存在状态目录（Windows 为 `%APPDATA%\PyShield`，其他平台为 `~/.pyshield`，可用 `PYSHELD_HOME` 覆盖）下的 `trial.json`，使用机器指纹派生的 HMAC 保护。
 - 试用默认 14 天、10 次构建，可用 `PYSHELD_TRIAL_DAYS`、`PYSHELD_TRIAL_BUILDS` 调整（仅用于测试和特殊交付）。
 - 试用构建的 `.pyshield-build.json` 写入 `tool_license.trial = true`，便于识别。
-- 正式授权的构建配额保存在 `~/.pyshield/quota.json`，按月重置。
+- 正式授权的构建配额保存在同一状态目录的 `quota.json`，按月重置；撤销列表保存在 `revocations.json`。
 - 试用状态和配额状态都经过机器指纹派生的 HMAC 校验，并在 Windows 上用 DPAPI 加密；手工编辑会失败关闭。
 - GNU/Linux 等平台没有 DPAPI，使用 `0600` 权限加 HMAC；它只能提高篡改成本，不能阻止 root 级攻击。
 

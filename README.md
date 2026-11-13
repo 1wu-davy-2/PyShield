@@ -97,7 +97,7 @@ PyShield 有两层完全不同的许可证，不要混用：
 
 | 层级 | 作用 | 文件 |
 | --- | --- | --- |
-| 工具授权 | 决定谁能使用 PyShield 构建、能用哪些功能、每月构建多少次 | `~/.pyshield/tool-license.json` |
+| 工具授权 | 决定谁能使用 PyShield 构建、能用哪些功能、每月构建多少次 | Windows `%APPDATA%\PyShield\tool-license.json`，其他平台 `~/.pyshield/tool-license.json` |
 | 产物授权 | 决定受保护程序能在哪台机器、运行到什么时候 | 输出目录下的 `pyshield.lic` |
 
 工具授权由授权方用离线根私钥签发，构建器只内置根公钥。未安装授权且已配置公钥时进入试用模式（默认 14 天、10 次构建，禁用原生 runtime 与产物签发）。
