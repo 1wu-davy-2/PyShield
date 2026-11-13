@@ -18,7 +18,7 @@ VSVersionInfo(
           StringStruct('FileDescription', 'PyShield 加密构建器'),
           StringStruct('FileVersion', '0.5.0'),
           StringStruct('InternalName', 'PyShieldBuilder'),
-          StringStruct('LegalCopyright', 'AGPL-3.0'),
+          StringStruct('LegalCopyright', 'Copyright (c) 2026 PyShield Authors. All rights reserved.'),
           StringStruct('OriginalFilename', 'PyShieldBuilder.exe'),
           StringStruct('ProductName', 'PyShield'),
           StringStruct('ProductVersion', '0.5.0')

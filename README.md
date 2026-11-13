@@ -6,7 +6,7 @@ PyShield 是一套自研的 Python / Django 源码保护工具。构建期把业
 
 - 执行手册：[docs/runbook.md](docs/runbook.md)
 - 实现思路：[docs/implementation.md](docs/implementation.md)
-- 许可证：[AGPL-3.0](LICENSE)
+- 许可证：[PyShield 商业软件许可协议](LICENSE)
 
 ## 特性
 
@@ -228,6 +228,10 @@ python shield.py issue --secret <output>.shield-secret.json -e 2027-12-31
 
 ## 许可证
 
-PyShield 以 **GNU Affero General Public License v3.0** 发布，完整条款见 [LICENSE](LICENSE)。
+PyShield 是商业专有软件，以 **PyShield Proprietary Software License Agreement** 授权，完整条款见 [LICENSE](LICENSE)。
 
-AGPL 包含“网络 Copyleft”条款：修改后的程序如果通过网络向用户提供服务，必须向这些用户提供对应的完整源代码。若你的使用场景无法满足 AGPL（例如闭源 SaaS 或商业分发），请先评估授权方案。
+软件按授权文件（许可证密钥或签名授权书）授予有限、非独占、不可转让的使用权；授权范围以版本、功能、席位、构建配额和期限为准。未经书面授权，不得反向工程、修改、再分发、出租、转售或将本软件作为服务提供给第三方。
+
+受保护产物中被许可方自己的代码归被许可方所有；产物内嵌的 PyShield 运行时允许随该产物一并分发，但不得单独提取或用于构建竞争产品。
+
+历史上以 AGPL-3.0 发布的版本，其已经取得的权利不受本次授权变更影响；新版本以本仓库 [LICENSE](LICENSE) 为准。商业授权、OEM 合作、离线激活与企业版采购，请通过官方仓库或授权渠道联系。
