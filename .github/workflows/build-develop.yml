@@ -1,0 +1,265 @@
+name: build-develop
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+concurrency:
+  group: build-develop-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: utf-8
+  RELEASE_TAG: ci-develop-latest
+
+jobs:
+  test:
+    name: Unit tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install cryptography
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
+  windows:
+    name: Windows single-file builder
+    runs-on: windows-latest
+    timeout-minutes: 45
+    needs: test
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pywebview==6.2.1 pythonnet==3.2.1 pyinstaller==6.22.3 cryptography
+
+      - name: Build PyShieldBuilder.exe
+        run: python -m PyInstaller --noconfirm --clean PyShieldBuilder.spec
+
+      - name: Inspect and checksum
+        shell: pwsh
+        run: |
+          $exe = Get-Item .\dist\PyShieldBuilder.exe
+          $expected = python -c "import pyshield; print(pyshield.__version__)"
+          $actual = $exe.VersionInfo.ProductVersion
+          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
+          $size = [math]::Round($exe.Length / 1MB, 1)
+          Write-Host "file=$($exe.Name) version=$actual expected=$expected size=${size}MB"
+          Write-Host "sha256=$hash"
+          if ($actual -ne $expected) { throw "version mismatch: $actual vs $expected" }
+          @(
+            "### Windows builder",
+            "",
+            "- file: PyShieldBuilder.exe",
+            "- version: $actual",
+            "- size: $size MB",
+            "- sha256: ``$hash``"
+          ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          "$hash  PyShieldBuilder.exe" | Out-File -FilePath dist\SHA256SUMS-windows.txt -Encoding utf8
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: PyShieldBuilder-windows-x64
+          path: |
+            dist/PyShieldBuilder.exe
+            dist/SHA256SUMS-windows.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  linux:
+    name: Linux single-file builder
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    needs: test
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install GTK/WebKit runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            python3-gi python3-venv \
+            gir1.2-gtk-3.0 gir1.2-webkit2-4.1 gir1.2-soup-3.0 \
+            xvfb
+
+      - name: Create build environment
+        run: |
+          python3 -m venv --system-site-packages .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install pywebview==6.2.1 pyinstaller==6.22.3 cryptography
+
+      - name: Verify GTK/WebKit bindings
+        run: |
+          .venv/bin/python - <<'PY'
+          import gi
+          gi.require_version("Gtk", "3.0")
+          gi.require_version("WebKit2", "4.1")
+          from gi.repository import Gtk, WebKit2
+          print("GTK", Gtk.get_major_version(), Gtk.get_minor_version())
+          print("WebKit2", WebKit2.get_major_version(), WebKit2.get_minor_version())
+          PY
+
+      - name: Build PyShieldBuilder
+        run: .venv/bin/python -m PyInstaller --noconfirm --clean PyShieldBuilder.spec
+
+      - name: Smoke test under Xvfb
+        continue-on-error: true
+        run: |
+          set +e
+          WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1 \
+          WEBKIT_DISABLE_COMPOSITING_MODE=1 \
+            xvfb-run -a timeout 25s ./dist/PyShieldBuilder > smoke.log 2>&1
+          code=$?
+          cat smoke.log
+          if [ "$code" -ne 124 ]; then
+            echo "GUI exited before the timeout (exit $code)"
+            exit 1
+          fi
+          echo "GUI stayed up for 25s"
+
+      - name: Checksum
+        run: |
+          test -x dist/PyShieldBuilder
+          file dist/PyShieldBuilder
+          du -h dist/PyShieldBuilder
+          sha256sum dist/PyShieldBuilder | tee dist/SHA256SUMS-linux.txt
+          {
+            echo "### Linux builder"
+            echo ""
+            echo "- file: PyShieldBuilder"
+            echo "- size: $(du -h dist/PyShieldBuilder | cut -f1)"
+            echo "- sha256: \`$(sha256sum dist/PyShieldBuilder | cut -d' ' -f1)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: PyShieldBuilder-linux-x64
+          path: |
+            dist/PyShieldBuilder
+            dist/SHA256SUMS-linux.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  selfcheck:
+    name: Protected Django demo
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: test
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install Django
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install django
+          python -c "import django; print('django', django.get_version())"
+
+      - name: Crypto selftest
+        run: python shield.py selftest
+
+      - name: Create demo project
+        run: django-admin startproject demo
+
+      - name: Protect the demo project
+        run: python shield.py build -p demo -o dist-demo --cipher chacha-pure
+
+      - name: Verify the protected output
+        run: |
+          cd dist-demo
+          python -m _shield_runtime verify
+          python -m _shield_runtime status --json
+          python manage.py check
+          cd ..
+
+      - name: Show what changed
+        run: |
+          echo "--- protected stub (manage.py) ---"
+          head -n 12 dist-demo/manage.py
+          echo "--- plaintext leak check ---"
+          if grep -rq "SECRET_KEY" dist-demo --include=*.py; then
+            echo "plaintext settings found"; exit 1
+          fi
+          echo "no plaintext settings"
+          echo "--- output tree ---"
+          find dist-demo -maxdepth 2 -type f | sort | head -40
+          echo "--- sizes ---"
+          du -sh dist-demo dist-demo/_shield_runtime
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: protected-demo
+          path: dist-demo
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish CI snapshot
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: [windows, linux, selfcheck]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: artifacts
+
+      - name: Collect assets
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          cp artifacts/PyShieldBuilder-windows-x64/PyShieldBuilder.exe release/
+          cp artifacts/PyShieldBuilder-linux-x64/PyShieldBuilder release/
+          chmod +x release/PyShieldBuilder
+          if [ -d artifacts/protected-demo ]; then
+            python -c "import shutil; shutil.make_archive('release/protected-demo', 'zip', 'artifacts/protected-demo')"
+          fi
+          cd release
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          ls -lh
+
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          NOTES="自动构建快照，每次推送到 develop 都会覆盖这些资产，不是正式发布版本。"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release/* --clobber
+          else
+            gh release create "$RELEASE_TAG" release/* \
+              --target "$GITHUB_SHA" \
+              --title "CI snapshot · develop" \
+              --notes "$NOTES"
+          fi
+          gh release view "$RELEASE_TAG" --json assets --jq '.assets[] | "\(.name) \(.size) bytes"'
