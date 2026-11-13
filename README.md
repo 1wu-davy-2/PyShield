@@ -91,6 +91,35 @@ python -m venv .venv
 
 详见[桌面构建器文档](docs/desktop-builder.md)。桌面版内置 CPython 3.12 与全部界面资源，产物仍需部署在 CPython 3.12.x 上。
 
+## 工具授权（商业许可）
+
+PyShield 有两层完全不同的许可证，不要混用：
+
+| 层级 | 作用 | 文件 |
+| --- | --- | --- |
+| 工具授权 | 决定谁能使用 PyShield 构建、能用哪些功能、每月构建多少次 | `~/.pyshield/tool-license.json` |
+| 产物授权 | 决定受保护程序能在哪台机器、运行到什么时候 | 输出目录下的 `pyshield.lic` |
+
+工具授权由授权方用离线根私钥签发，构建器只内置根公钥。未安装授权且已配置公钥时进入试用模式（默认 14 天、10 次构建，禁用原生 runtime 与产物签发）。
+
+```bash
+python shield.py license status          # 查看授权、功能、配额与到期状态
+python shield.py license install --license customer-tool-license.json
+python shield.py license activate --license customer-tool-license.json --server https://license.example.com
+python shield.py license request --license customer-tool-license.json --out activation-request.json
+python shield.py license apply --response activation-response.json
+python shield.py license heartbeat --server https://license.example.com
+python shield.py license revocations --server https://license.example.com
+python shield.py license deactivate
+```
+
+- 桌面构建器在“设置”页提供同样的授权导入、在线/离线激活、心跳与撤销更新；
+- CI 节点的构建应显式加 `--ci`（要求授权包含 `ci` 功能），不要复用开发者的交互式授权；
+- 开发仓库默认进入开发模式（不限制构建）；一旦注入了公钥，本地调试需设置 `PYSHELD_DEV=1`；
+- 商业发布包用 `python tools/build_commercial.py build --public-key root.pub --backend nuitka` 构建并注入公钥；根私钥必须离线保存，绝不能进入安装包或版本控制。
+
+授权模型、版本划分、激活流程、密钥管理与发布检查清单见[商业授权与交付](docs/commercial.md)。
+
 ## 常用命令
 
 | 命令 | 作用 |
@@ -224,6 +253,7 @@ python shield.py issue --secret <output>.shield-secret.json -e 2027-12-31
 
 - [执行手册](docs/runbook.md)：构建、部署、许可证、更新与故障排查
 - [桌面构建器](docs/desktop-builder.md)：exe 使用、打包、内置资源与部署约束
+- [商业授权与交付](docs/commercial.md)：工具授权、版本与功能、激活、配额与水印、商业构建
 - [实现思路](docs/implementation.md)：密钥体系、信封格式、运行时加载与设计取舍
 
 ## 许可证

@@ -16,12 +16,12 @@ VSVersionInfo(
         [
           StringStruct('CompanyName', 'PyShield'),
           StringStruct('FileDescription', 'PyShield 加密构建器'),
-          StringStruct('FileVersion', '0.5.0'),
+          StringStruct('FileVersion', '0.6.0'),
           StringStruct('InternalName', 'PyShieldBuilder'),
           StringStruct('LegalCopyright', 'Copyright (c) 2026 PyShield Authors. All rights reserved.'),
           StringStruct('OriginalFilename', 'PyShieldBuilder.exe'),
           StringStruct('ProductName', 'PyShield'),
-          StringStruct('ProductVersion', '0.5.0')
+          StringStruct('ProductVersion', '0.6.0')
         ]
       )
     ]),

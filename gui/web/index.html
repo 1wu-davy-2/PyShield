@@ -96,6 +96,10 @@
           <p id="pageSubtitle">选择项目目录，配置保护参数，一键生成可部署的受保护副本。</p>
         </div>
         <div class="topbar-actions">
+          <button class="license-pill" id="licensePill" title="查看工具授权状态">
+            <svg class="icon"><use href="#i-key"/></svg>
+            <span id="licensePillText">授权检测中</span>
+          </button>
           <button class="icon-btn" id="refreshBtn" title="重新检测环境">
             <svg class="icon"><use href="#i-refresh"/></svg>
           </button>
@@ -513,6 +517,44 @@
         </section>
 
         <section class="view" id="view-settings" hidden>
+          <section class="card license-card" id="licenseCard">
+            <header class="card-head">
+              <div>
+                <h2>工具授权</h2>
+                <p>PyShield 构建器本身的商业授权，与受保护产物无关</p>
+              </div>
+              <span class="status-badge" id="licenseBadge">检测中</span>
+            </header>
+            <div class="license-layout">
+              <div class="license-main">
+                <p class="license-reason" id="licenseReason">正在读取授权状态…</p>
+                <dl class="info-list">
+                  <div><dt>授权版本</dt><dd id="licenseEdition">—</dd></div>
+                  <div><dt>客户</dt><dd id="licenseCustomer">—</dd></div>
+                  <div><dt>授权编号</dt><dd class="mono" id="licenseId">—</dd></div>
+                  <div><dt>到期时间</dt><dd id="licenseExpires">—</dd></div>
+                  <div><dt>构建配额</dt><dd id="licenseQuota">—</dd></div>
+                  <div><dt>本机指纹</dt><dd class="mono" id="licenseMachine">—</dd></div>
+                </dl>
+                <div class="field">
+                  <label for="licenseServer">激活服务器</label>
+                  <div class="input-shell">
+                    <input id="licenseServer" type="text" placeholder="https://license.example.com" spellcheck="false">
+                  </div>
+                  <p class="field-hint">在线激活与心跳校验使用该地址；纯离线客户可留空。</p>
+                </div>
+              </div>
+              <div class="license-actions">
+                <button class="btn secondary" id="licenseInstall">导入授权文件</button>
+                <button class="btn secondary" id="licenseActivate">在线激活</button>
+                <button class="btn secondary" id="licenseRequest">生成离线请求</button>
+                <button class="btn secondary" id="licenseApply">应用离线响应</button>
+                <button class="btn secondary" id="licenseHeartbeat">心跳校验</button>
+                <button class="btn secondary" id="licenseRevocations">同步撤销列表</button>
+                <button class="btn ghost danger-text" id="licenseDeactivate">解除本机授权</button>
+              </div>
+            </div>
+          </section>
           <div class="settings-grid">
             <section class="card">
               <header class="card-head">

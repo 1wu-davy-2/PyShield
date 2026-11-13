@@ -25,6 +25,9 @@ else:
         "webview.platforms.gtk",
     ]
 
+if (ROOT / "pyshield" / "_tool_key.py").is_file():
+    hiddenimports.append("pyshield._tool_key")
+
 excludes = [
     "tkinter",
     "PyQt5",

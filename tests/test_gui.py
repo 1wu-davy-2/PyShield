@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import time
 import unittest
@@ -10,7 +11,7 @@ from unittest import mock
 
 from gui import core
 from gui.backend import Api, BuildManager
-from pyshield import licensing
+from pyshield import crypto, license_admin, licensing, tool_license
 from tests.test_builder import make_project
 
 
@@ -209,7 +210,12 @@ class BuildManagerTests(unittest.TestCase):
         self.project.mkdir()
         make_project(self.project)
         self.patch = mock.patch.dict(
-            "os.environ", {core.CONFIG_ENV: str(self.root / "config")}
+            "os.environ",
+            {
+                core.CONFIG_ENV: str(self.root / "config"),
+                tool_license.ENV_HOME: str(self.root / "license"),
+                tool_license.ENV_DEV: "1",
+            },
         )
         self.patch.start()
         self.manager = BuildManager()
@@ -246,6 +252,8 @@ class BuildManagerTests(unittest.TestCase):
         self.assertEqual(summary["cipher"], "chacha-pure")
         self.assertEqual(summary["integrity"], "protected")
         self.assertEqual(summary["output"], str(self.root / "project-shielded"))
+        self.assertEqual(summary["tool_mode"], "development")
+        self.assertEqual(summary["tool_license"]["license_id"], "development")
         self.assertTrue(Path(summary["output"], "pyshield.lic").is_file())
         self.assertTrue(Path(summary["secret"]).is_file())
         self.assertGreater(summary["size"], 0)
@@ -256,6 +264,7 @@ class BuildManagerTests(unittest.TestCase):
         self.assertEqual(history[0]["status"], "success")
         self.assertEqual(history[0]["cipher"], "chacha-pure")
         self.assertEqual(history[0]["output"], str(self.root / "project-shielded"))
+        self.assertEqual(history[0]["tool_mode"], "development")
 
     def test_build_first_run_binding(self) -> None:
         request = core.BuildRequest.from_payload({
@@ -276,6 +285,33 @@ class BuildManagerTests(unittest.TestCase):
         self.assertEqual(secret["bind_mode"], "first-run")
         self.assertEqual(secret["fingerprints"], [])
         self.assertEqual(core.load_history()[0]["binding"], "first-run")
+
+    def test_build_rejected_when_trial_is_exhausted(self) -> None:
+        _, _, public_key = license_admin.generate_root(self.root / "keys")
+        with mock.patch.dict(
+            "os.environ",
+            {
+                tool_license.ENV_PUBLIC_KEY: crypto.b85encode(public_key),
+                tool_license.ENV_HOME: str(self.root / "exhausted-home"),
+                tool_license.ENV_TRIAL_BUILDS: "1",
+            },
+        ):
+            os.environ.pop(tool_license.ENV_DEV, None)
+            status = tool_license.check()
+            self.assertEqual(status.mode, "trial")
+            tool_license.record_build(status)
+
+            request = core.BuildRequest.from_payload({
+                "project": str(self.project),
+                "cipher": "chacha-pure",
+                "runtime": "pyc",
+                "no_verify": True,
+            })
+            start = self.manager.start(request, core.load_settings())
+        self.assertFalse(start["ok"])
+        self.assertIn("工具授权不可用", start["errors"][0])
+        self.assertEqual(start["license"]["mode"], "invalid")
+        self.assertEqual(self.manager.snapshot()["status"], "idle")
 
     def test_rejects_invalid_request(self) -> None:
         request = core.BuildRequest.from_payload({
@@ -300,7 +336,12 @@ class ApiTests(unittest.TestCase):
         self.project.mkdir()
         make_project(self.project)
         self.patch = mock.patch.dict(
-            "os.environ", {core.CONFIG_ENV: str(self.root / "config")}
+            "os.environ",
+            {
+                core.CONFIG_ENV: str(self.root / "config"),
+                tool_license.ENV_HOME: str(self.root / "license"),
+                tool_license.ENV_DEV: "1",
+            },
         )
         self.patch.start()
         self.api = Api()
@@ -314,6 +355,7 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(boot["ok"])
         self.assertEqual(boot["app"]["title"], core.APP_TITLE)
         self.assertIn("machine", boot)
+        self.assertEqual(boot["license"]["mode"], "development")
         self.assertEqual(boot["state"]["status"], "idle")
         self.assertEqual(boot["defaults"]["cipher"], core.DEFAULT_CIPHER)
 

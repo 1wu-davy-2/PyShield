@@ -311,6 +311,11 @@ def _signing_message(prefix: bytes, payload: dict) -> bytes:
     return prefix + data
 
 
+def signed_message(prefix: bytes, payload: dict) -> bytes:
+    """Build the canonical, domain-separated message used by signed documents."""
+    return _signing_message(prefix, payload)
+
+
 def license_signing_message(payload: dict) -> bytes:
     return _signing_message(LICENSE_SIGNATURE_PREFIX, payload)
 

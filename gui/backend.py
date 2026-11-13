@@ -15,7 +15,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from pyshield import __version__, builder, fingerprint
+from pyshield import __version__, activation, builder, fingerprint, tool_license
 
 from . import core
 
@@ -90,6 +90,15 @@ class BuildManager:
         if errors:
             return {"ok": False, "errors": errors}
 
+        try:
+            license_status = tool_license.require(features=[tool_license.FEATURE_GUI])
+        except tool_license.ToolLicenseError as exc:
+            return {
+                "ok": False,
+                "errors": [f"工具授权不可用：{exc}"],
+                "license": tool_license.status_dict(),
+            }
+
         options = builder.BuildOptions(
             project=str(Path(request.project).expanduser().resolve()),
             output=str(Path(request.output).expanduser().resolve()),
@@ -111,6 +120,7 @@ class BuildManager:
             cancel=threading.Event(),
             progress=self._on_progress,
             log_sink=self._on_log,
+            tool_info=license_status.watermark(),
         )
 
         with self._lock:
@@ -127,7 +137,7 @@ class BuildManager:
             f"{core.EMBEDDED_PYTHON_MINOR}.x 小版本上"
         )
         self._thread = threading.Thread(
-            target=self._run, args=(options, request, verify_python), daemon=True,
+            target=self._run, args=(options, request, verify_python, license_status), daemon=True,
         )
         self._thread.start()
         return {"ok": True, "verify_python": verify_python, "note": verify_note}
@@ -141,7 +151,13 @@ class BuildManager:
         self._on_log("收到取消请求，正在安全停止…")
         return {"ok": True}
 
-    def _run(self, options: builder.BuildOptions, request: core.BuildRequest, verify_python: str | None) -> None:
+    def _run(
+        self,
+        options: builder.BuildOptions,
+        request: core.BuildRequest,
+        verify_python: str | None,
+        license_status: tool_license.ToolLicenseStatus,
+    ) -> None:
         try:
             result = builder.build(options)
         except builder.BuildCancelled:
@@ -149,7 +165,13 @@ class BuildManager:
         except Exception as exc:
             self._finish("failed", None, str(exc), request)
         else:
-            summary = self._summary(result, request)
+            try:
+                tool_license.record_build(license_status)
+            except (tool_license.ToolLicenseError, OSError) as exc:
+                self._finish("failed", None, f"构建已完成，但无法记录授权配额：{exc}", request)
+                return
+            builder.update_tool_info(result.output, license_status.watermark())
+            summary = self._summary(result, request, license_status)
             self._finish("success", summary, None, request)
         finally:
             with self._lock:
@@ -157,19 +179,6 @@ class BuildManager:
 
     def _finish(self, status: str, summary: dict | None, error: str | None, request: core.BuildRequest) -> None:
         finished = datetime.now().isoformat(timespec="seconds")
-        with self._lock:
-            self._state["status"] = status
-            self._state["finished"] = finished
-            self._state["error"] = error
-            self._state["summary"] = summary
-            if summary:
-                self._state["output"] = summary.get("output")
-                self._state["secret"] = summary.get("secret")
-            if status == "success":
-                self._state["percent"] = 100
-                self._state["stage"] = "done"
-                self._state["stage_label"] = "构建完成"
-
         entry = {
             "id": datetime.now().strftime("%Y%m%d%H%M%S%f"),
             "created": finished,
@@ -189,6 +198,8 @@ class BuildManager:
             "expires": (summary or {}).get("expires"),
             "binding": request.bind_mode,
             "customer": request.customer or None,
+            "tool_mode": (summary or {}).get("tool_mode"),
+            "tool_license": (summary or {}).get("tool_license"),
             "error": error,
         }
         history = core.load_history()
@@ -198,7 +209,25 @@ class BuildManager:
         except OSError:
             pass
 
-    def _summary(self, result: builder.BuildResult, request: core.BuildRequest) -> dict:
+        with self._lock:
+            self._state["status"] = status
+            self._state["finished"] = finished
+            self._state["error"] = error
+            self._state["summary"] = summary
+            if summary:
+                self._state["output"] = summary.get("output")
+                self._state["secret"] = summary.get("secret")
+            if status == "success":
+                self._state["percent"] = 100
+                self._state["stage"] = "done"
+                self._state["stage_label"] = "构建完成"
+
+    def _summary(
+        self,
+        result: builder.BuildResult,
+        request: core.BuildRequest,
+        license_status: tool_license.ToolLicenseStatus,
+    ) -> dict:
         expires = request.expire_value() or "永久"
         return {
             "project": str(Path(request.project).expanduser().resolve()),
@@ -216,6 +245,8 @@ class BuildManager:
             "expires": expires,
             "binding": request.bind_mode,
             "customer": request.customer or None,
+            "tool_mode": license_status.mode,
+            "tool_license": license_status.watermark(),
         }
 
     def _pick_verify_python(self, request: core.BuildRequest, settings: dict) -> tuple[str | None, str]:
@@ -303,6 +334,7 @@ class Api:
             "settings": settings,
             "history": history,
             "machine": machine,
+            "license": self._license_status(),
             "state": self.manager.snapshot(),
         }
 
@@ -440,6 +472,107 @@ class Api:
     def fingerprint(self) -> dict:
         return {"ok": True, "machine": self._machine()}
 
+    def license_status(self) -> dict:
+        heartbeat = None
+        try:
+            heartbeat = activation.read_heartbeat()
+        except activation.ActivationError:
+            heartbeat = None
+        return {
+            "ok": True,
+            "license": self._license_status(),
+            "heartbeat": heartbeat,
+            "server": self._activation_server(),
+        }
+
+    def browse_license(self) -> dict:
+        path = self._dialog(self._open_dialog(("PyShield 授权文件 (*.json)", "所有文件 (*.*)")))
+        if not path:
+            return {"ok": False, "cancelled": True}
+        return {"ok": True, "path": path}
+
+    def license_install(self, path: str = "") -> dict:
+        if not str(path).strip():
+            return {"ok": False, "error": "请选择授权文件。"}
+        try:
+            entitlement = activation.install_license(path)
+        except (activation.ActivationError, tool_license.ToolLicenseError, OSError) as exc:
+            return {"ok": False, "error": str(exc), "license": self._license_status()}
+        return {
+            "ok": True,
+            "license": tool_license.check().to_dict(),
+            "license_id": entitlement.license_id,
+        }
+
+    def license_activate(self, path: str = "", server: str = "") -> dict:
+        if not str(path).strip():
+            return {"ok": False, "error": "请选择待激活的授权文件。"}
+        target = str(server or "").strip() or self._activation_server()
+        if not target:
+            return {"ok": False, "error": "请先填写激活服务器地址。"}
+        try:
+            entitlement = activation.activate(path, server=target)
+        except (activation.ActivationError, tool_license.ToolLicenseError, OSError) as exc:
+            return {"ok": False, "error": str(exc), "license": self._license_status()}
+        return {
+            "ok": True,
+            "license": tool_license.check().to_dict(),
+            "license_id": entitlement.license_id,
+            "server": target,
+        }
+
+    def license_request(self, path: str = "", out: str = "") -> dict:
+        if not str(path).strip():
+            return {"ok": False, "error": "请选择待激活的授权文件。"}
+        target_out = str(out or "").strip()
+        if not target_out:
+            target_out = str(core.config_dir() / "activation-request.json")
+        try:
+            saved = activation.create_offline_request(path, target_out)
+        except (activation.ActivationError, tool_license.ToolLicenseError, OSError) as exc:
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "path": str(saved)}
+
+    def license_apply(self, path: str = "") -> dict:
+        if not str(path).strip():
+            return {"ok": False, "error": "请选择激活响应文件。"}
+        try:
+            entitlement = activation.apply_offline_response(path)
+        except (activation.ActivationError, tool_license.ToolLicenseError, OSError) as exc:
+            return {"ok": False, "error": str(exc), "license": self._license_status()}
+        return {
+            "ok": True,
+            "license": tool_license.check().to_dict(),
+            "license_id": entitlement.license_id,
+        }
+
+    def license_deactivate(self) -> dict:
+        try:
+            removed = activation.deactivate()
+        except OSError as exc:
+            return {"ok": False, "error": f"无法移除本机授权：{exc}"}
+        return {"ok": True, "removed": removed, "license": self._license_status()}
+
+    def license_heartbeat(self) -> dict:
+        status = tool_license.check()
+        if not status.valid or status.entitlement is None:
+            return {"ok": False, "error": "当前授权不支持心跳（开发模式、试用或无效授权）。"}
+        used = int((status.quota or {}).get("used", 0))
+        try:
+            payload = activation.heartbeat(
+                status.entitlement, server=self._activation_server(), used_builds=used,
+            )
+        except (activation.ActivationError, tool_license.ToolLicenseError, OSError) as exc:
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "heartbeat": payload, "license": self._license_status()}
+
+    def license_revocations(self) -> dict:
+        try:
+            revoked = activation.fetch_revocations(server=self._activation_server())
+        except (activation.ActivationError, tool_license.ToolLicenseError, OSError) as exc:
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "revoked": revoked, "license": self._license_status()}
+
     def start_build(self, payload: dict | None = None) -> dict:
         request = core.BuildRequest.from_payload(payload)
         settings = core.load_settings()
@@ -501,6 +634,47 @@ class Api:
             return ""
         path = result[0] if isinstance(result, (list, tuple)) else result
         return str(path)
+
+    @staticmethod
+    def _license_status() -> dict:
+        try:
+            return tool_license.status_dict()
+        except Exception as exc:  # pragma: no cover - defensive for GUI bootstrap
+            return {
+                "mode": "invalid",
+                "valid": False,
+                "reason": f"无法读取工具授权：{exc}",
+                "machine": "",
+                "license_path": "",
+                "public_key_configured": False,
+                "license_id": None,
+                "customer": None,
+                "edition": None,
+                "features": [],
+                "expires": None,
+                "grace_days": 0,
+                "trial": None,
+                "quota": None,
+                "checked": "",
+            }
+
+    @staticmethod
+    def _activation_server() -> str:
+        settings = core.load_settings()
+        return str(settings.get("activation_server") or "").strip() or activation.default_server()
+
+    def _open_dialog(self, file_types, start: str = ""):
+        try:
+            import webview
+        except ImportError:
+            return None
+        window = self._window or (webview.windows[0] if webview.windows else None)
+        if window is None:
+            return None
+        kwargs = {"file_types": file_types}
+        if start and Path(start).is_dir():
+            kwargs["directory"] = start
+        return window.create_file_dialog(webview.OPEN_DIALOG, **kwargs)
 
     def _folder_dialog(self, start: str = ""):
         try:

@@ -63,6 +63,21 @@
     inspectSeq: 0,
     maximized: false,
     preview: new URLSearchParams(location.search).get("preview") === "1",
+    license: null,
+  };
+
+  const LICENSE_MODE_LABELS = {
+    development: "开发模式",
+    trial: "试用版",
+    licensed: "正式授权",
+    invalid: "授权异常",
+  };
+  const EDITION_LABELS = {
+    trial: "试用版",
+    pro: "专业版",
+    enterprise: "企业版",
+    oem: "OEM 版",
+    development: "开发模式",
   };
 
   // ---------------------------------------------------------------- bridge
@@ -784,6 +799,7 @@
     $("#settingSuffix").value = settings.output_suffix || "-shielded";
     $("#settingAutoPython").checked = settings.auto_detect_python !== false;
     $("#settingNoVerify").checked = settings.no_verify === true;
+    $("#licenseServer").value = settings.activation_server || "";
   }
 
   async function saveSettings() {
@@ -794,6 +810,7 @@
       output_suffix: $("#settingSuffix").value.trim(),
       auto_detect_python: $("#settingAutoPython").checked,
       no_verify: $("#settingNoVerify").checked,
+      activation_server: $("#licenseServer").value.trim(),
     };
     const response = await call("save_settings", payload);
     if (!response.ok) {
@@ -809,6 +826,176 @@
     syncSecretPreview();
     syncSummary();
     toast("默认设置已保存", "success");
+  }
+
+  // ---------------------------------------------------------------- licensing
+
+  function licenseQuotaText(license) {
+    if (!license) return "—";
+    if (license.quota && license.quota.limit) {
+      return `${license.quota.used || 0} / ${license.quota.limit} 次每月`;
+    }
+    if (license.mode === "trial") {
+      const trial = license.trial || {};
+      return `${trial.builds || 0} / ${trial.max_builds || 0} 次试用`;
+    }
+    if (license.mode === "licensed") return "不限";
+    return "—";
+  }
+
+  function licenseExpiryText(license) {
+    if (!license) return "—";
+    if (license.mode === "trial") {
+      const days = (license.trial || {}).days_left;
+      return days == null ? "—" : `剩余 ${days} 天`;
+    }
+    if (license.mode === "licensed") {
+      return license.expires ? `${license.expires}（宽限 ${license.grace_days || 0} 天）` : "永久";
+    }
+    return "—";
+  }
+
+  function renderLicense(license) {
+    const data = license || { mode: "invalid", valid: false, reason: "尚未读取授权状态" };
+    state.license = data;
+    const mode = data.mode || "invalid";
+    const tone = !data.valid ? "danger" : mode === "licensed" ? "success" : "warning";
+    const pill = $("#licensePill");
+    const pillText = $("#licensePillText");
+    pill.classList.remove("is-success", "is-warning", "is-danger");
+    pill.classList.add(`is-${tone}`);
+    const editionLabel = EDITION_LABELS[data.edition] || LICENSE_MODE_LABELS[mode] || "未知";
+    if (mode === "licensed") {
+      pillText.textContent = editionLabel;
+    } else if (mode === "trial") {
+      const days = (data.trial || {}).days_left;
+      pillText.textContent = days == null ? "试用版" : `试用 · ${days} 天`;
+    } else {
+      pillText.textContent = LICENSE_MODE_LABELS[mode] || "授权异常";
+    }
+    pill.title = data.reason || "查看工具授权状态";
+
+    const badge = $("#licenseBadge");
+    badge.className = `status-badge ${data.valid ? (mode === "licensed" ? "success" : "warning") : "danger"}`;
+    badge.textContent = LICENSE_MODE_LABELS[mode] || "未知状态";
+
+    $("#licenseReason").textContent = data.reason || "—";
+    $("#licenseEdition").textContent = editionLabel;
+    $("#licenseCustomer").textContent = data.customer || "—";
+    $("#licenseId").textContent = data.license_id || "—";
+    $("#licenseExpires").textContent = licenseExpiryText(data);
+    $("#licenseQuota").textContent = licenseQuotaText(data);
+    $("#licenseMachine").textContent = data.machine || state.machine || "—";
+  }
+
+  async function refreshLicense() {
+    const response = await call("license_status");
+    if (!response.ok) {
+      renderLicense(response.license || null);
+      return;
+    }
+    renderLicense(response.license);
+    if (response.server && !$("#licenseServer").value.trim()) {
+      $("#licenseServer").value = response.server;
+    }
+  }
+
+  async function pickLicenseFile() {
+    const picked = await call("browse_license");
+    if (!picked || !picked.ok) {
+      if (picked && picked.error) toast(picked.error, "error");
+      return "";
+    }
+    return picked.path;
+  }
+
+  async function persistLicenseServer() {
+    const server = $("#licenseServer").value.trim().replace(/\/+$/, "");
+    $("#licenseServer").value = server;
+    if (((state.settings || {}).activation_server || "") === server) return server;
+    const response = await call("save_settings", {
+      ...(state.settings || {}),
+      activation_server: server,
+    });
+    if (response.ok) state.settings = response.settings;
+    return server;
+  }
+
+  function applyLicenseResponse(response, message) {
+    if (!response.ok) {
+      toast(response.error || "授权操作失败", "error");
+      if (response.license) renderLicense(response.license);
+      return false;
+    }
+    if (response.license) renderLicense(response.license);
+    toast(message, "success");
+    return true;
+  }
+
+  async function licenseInstall() {
+    const path = await pickLicenseFile();
+    if (!path) return;
+    const response = await call("license_install", path);
+    if (applyLicenseResponse(response, "授权文件已导入")) await refreshLicense();
+  }
+
+  async function licenseActivate() {
+    const server = await persistLicenseServer();
+    if (!server) {
+      toast("请先填写激活服务器地址", "error");
+      $("#licenseServer").focus();
+      return;
+    }
+    const path = await pickLicenseFile();
+    if (!path) return;
+    const response = await call("license_activate", path, server);
+    if (applyLicenseResponse(response, "已在线激活并绑定本机")) await refreshLicense();
+  }
+
+  async function licenseRequest() {
+    const path = await pickLicenseFile();
+    if (!path) return;
+    const response = await call("license_request", path);
+    if (!applyLicenseResponse(response, "离线激活请求已生成")) return;
+    toast(`请求文件：${response.path}`, "success");
+    await reveal(response.path);
+  }
+
+  async function licenseApply() {
+    const path = await pickLicenseFile();
+    if (!path) return;
+    const response = await call("license_apply", path);
+    if (applyLicenseResponse(response, "离线激活响应已应用")) await refreshLicense();
+  }
+
+  async function licenseHeartbeat() {
+    const server = await persistLicenseServer();
+    if (!server) {
+      toast("请先填写激活服务器地址", "error");
+      $("#licenseServer").focus();
+      return;
+    }
+    const response = await call("license_heartbeat");
+    if (applyLicenseResponse(response, "心跳校验通过")) await refreshLicense();
+  }
+
+  async function licenseRevocations() {
+    const server = await persistLicenseServer();
+    if (!server) {
+      toast("请先填写激活服务器地址", "error");
+      $("#licenseServer").focus();
+      return;
+    }
+    const response = await call("license_revocations");
+    if (!applyLicenseResponse(response, "撤销列表已同步")) return;
+    toast(`已同步 ${response.revoked || 0} 条撤销记录`, "success");
+    await refreshLicense();
+  }
+
+  async function licenseDeactivate() {
+    if (!window.confirm("解除本机授权后将删除本机保存的授权文件，确定继续？")) return;
+    const response = await call("license_deactivate");
+    if (applyLicenseResponse(response, "本机授权已解除")) await refreshLicense();
   }
 
   // ---------------------------------------------------------------- navigation
@@ -827,7 +1014,10 @@
     $("#pageSubtitle").textContent = meta.subtitle;
     $("#pagePill").textContent = meta.pill;
     if (view === "history") refreshHistory();
-    if (view === "settings") syncSettingsForm();
+    if (view === "settings") {
+      syncSettingsForm();
+      refreshLicense();
+    }
     $(".content").scrollTop = 0;
   }
 
@@ -912,6 +1102,7 @@
     state.settings = response.settings;
     state.machine = response.machine || "";
     $("#machineFingerprint").value = state.machine;
+    renderLicense(response.license || null);
     applyDefaultsToForm();
     fillAbout();
     renderHistory(response.history || []);
@@ -1009,7 +1200,7 @@
         ok: true,
         app: {
           title: "PyShield 加密构建器",
-          version: "0.5.0",
+          version: "0.6.0",
           python: "3.12.0",
           python_minor: "3.12",
           config_dir: "C:\\Users\\demo\\AppData\\Roaming\\PyShieldBuilder",
@@ -1030,11 +1221,70 @@
           output_suffix: "-shielded",
           auto_detect_python: true,
           no_verify: false,
+          activation_server: "",
         },
         history,
         machine: "9f3c1a72b0d84e51c4a201e57d8b16a3",
+        license: {
+          mode: "licensed",
+          valid: true,
+          reason: "valid; 41 builds left this month",
+          machine: "9f3c1a72b0d84e51c4a201e57d8b16a3",
+          license_path: "C:\\Users\\demo\\AppData\\Roaming\\PyShield\\tool-license.json",
+          public_key_configured: true,
+          license_id: "PS-2026-0042",
+          customer: "Acme Software",
+          edition: "pro",
+          features: ["gui", "offline-activation"],
+          expires: "2027-11-13",
+          grace_days: 14,
+          trial: null,
+          quota: { used: 9, limit: 50 },
+          checked: new Date().toISOString(),
+        },
         state: { status: "idle", percent: 0, logs: [] },
       });
+    }
+    if (name === "license_status") {
+      return Promise.resolve({
+        ok: true,
+        server: "",
+        license: {
+          mode: "licensed",
+          valid: true,
+          reason: "valid; 41 builds left this month",
+          machine: "9f3c1a72b0d84e51c4a201e57d8b16a3",
+          license_path: "C:\\Users\\demo\\AppData\\Roaming\\PyShield\\tool-license.json",
+          public_key_configured: true,
+          license_id: "PS-2026-0042",
+          customer: "Acme Software",
+          edition: "pro",
+          features: ["gui", "offline-activation"],
+          expires: "2027-11-13",
+          grace_days: 14,
+          trial: null,
+          quota: { used: 9, limit: 50 },
+          checked: new Date().toISOString(),
+        },
+      });
+    }
+    if (name === "browse_license") {
+      return Promise.resolve({ ok: true, path: "C:\\Users\\demo\\Downloads\\pyshield-tool-license.json" });
+    }
+    if (name === "license_install" || name === "license_activate" || name === "license_apply") {
+      return Promise.resolve({ ok: true, license: null, license_id: "PS-2026-0042" });
+    }
+    if (name === "license_request") {
+      return Promise.resolve({ ok: true, path: "C:\\Users\\demo\\AppData\\Roaming\\PyShield\\activation-request.json" });
+    }
+    if (name === "license_deactivate") {
+      return Promise.resolve({ ok: true, removed: true, license: null });
+    }
+    if (name === "license_heartbeat") {
+      return Promise.resolve({ ok: true, heartbeat: { status: "active" } });
+    }
+    if (name === "license_revocations") {
+      return Promise.resolve({ ok: true, revoked: 0 });
     }
     if (name === "inspect") {
       const payload = args[0] || {};
@@ -1060,7 +1310,7 @@
     if (name === "start_build") {
       previewState.percent = 0;
       previewState.logs = [
-        "10:24:01  pyshield 0.5.0 on CPython 3.12",
+        "10:24:01  pyshield 0.6.0 on CPython 3.12",
         "10:24:01  project:  E:\\projects\\erp-portal",
         "10:24:01  output:   E:\\projects\\erp-portal-shielded",
         "10:24:01  cipher:   chacha",
@@ -1236,11 +1486,20 @@
       }
       await inspectNow();
       await refreshHistory();
+      await refreshLicense();
       setTimeout(() => $("#refreshBtn").classList.remove("is-spinning"), 300);
       toast("环境状态已刷新");
     });
 
     $("#saveSettings").addEventListener("click", saveSettings);
+    $("#licensePill").addEventListener("click", () => switchView("settings"));
+    $("#licenseInstall").addEventListener("click", licenseInstall);
+    $("#licenseActivate").addEventListener("click", licenseActivate);
+    $("#licenseRequest").addEventListener("click", licenseRequest);
+    $("#licenseApply").addEventListener("click", licenseApply);
+    $("#licenseHeartbeat").addEventListener("click", licenseHeartbeat);
+    $("#licenseRevocations").addEventListener("click", licenseRevocations);
+    $("#licenseDeactivate").addEventListener("click", licenseDeactivate);
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && state.busy) {
         event.preventDefault();

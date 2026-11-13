@@ -7,3 +7,10 @@ dist*/
 *.shield-secret.json
 *.lic
 .pytest_cache/
+
+# Commercial tool licensing secrets: never commit
+pyshield/_tool_key.py
+root.key
+root.pub
+license-data/
+.pyshield-native/

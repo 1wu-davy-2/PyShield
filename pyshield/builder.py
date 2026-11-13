@@ -110,6 +110,7 @@ class BuildOptions:
     force: bool = False
     dry_run: bool = False
     verify_python: str | None = None
+    tool_info: dict | None = None
     cancel: threading.Event | None = field(default=None, repr=False, compare=False)
     progress: Callable[[str, int], None] | None = field(default=None, repr=False, compare=False)
     log_sink: Callable[[str], None] | None = field(default=None, repr=False, compare=False)
@@ -428,7 +429,15 @@ def compile_runtime(runtime: Path) -> None:
         init_source.unlink()
 
 
-def write_marker(output: Path, build_id: str, cipher: str, integrity: str, module_count: int, runtime_mode: str) -> None:
+def write_marker(
+    output: Path,
+    build_id: str,
+    cipher: str,
+    integrity: str,
+    module_count: int,
+    runtime_mode: str,
+    tool_info: dict | None = None,
+) -> None:
     marker = {
         "format": 1,
         "tool": f"pyshield {__version__}",
@@ -440,7 +449,27 @@ def write_marker(output: Path, build_id: str, cipher: str, integrity: str, modul
         "modules": module_count,
         "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
+    if tool_info:
+        marker["tool_license"] = tool_info
     (output / MARKER_FILE).write_text(json.dumps(marker, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def update_tool_info(output: Path, tool_info: dict) -> None:
+    """Refresh the license watermark after the build consumed a quota unit."""
+    marker_path = output / MARKER_FILE
+    try:
+        marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(marker, dict):
+        return
+    marker["tool_license"] = dict(tool_info)
+    try:
+        marker_path.write_text(
+            json.dumps(marker, indent=2, sort_keys=True) + "\n", encoding="utf-8",
+        )
+    except OSError:
+        pass
 
 
 def can_remove_output(output: Path) -> bool:
@@ -649,7 +678,8 @@ def build(options: BuildOptions) -> BuildResult:
             raise BuildError(str(exc)) from exc
         licensing.write_license(temp / LICENSE_FILE, sealed)
         write_marker(
-            temp, build_id, cipher, options.integrity, len(modules), runtime_mode
+            temp, build_id, cipher, options.integrity, len(modules), runtime_mode,
+            tool_info=options.tool_info,
         )
 
         if options.integrity != "off":
