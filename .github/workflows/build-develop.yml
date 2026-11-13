@@ -253,13 +253,18 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          echo "repository: $GITHUB_REPOSITORY"
+          echo "tag: $RELEASE_TAG"
+          gh auth status
           NOTES="自动构建快照，每次推送到 develop 都会覆盖这些资产，不是正式发布版本。"
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" release/* --clobber
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release/* --clobber --repo "$GITHUB_REPOSITORY"
           else
             gh release create "$RELEASE_TAG" release/* \
+              --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
               --title "CI snapshot · develop" \
               --notes "$NOTES"
           fi
-          gh release view "$RELEASE_TAG" --json assets --jq '.assets[] | "\(.name) \(.size) bytes"'
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[] | "\(.name) \(.size) bytes"'
