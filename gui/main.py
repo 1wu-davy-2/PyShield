@@ -43,10 +43,15 @@ def main() -> int:
         text_select=True,
     )
     api.bind(window)
-    webview.start(
-        debug=bool(os.environ.get("PYSHELD_GUI_DEBUG")),
-        private_mode=False,
-    )
+    start_options = {
+        "debug": bool(os.environ.get("PYSHELD_GUI_DEBUG")),
+        "private_mode": False,
+    }
+    if sys.platform != "win32":
+        icon = resource_root() / "gui" / "assets" / "icon.png"
+        if icon.is_file():
+            start_options["icon"] = str(icon)
+    webview.start(**start_options)
     return 0
 
 

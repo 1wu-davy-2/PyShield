@@ -1,10 +1,10 @@
 # PyShield 桌面构建器
 
-`PyShieldBuilder.exe` 是 PyShield 的 Windows 桌面构建器：选择 Django 项目目录、确认参数、点击一次即可生成受保护产物。界面使用 pywebview + WebView2 渲染，构建引擎与全部资源都提前打进 exe，运行时不需要安装 Python、PyShield 源码或前端文件。
+`PyShieldBuilder` 是 PyShield 的桌面构建器：选择 Django 项目目录、确认参数、点击一次即可生成受保护产物。界面使用 pywebview 渲染：Windows 走 WebView2，Linux 走 GTK 3 + WebKit2GTK。构建引擎与全部资源都提前打进单文件程序，运行时不需要安装 Python、PyShield 源码或前端文件。
 
 ## 1. 直接使用
 
-双击 `dist/PyShieldBuilder.exe` 启动。程序为单文件、免安装，首次启动会解压到系统临时目录，因此比后续启动略慢。
+Windows 双击 `dist/PyShieldBuilder.exe`，Linux 执行 `dist/PyShieldBuilder`。程序为单文件、免安装，首次启动会解压到系统临时目录，因此比后续启动略慢。Linux 需要系统已安装 WebKit2GTK 4.1 运行库（Ubuntu 24.04：`gir1.2-webkit2-4.1`）。
 
 使用流程：
 
@@ -33,7 +33,7 @@
 
 构建密钥写入 `<输出目录>.shield-secret.json`，位置与输出目录同级。它包含 `master_key`、`build_key`、`signing_key`，只应保存在构建方；发布时只交付输出目录本身。
 
-用户设置与构建记录保存在 `%APPDATA%\PyShieldBuilder`：
+用户设置与构建记录保存在 `%APPDATA%\PyShieldBuilder`（Linux 为 `~/.pyshieldbuilder`）：
 
 - `settings.json`：默认算法、运行时、完整性、输出后缀、解释器检测策略；
 - `history.json`：最近 100 次构建记录，只保留本机路径与结果摘要。
@@ -65,9 +65,9 @@ $env:PYSHELD_GUI_CONFIG_DIR = "D:\pyshield-config"
 
 界面中的“本机指纹”用于设备绑定，计算和签名都在本机完成；程序不发起网络请求。
 
-## 3. 从源码打包 exe
+## 3. 从源码打包执行文件（Windows / Linux）
 
-打包环境建议使用独立的 Python 3.12 虚拟环境：
+Windows 打包环境建议使用独立的 Python 3.12 虚拟环境：
 
 ```bash
 python -m venv .venv
@@ -76,18 +76,34 @@ python -m venv .venv
 
 确认 WebView2 Runtime 已安装（Windows 10/11 通常随 Edge 提供；缺失时从 Microsoft 官网安装 Evergreen Runtime）。
 
+Linux（Ubuntu 24.04）打包需要 GTK 3 与 WebKit2GTK 的 Python 绑定：
+
+```bash
+sudo apt-get install -y python3-gi python3-venv \
+  gir1.2-gtk-3.0 gir1.2-webkit2-4.1 gir1.2-soup-3.0
+python3 -m venv --system-site-packages .venv
+.venv/bin/python -m pip install pyinstaller==6.22.3 pywebview==6.2.1
+```
+
 在 PyShield 项目根目录执行：
 
 ```bash
+# Windows
 .venv/Scripts/python -m PyInstaller --noconfirm --clean PyShieldBuilder.spec
+
+# Linux
+.venv/bin/python -m PyInstaller --noconfirm --clean PyShieldBuilder.spec
 ```
 
-产物为 `dist/PyShieldBuilder.exe`（单文件、windowed、无控制台）。规格文件 `PyShieldBuilder.spec` 已声明：
+产物为 `dist/PyShieldBuilder.exe`（Windows）或 `dist/PyShieldBuilder`（Linux），均为单文件、无控制台。规格文件 `PyShieldBuilder.spec` 根据平台切换配置：
 
 - 数据文件：`gui/web`、`gui/assets/icon.png`、`pyshield/runtime_template`、`pyshield/crypto.py`、`pyshield/fingerprint.py`、`pyshield/ed25519.py`；
-- 隐藏导入：`webview.platforms.edgechromium`、`webview.platforms.winforms`；
-- 排除项：tkinter、Qt、Cython、setuptools、Django 等非必需组件；
-- 图标与版本资源：`gui/assets/icon.ico`、`gui/assets/version_info.txt`。
+- 隐藏导入：Windows 为 `webview.platforms.edgechromium`、`webview.platforms.winforms`，Linux 为 `webview.platforms.gtk`；
+- 排除项：tkinter、Qt、Cython、Django 等非必需组件；Windows 额外排除 `gi`；
+- 图标与版本资源：仅 Windows 使用 `gui/assets/icon.ico`、`gui/assets/version_info.txt`；
+- `hooks/` 下的自定义 PyInstaller 钩子补齐 WebKit2、JavaScriptCore 与 libsoup 4.0/2.4 的 typelib 收集。
+
+GitHub Actions 工作流 `.github/workflows/desktop-build.yml` 会先运行单元测试，再分别在 `windows-latest` 与 `ubuntu-24.04` 上构建并上传 `PyShieldBuilder-windows-x64`、`PyShieldBuilder-linux-x64` 两个 artifact。
 
 开发时可直接运行源码（需要 pywebview）：
 
@@ -130,10 +146,11 @@ exe 冒烟测试建议：
 
 | 现象 | 处理 |
 | --- | --- |
-| 启动后白屏 | 安装 WebView2 Evergreen Runtime；确认杀毒软件未拦截解压 |
+| 启动后白屏 | Windows 安装 WebView2 Evergreen Runtime；Linux 安装 `gir1.2-webkit2-4.1`；确认杀毒软件未拦截解压 |
+| Linux 提示缺少 WebKit2GTK | 安装 `gir1.2-webkit2-4.1` 与 `libwebkit2gtk-4.1-0`；官方产物在 Ubuntu 24.04 构建，需要 glibc 2.39 及以上 |
 | 提示找不到 `manage.py` | 选择 Django 项目根目录，而不是内层应用目录 |
 | 输出目录无效 | 输出目录不能位于项目内部，也不能是项目目录的父目录；非空目录必须是已有 PyShield 构建或勾选允许覆盖 |
-| 校验解释器不可用 | 选择项目虚拟环境中的 `python.exe`；或勾选“跳过 manage.py check” |
+| 校验解释器不可用 | 选择项目虚拟环境中的解释器（Windows `Scripts\python.exe`，Linux `bin/python`）；或勾选“跳过 manage.py check” |
 | 部署时报 Python 版本错误 | 部署机必须与内置 CPython 3.12 同一小版本 |
 | 部署时报缺少 cryptography | 改用纯 Python ChaCha20，或在部署机安装 `cryptography` |
 | 构建完成但无日志 | 检查右侧“构建日志”面板；构建结果会写入“构建记录” |

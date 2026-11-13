@@ -39,10 +39,11 @@ PyShield 是一套自研的 Python / Django 源码保护工具。构建期把业
 - 使用 AES-GCM / ChaCha20-Poly1305 时需要 `cryptography`
 - 使用原生 runtime 时，需要与构建机相同的操作系统、CPU 架构和 Python ABI
 
-桌面构建器打包（仅开发构建 exe 时需要）：
+桌面构建器打包（仅开发构建单文件程序时需要）：
 
-- Windows 10/11 与 WebView2 Runtime
-- `pywebview`、`pythonnet`、`cryptography`、`PyInstaller`
+- Windows：Windows 10/11、WebView2 Runtime，`pywebview`、`pythonnet`、`PyInstaller`
+- Linux：GTK 3 与 WebKit2GTK（Ubuntu 24.04 的 `python3-gi`、`gir1.2-gtk-3.0`、`gir1.2-webkit2-4.1`），`pywebview`、`PyInstaller`
+- GitHub Actions（`.github/workflows/desktop-build.yml`）会在 Windows 与 Ubuntu 24.04 上运行测试并分别产出 `PyShieldBuilder.exe` 和 `PyShieldBuilder` 单文件程序。
 
 ## 快速开始
 

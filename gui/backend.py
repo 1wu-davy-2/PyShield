@@ -526,6 +526,9 @@ class Api:
             ".venv/Scripts/python.exe",
             "venv/Scripts/python.exe",
             "env/Scripts/python.exe",
+            ".venv/bin/python",
+            "venv/bin/python",
+            "env/bin/python",
         ):
             candidate = project / relative
             if candidate.is_file():
@@ -534,13 +537,14 @@ class Api:
 
     @staticmethod
     def _reveal(target: Path) -> None:
-        if target.is_dir():
-            os.startfile(str(target))  # noqa: S606 - expected Windows behaviour
-            return
         if os.name == "nt":
-            subprocess.Popen(["explorer", "/select,", str(target)])
-        else:
-            os.startfile(str(target.parent))  # noqa: S606
+            if target.is_dir():
+                os.startfile(str(target))  # noqa: S606 - expected Windows behaviour
+            else:
+                subprocess.Popen(["explorer", "/select,", str(target)])
+            return
+        opener = "open" if sys.platform == "darwin" else "xdg-open"
+        subprocess.Popen([opener, str(target if target.is_dir() else target.parent)])
 
     @staticmethod
     def _mark_missing(history: list[dict]) -> None:

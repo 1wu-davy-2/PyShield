@@ -342,7 +342,7 @@
       notice.hidden = false;
       noticeText.textContent =
         "未找到安装了 Django 且 Python 版本匹配的解释器，构建将跳过 manage.py check。";
-      $("#verifyHint").textContent = "可手动选择项目虚拟环境中的 python.exe。";
+      $("#verifyHint").textContent = "可手动选择项目虚拟环境中的 Python 解释器。";
     }
 
     if (!state.machine && response.machine) {

@@ -1,8 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import sys
 from pathlib import Path
 
 ROOT = Path(SPECPATH)
+IS_WINDOWS = sys.platform == "win32"
 
 datas = [
     (str(ROOT / "gui" / "web"), "gui/web"),
@@ -13,10 +15,15 @@ datas = [
     (str(ROOT / "pyshield" / "ed25519.py"), "pyshield"),
 ]
 
-hiddenimports = [
-    "webview.platforms.edgechromium",
-    "webview.platforms.winforms",
-]
+if IS_WINDOWS:
+    hiddenimports = [
+        "webview.platforms.edgechromium",
+        "webview.platforms.winforms",
+    ]
+else:
+    hiddenimports = [
+        "webview.platforms.gtk",
+    ]
 
 excludes = [
     "tkinter",
@@ -24,7 +31,6 @@ excludes = [
     "PyQt6",
     "PySide2",
     "PySide6",
-    "gi",
     "cefpython3",
     "Cython",
     "setuptools",
@@ -32,13 +38,21 @@ excludes = [
     "django",
 ]
 
+if IS_WINDOWS:
+    excludes.append("gi")
+
+exe_options = {}
+if IS_WINDOWS:
+    exe_options["icon"] = str(ROOT / "gui" / "assets" / "icon.ico")
+    exe_options["version"] = str(ROOT / "gui" / "assets" / "version_info.txt")
+
 a = Analysis(
     [str(ROOT / "gui" / "main.py")],
     pathex=[str(ROOT)],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
-    hookspath=[],
+    hookspath=[str(ROOT / "hooks")],
     hooksconfig={},
     runtime_hooks=[],
     excludes=excludes,
@@ -66,6 +80,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=str(ROOT / "gui" / "assets" / "icon.ico"),
-    version=str(ROOT / "gui" / "assets" / "version_info.txt"),
+    **exe_options,
 )

@@ -1,0 +1,136 @@
+name: desktop-build
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install cryptography
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
+  windows:
+    name: Windows executable
+    runs-on: windows-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pywebview==6.2.1 pythonnet==3.2.1 pyinstaller==6.22.3
+
+      - name: Build PyShieldBuilder.exe
+        run: python -m PyInstaller --noconfirm --clean PyShieldBuilder.spec
+
+      - name: Verify executable
+        shell: pwsh
+        run: |
+          $exe = Get-Item .\dist\PyShieldBuilder.exe
+          $expected = python -c "import pyshield; print(pyshield.__version__)"
+          Write-Host "built $($exe.Name) $($exe.VersionInfo.ProductVersion) ($([math]::Round($exe.Length / 1MB, 1)) MB)"
+          if ($exe.VersionInfo.ProductVersion -ne $expected) {
+            throw "unexpected product version: $($exe.VersionInfo.ProductVersion), expected $expected"
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PyShieldBuilder-windows-x64
+          path: dist/PyShieldBuilder.exe
+          if-no-files-found: error
+          retention-days: 30
+
+  linux:
+    name: Linux executable
+    runs-on: ubuntu-24.04
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GTK/WebKit runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            python3-gi python3-venv \
+            gir1.2-gtk-3.0 gir1.2-webkit2-4.1 gir1.2-soup-3.0 \
+            xvfb
+
+      - name: Create build environment
+        run: |
+          python3 -m venv --system-site-packages .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install pywebview==6.2.1 pyinstaller==6.22.3
+
+      - name: Verify GTK/WebKit bindings
+        run: |
+          .venv/bin/python - <<'PY'
+          import gi
+          gi.require_version("Gtk", "3.0")
+          gi.require_version("WebKit2", "4.1")
+          from gi.repository import Gtk, WebKit2
+          print("GTK", Gtk.get_major_version(), Gtk.get_minor_version())
+          print("WebKit2", WebKit2.get_major_version(), WebKit2.get_minor_version())
+          PY
+
+      - name: Build PyShieldBuilder
+        run: .venv/bin/python -m PyInstaller --noconfirm --clean PyShieldBuilder.spec
+
+      - name: Verify executable
+        run: |
+          test -x dist/PyShieldBuilder
+          file dist/PyShieldBuilder
+          du -h dist/PyShieldBuilder
+
+      - name: Smoke test under Xvfb
+        continue-on-error: true
+        run: |
+          set +e
+          WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1 \
+          WEBKIT_DISABLE_COMPOSITING_MODE=1 \
+            xvfb-run -a timeout 25s ./dist/PyShieldBuilder > smoke.log 2>&1
+          code=$?
+          cat smoke.log
+          if [ "$code" -ne 124 ]; then
+            echo "GUI exited before the timeout (exit $code)"
+            exit 1
+          fi
+          echo "GUI stayed up for 25s"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PyShieldBuilder-linux-x64
+          path: dist/PyShieldBuilder
+          if-no-files-found: error
+          retention-days: 30
