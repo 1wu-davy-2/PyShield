@@ -21,6 +21,13 @@ SECRET_SUFFIX = ".shield-secret.json"
 FORMAT = 2
 MAX_GRACE_DAYS = 3650
 
+BIND_ANY = "any"
+BIND_FIRST_RUN = "first-run"
+BIND_FIXED = "fixed"
+BIND_MODES = (BIND_ANY, BIND_FIRST_RUN, BIND_FIXED)
+BINDING_FILE_NAME = ".pyshield-binding.json"
+BINDING_FILE_ENV = "PYSHELD_BINDING_FILE"
+
 LICENSE_SALT = b"pyshield-license-v1"
 LICENSE_AAD_PREFIX = b"pyshield-license:"
 
@@ -71,6 +78,25 @@ def normalize_fingerprints(values: list[str] | tuple[str, ...]) -> list[str]:
     return seen
 
 
+def normalize_bind_mode(value: str | None, fingerprints: list[str] | tuple[str, ...] = ()) -> str:
+    """Resolve the binding mode, deriving it from fingerprints for old secrets."""
+    text = str(value or "").strip().lower()
+    if text in BIND_MODES:
+        return text
+    if not text:
+        return BIND_FIXED if fingerprints else BIND_ANY
+    raise LicenseError(f"unknown bind mode {value!r}; use one of: {', '.join(BIND_MODES)}")
+
+
+def bind_mode_of(payload: dict) -> str:
+    """Return the binding mode of a license payload, including legacy licenses."""
+    fingerprints = payload.get("fingerprints") or []
+    try:
+        return normalize_bind_mode(payload.get("bind_mode"), fingerprints)
+    except LicenseError:
+        return BIND_ANY
+
+
 def sign_payload(payload: dict, signing_key: bytes) -> dict:
     signed = dict(payload)
     signed.pop("signature", None)
@@ -104,7 +130,11 @@ def build_payload(
     customer: str | None,
     not_before: date | None = None,
     grace_days: int | str | None = 0,
+    bind_mode: str = "",
 ) -> dict:
+    mode = normalize_bind_mode(bind_mode, fingerprints)
+    if mode != BIND_FIXED:
+        fingerprints = []
     return {
         "format": FORMAT,
         "build_id": build_id,
@@ -115,6 +145,7 @@ def build_payload(
         "not_before": (not_before or date.today()).isoformat(),
         "expires": expires.isoformat() if expires else None,
         "grace_days": parse_grace_days(grace_days),
+        "bind_mode": mode,
         "fingerprints": list(fingerprints),
         "customer": customer or None,
     }
@@ -132,10 +163,15 @@ def create_license(
     customer: str | None = None,
     not_before: date | None = None,
     grace_days: int | str | None = 0,
+    bind_mode: str = "",
 ) -> bytes:
+    normalized = normalize_fingerprints(fingerprints)
+    mode = normalize_bind_mode(bind_mode, normalized)
+    if mode == BIND_FIXED and not normalized:
+        raise LicenseError("fixed device binding requires at least one fingerprint")
     payload = sign_payload(build_payload(
         build_id, build_key, cipher, python_version, expires,
-        normalize_fingerprints(fingerprints), customer, not_before, grace_days,
+        normalized, customer, not_before, grace_days, mode,
     ), signing_key)
     data = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     try:
@@ -204,9 +240,13 @@ def validate_payload(
                 else:
                     problems.append(f"license expired on {expires}")
 
+    mode = bind_mode_of(payload)
     fingerprints = [str(item).lower() for item in payload.get("fingerprints") or []]
-    if machine_fingerprint and fingerprints and machine_fingerprint.lower() not in fingerprints:
-        problems.append(f"machine {machine_fingerprint} is not licensed")
+    if mode == BIND_FIXED and not fingerprints:
+        problems.append("license uses fixed binding but lists no fingerprints")
+    if machine_fingerprint and mode == BIND_FIXED and fingerprints:
+        if machine_fingerprint.lower() not in fingerprints:
+            problems.append(f"machine {machine_fingerprint} is not licensed")
     return problems
 
 
@@ -275,7 +315,13 @@ def describe(payload: dict) -> str:
         f"grace days:  {payload.get('grace_days', 0)}",
         f"customer:    {payload.get('customer') or '-'}",
     ]
+    mode = bind_mode_of(payload)
     fingerprints = payload.get("fingerprints") or []
-    lines.append("fingerprints:" if fingerprints else "fingerprints: any")
-    lines.extend(f"  - {item}" for item in fingerprints)
+    if mode == BIND_FIRST_RUN:
+        lines.append("binding:     first-run (binds to the first machine that starts it)")
+    elif mode == BIND_FIXED:
+        lines.append("binding:     fixed")
+        lines.extend(f"  - {item}" for item in fingerprints)
+    else:
+        lines.append("binding:     any machine")
     return "\n".join(lines)

@@ -65,7 +65,8 @@ python shield.py build -p ../demo -o ../dist-pyshield
 | `-o, --output` | 输出目录 |
 | `-e, --expire` | 到期时间：天数或 `YYYY-MM-DD` |
 | `--grace-days` | 到期后的宽限天数，默认 0，最大 3650 |
-| `-b, --bind-device` | 绑定机器指纹，可重复 |
+| `-b, --bind-device` | 绑定指定机器指纹，可重复 |
+| `--bind-first-run` | 首次启动时自动绑定到客户机，与 `-b` 互斥 |
 | `--integrity` | `protected`（默认，代码 + runtime）、`full`（含 data 文件）、`off` |
 | `--mutable` | 额外允许现场变更的 fnmatch 模式，不进入清单，可重复 |
 | `--cipher` | `auto`（默认）、`chacha`、`chacha-pure`、`aesgcm`，见下表 |
@@ -93,7 +94,7 @@ python shield.py build -p ../demo -o ../dist-pyshield
 2. 发现 `manage.py` 与带 `__init__.py` 的包，默认排除 `migrations` 和 `tests`；
 3. 逐模块 `compile → marshal → zlib → AEAD → Base85`，写入 stub；
 4. 安装 runtime，写入构建 ID、主密钥、Ed25519 公钥、算法、完整性模式与 Python 小版本；
-5. 生成并签名 `pyshield.lic`（含签发日期、到期日、宽限期）；
+5. 生成并签名 `pyshield.lic`（含签发日期、到期日、宽限期与绑定模式）；
 6. 生成并签名 `.pyshield-manifest.json`（完整性模式非 `off` 时）；
 7. 在产物上执行 `manage.py check`；
 8. 写出构建密钥，并清理 `__pycache__`。
@@ -134,6 +135,8 @@ python shield.py selftest
 - `.pyshield-manifest.json`（`--integrity off` 时不生成）
 - 所有 stub 与数据文件
 
+使用首次启动绑定时，部署目录会在第一次运行后新增 `.pyshield-binding.json`；它由 runtime 生成，不需要随包构建。
+
 部署后先做只读检查，再启动服务：
 
 ```bash
@@ -164,9 +167,9 @@ python manage.py runserver 0.0.0.0:8000
 2. 包清单存在、格式、`build_id`、算法、完整性模式与 Ed25519 签名；
 3. 清单中 `code` 与 `runtime` 文件的 SHA-256；`full` 模式还包括 `data` 文件；
 4. 许可证路径、AEAD 解封、许可证签名与 `build_id`；
-5. 时钟状态（HMAC 校验、回拨检测）；
-6. 签发日期 `not_before`、到期日与宽限期；
-7. 机器指纹。
+5. 绑定模式：首次启动绑定读取/写入 `.pyshield-binding.json`，固定指纹模式比对许可证白名单；
+6. 时钟状态（HMAC 校验、回拨检测）；
+7. 签发日期 `not_before`、到期日与宽限期。
 
 任何一步失败都会抛出 `LicenseError` / `ImportError`，模块不会以明文落地。校验结果在进程内缓存；`license_status(refresh=True)` 或 `reload_license()` 可重新读取许可证。
 
@@ -184,6 +187,7 @@ python manage.py runserver 0.0.0.0:8000
 ### 4.3 可写目录与时间同步
 
 - 续期时通常直接把新 `pyshield.lic` 写到原位置，运行用户需要该目录的写权限；也可用 `PYSHELD_LICENSE` 指向外部可写路径。
+- 首次启动绑定会在输出目录写入 `.pyshield-binding.json`，因此该目录必须可写；只读部署用 `PYSHELD_BINDING_FILE` 指向可写位置（绑定记录放在包外会削弱复制防护）。写入失败时启动会被拒绝，避免绑定被静默跳过。
 - 时钟状态写入 `~/.pyshield/<build_id>.state`；可用 `PYSHELD_STATE_DIR` 指定目录。只读部署可指向可写目录，写入失败时回拨检测降级但启动不受影响。
 - 部署机应启用 NTP/时间同步。容器重建、快照恢复或虚拟机迁移后如果时钟明显回拨，runtime 会拒绝启动，先校正时间再启动。
 - 许可证带签发日期，现场时钟早于签发日期超过 1 天同样会拒绝。
@@ -198,11 +202,35 @@ python manage.py runserver 0.0.0.0:8000
 
 ## 5. 许可证操作
 
-取目标机器指纹：
+### 5.1 设备绑定模式
+
+| 模式 | 构建参数 | 说明 |
+| --- | --- | --- |
+| 不绑定 | 默认 | 任意兼容机器运行 |
+| 首次启动绑定 | `--bind-first-run` | 第一次启动时自动锁定客户机 |
+| 指定指纹 | `-b <指纹>`（可重复） | 构建时写入白名单 |
+
+构建时拿不到客户机指纹，用首次启动绑定：
+
+```bash
+python shield.py build -p <project> -o <output> --bind-first-run -e 2027-12-31
+```
+
+- 首次启动写入 `<output>/.pyshield-binding.json`，包含 `build_id`、机器指纹、绑定时间和 `build_key` 派生的 HMAC；后续启动要求同一台机器；
+- 记录被修改、整包复制到另一台机器、或替换成其他机器的记录都会拒绝加载；
+- 首次启动绑定在第一次启动应用、或运行 `python -m _shield_runtime status` 时生效；不要在非目标机器上执行 `status`；
+- 构建期的 `manage.py check` 使用临时绑定文件，不会占用客户机的首次绑定；
+- 只读部署用 `PYSHELD_BINDING_FILE` 指向可写文件；绑定放在包外会削弱复制防护；
+- 硬件更换需删除旧绑定记录后重新绑定，或改用 `-b` 固定指纹许可证。离线方案无法阻止有本地写权限的人重新绑定。
+
+取指纹：
 
 ```bash
 python shield.py fingerprint
+cd <output> && python -m _shield_runtime fingerprint
 ```
+
+### 5.2 重新签发与续期
 
 重新签发许可证（不需要重新构建）：
 
@@ -211,20 +239,21 @@ python shield.py issue --secret <output>.shield-secret.json -e 30
 python shield.py issue --secret <output>.shield-secret.json -e 2027-12-31
 python shield.py issue --secret <output>.shield-secret.json -e 2027-12-31 --grace-days 14
 python shield.py issue --secret <output>.shield-secret.json -b <机器指纹>
+python shield.py issue --secret <output>.shield-secret.json --bind-first-run
 python shield.py issue --secret <output>.shield-secret.json --customer "客户名称"
 python shield.py issue --secret <output>.shield-secret.json --out /secure/pyshield.lic -e 30
 ```
 
 说明：
 
-- 许可证格式为 v2，载荷由构建时生成的 Ed25519 私钥签名；runtime 只内置公钥，因此即使攻击者提取了对称主密钥，也无法伪造或修改许可证；
-- `-e` 接受“从今天起的天数”或 `YYYY-MM-DD`，到期日当天仍然有效；
-- `--grace-days` 设置到期后的宽限天数；不传时沿用构建时记录的值；
+- **到期只影响 `pyshield.lic`**：业务包、清单、构建密钥都仍然有效，重新签发并替换该文件即可，不需要重新构建或重新上传整包；
+- `issue` 默认继承现有许可证的到期日、绑定模式、指纹、宽限期和客户标识，只覆盖显式传入的 `-e` / `-b` / `--bind-first-run` / `--grace-days` / `--customer`；
+- 首次启动绑定记录使用不随续期改变的 `build_key` 签名，续期后客户机无需重新绑定；
+- `-e` 接受“从今天起的天数”或 `YYYY-MM-DD`，到期日当天仍然有效；不传 `-e` 且原许可证已存在时保持原到期日；
 - 许可证包含 `not_before`（本次签发日期）；现场时钟早于它超过 1 天会拒绝加载；
-- `-b` 可重复，绑定多台机器；
-- **每次签发都会按本次参数重建许可证并重新签名**：不传 `-e` 表示永不过期，不传 `-b` 表示不限机器，不传 `--customer` 会清空客户标识。续期时若需保留绑定，必须同时传入 `-b`；
 - 默认写回构建时记录的许可证路径，可用 `--out` 指定其他位置；替换现场许可证后无需重启进程即可通过 `reload_license()` 生效；
-- `--no-restrictions` 明确签发无限制许可证。
+- `--no-restrictions` 明确签发无限制许可证（无到期、不绑定设备）；
+- 许可证格式为 v2，载荷由构建时生成的 Ed25519 私钥签名；runtime 只内置公钥，即使攻击者提取对称主密钥也无法伪造许可证。
 
 runtime 按以下顺序查找许可证：
 
@@ -232,7 +261,7 @@ runtime 按以下顺序查找许可证：
 2. `manage.py` 同目录的 `pyshield.lic`；
 3. `_shield_runtime/` 包内的 `pyshield.lic`。
 
-### 5.1 时钟回拨与热重载
+### 5.3 时钟回拨与热重载
 
 - runtime 在许可证校验通过后，把 `last_seen`（日期）和 `build_id` 用 `build_key` 派生的 HMAC 密钥签名，写入 `~/.pyshield/<build_id>.state` 或 `PYSHELD_STATE_DIR`；
 - 如果今天比 `last_seen` 早超过 1 天，判定为时钟回拨并拒绝加载；状态文件被修改（MAC 不匹配）同样拒绝；
@@ -248,7 +277,7 @@ reload_license()               # 等价入口，返回同样的状态字典
 
 已导入的模块继续使用旧进程内的 code object；刷新后新导入的模块会按新许可证的到期日、宽限期与指纹状态放行。许可证中的 `build_key` 不随续期改变，跨构建替换许可证仍需重新构建。
 
-### 5.2 构建方复核交付包
+### 5.4 构建方复核交付包
 
 ```bash
 python shield.py verify -d <output> --secret <output>.shield-secret.json
@@ -279,6 +308,8 @@ PYSHELD_LICENSE=/secure/pyshield.lic python manage.py check
 不要直接修改产物中的 stub、runtime、`.pyshield-manifest.json` 或许可证；这些文件会在下次构建时被覆盖，手工改动还会导致完整性校验或验签失败。现场配置与数据请放在可变文件中。
 
 > v0.3.0 起模块 AAD 绑定 `build_id`，并新增完整性清单、签发日期与宽限期。要获得这些新特性，v0.2 及更早版本构建的产物需要用 v0.3 重新构建；v0.2 生成的格式 2 许可证仍可被新 runtime 读取（缺少的新字段按默认值处理），`issue` 会用当前版本重写许可证。
+>
+> v0.5.0 起支持首次启动绑定与续期继承。旧构建的许可证没有 `bind_mode` 字段，runtime 按“有指纹即固定绑定、否则不绑定”兼容处理；`issue` 也会按同样规则继承。
 
 ## 7. 常见故障
 
@@ -288,7 +319,10 @@ PYSHELD_LICENSE=/secure/pyshield.lic python manage.py check
 | `package integrity check failed` | 受保护文件或 runtime 被修改/删除，或清单被替换 | 从原始交付包恢复文件；必要时重新构建 |
 | `package manifest ... is missing` | 未部署 `.pyshield-manifest.json` | 部署完整目录，或构建时使用 `--integrity off` |
 | 许可证签名无效 | 许可证被修改，或公钥/私钥不匹配 | 使用原构建 secret 重新执行 `issue`；secret 丢失则重新构建 |
-| 许可证过期 | `expires` 已过且宽限期结束 | 使用 `issue` 续期并重启或热重载 |
+| 许可证过期 | `expires` 已过且宽限期结束 | 使用 `issue` 续期，只替换 `pyshield.lic` 后重启或热重载，无需重装整包 |
+| `this deployment is bound to machine ...` | 首次启动绑定已锁定另一台机器，通常是整包被复制 | 恢复到原机器；确需换机时由构建方删除绑定记录或改用 `-b` 重新签发 |
+| `binding file ... was modified` | `.pyshield-binding.json` 被编辑、损坏或替换 | 从备份恢复；确认换机后再删除并重新绑定 |
+| `cannot record the first-run binding` | 输出目录只读，首次启动无法写入绑定记录 | 赋予目录写权限，或把 `PYSHELD_BINDING_FILE` 指向可写路径 |
 | `license is not valid before ...` | 现场时钟早于签发日期超过 1 天 | 校正系统时间或重新签发 |
 | `system clock rollback` | 时钟早于上次运行日期超过 1 天 | 校正 NTP/系统时间；不要删除状态文件来绕过 |
 | 时钟状态文件损坏 | 状态文件被修改或写入中断 | 恢复文件或校正时间；确认 `PYSHELD_STATE_DIR` 可写 |

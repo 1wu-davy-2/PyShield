@@ -99,7 +99,8 @@ class BuildManager:
             encrypt_tests=request.encrypt_tests,
             expire=request.expire_value(),
             grace_days=int(str(request.grace_days).strip() or 0),
-            bind_device=list(request.fingerprints),
+            bind_device=list(request.fingerprints) if request.bind_mode == "fixed" else [],
+            bind_first_run=request.bind_mode == "first-run",
             cipher=request.cipher,
             customer=request.customer or None,
             integrity=request.integrity,
@@ -186,6 +187,7 @@ class BuildManager:
             "size_text": (summary or {}).get("size_text"),
             "elapsed": (summary or {}).get("elapsed"),
             "expires": (summary or {}).get("expires"),
+            "binding": request.bind_mode,
             "customer": request.customer or None,
             "error": error,
         }
@@ -212,6 +214,7 @@ class BuildManager:
             "size": result.output_size,
             "size_text": core.format_bytes(result.output_size),
             "expires": expires,
+            "binding": request.bind_mode,
             "customer": request.customer or None,
         }
 

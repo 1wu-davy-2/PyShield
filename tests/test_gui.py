@@ -10,6 +10,7 @@ from unittest import mock
 
 from gui import core
 from gui.backend import Api, BuildManager
+from pyshield import licensing
 from tests.test_builder import make_project
 
 
@@ -116,6 +117,30 @@ class RequestValidationTests(unittest.TestCase):
     def test_fingerprint_validation(self) -> None:
         request = core.BuildRequest.from_payload(self.payload(fingerprints=["xyz"]))
         self.assertTrue(any("机器指纹格式" in item for item in core.validate_request(request)))
+
+    def test_binding_mode_validation(self) -> None:
+        request = core.BuildRequest.from_payload(self.payload(bind_mode="fixed"))
+        self.assertTrue(
+            any("至少填写一个机器指纹" in item for item in core.validate_request(request))
+        )
+
+        request = core.BuildRequest.from_payload(
+            self.payload(bind_mode="fixed", fingerprints=["a" * 32])
+        )
+        self.assertEqual(request.bind_mode, "fixed")
+        self.assertEqual(core.validate_request(request), [])
+
+        request = core.BuildRequest.from_payload(
+            self.payload(bind_mode="first-run", fingerprints=["a" * 32])
+        )
+        self.assertEqual(request.bind_mode, "first-run")
+        self.assertEqual(request.fingerprints, [])
+        self.assertEqual(core.validate_request(request), [])
+
+        request = core.BuildRequest.from_payload(
+            self.payload(bind_mode="unknown", fingerprints=["a" * 32])
+        )
+        self.assertEqual(request.bind_mode, "fixed")
 
     def test_expire_value(self) -> None:
         request = core.BuildRequest.from_payload(
@@ -230,6 +255,26 @@ class BuildManagerTests(unittest.TestCase):
         self.assertEqual(history[0]["status"], "success")
         self.assertEqual(history[0]["cipher"], "chacha-pure")
         self.assertEqual(history[0]["output"], str(self.root / "project-shielded"))
+
+    def test_build_first_run_binding(self) -> None:
+        request = core.BuildRequest.from_payload({
+            "project": str(self.project),
+            "cipher": "chacha-pure",
+            "runtime": "pyc",
+            "bind_mode": "first-run",
+            "no_verify": True,
+        })
+        start = self.manager.start(request, core.load_settings())
+        self.assertTrue(start["ok"], start)
+
+        snapshot = self.wait()
+        self.assertEqual(snapshot["status"], "success", snapshot["error"])
+        summary = snapshot["summary"]
+        self.assertEqual(summary["binding"], "first-run")
+        secret = licensing.read_secret(Path(summary["secret"]))
+        self.assertEqual(secret["bind_mode"], "first-run")
+        self.assertEqual(secret["fingerprints"], [])
+        self.assertEqual(core.load_history()[0]["binding"], "first-run")
 
     def test_rejects_invalid_request(self) -> None:
         request = core.BuildRequest.from_payload({

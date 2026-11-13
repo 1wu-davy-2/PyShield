@@ -29,6 +29,7 @@ CIPHERS = ("chacha-pure", "chacha", "aesgcm")
 INTEGRITY_MODES = ("protected", "full", "off")
 RUNTIME_MODES = ("source", "pyc")
 EXPIRY_MODES = ("never", "days", "date")
+BINDING_MODES = ("any", "first-run", "fixed")
 MIN_PYTHON = (3, 10)
 MAX_GRACE_DAYS = 3650
 MAX_EXPIRE_DAYS = 36500
@@ -93,6 +94,7 @@ class BuildRequest:
     expire_days: str = "30"
     expire_date: str = ""
     grace_days: str = "0"
+    bind_mode: str = "any"
     fingerprints: list[str] = field(default_factory=list)
     customer: str = ""
     encrypt_migrations: bool = False
@@ -121,6 +123,13 @@ class BuildRequest:
             for item in (data.get("fingerprints") or [])
             if str(item).strip()
         ]
+        bind_mode = str(data.get("bind_mode") or "").strip()
+        if bind_mode in BINDING_MODES:
+            request.bind_mode = bind_mode
+        else:
+            request.bind_mode = "fixed" if request.fingerprints else "any"
+        if request.bind_mode != "fixed":
+            request.fingerprints = []
         request.customer = str(data.get("customer") or "").strip()
         request.encrypt_migrations = bool(data.get("encrypt_migrations"))
         request.encrypt_tests = bool(data.get("encrypt_tests"))
@@ -358,6 +367,10 @@ def validate_request(request: BuildRequest) -> list[str]:
         errors.append(f"未知 runtime 模式：{request.runtime}")
     if request.expiry_mode not in EXPIRY_MODES:
         errors.append(f"未知到期设置：{request.expiry_mode}")
+    if request.bind_mode not in BINDING_MODES:
+        errors.append(f"未知设备绑定方式：{request.bind_mode}")
+    elif request.bind_mode == "fixed" and not request.fingerprints:
+        errors.append("选择“指定指纹”时至少填写一个机器指纹。")
 
     if request.expiry_mode == "days":
         text = str(request.expire_days).strip()

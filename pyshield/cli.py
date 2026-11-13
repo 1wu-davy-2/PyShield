@@ -11,9 +11,14 @@ from . import __version__, builder, crypto, fingerprint, licensing
 
 def _add_license_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("-e", "--expire", help="expiry: number of days from today or YYYY-MM-DD")
-    parser.add_argument(
+    binding = parser.add_mutually_exclusive_group()
+    binding.add_argument(
         "-b", "--bind-device", action="append", default=[], metavar="FINGERPRINT",
         help="only run on this machine fingerprint; repeatable",
+    )
+    binding.add_argument(
+        "--bind-first-run", action="store_true",
+        help="bind to the first machine that starts the protected program",
     )
     parser.add_argument("--customer", help="optional customer label stored in the license")
 
@@ -103,6 +108,7 @@ def main(argv: list[str] | None = None) -> int:
                 expire=args.expire,
                 grace_days=args.grace_days,
                 bind_device=args.bind_device,
+                bind_first_run=args.bind_first_run,
                 cipher=args.cipher,
                 customer=args.customer,
                 integrity=args.integrity,
@@ -119,6 +125,7 @@ def main(argv: list[str] | None = None) -> int:
                 expire=args.expire,
                 grace_days=args.grace_days,
                 bind_device=args.bind_device,
+                bind_first_run=args.bind_first_run,
                 customer=args.customer,
                 no_restrictions=args.no_restrictions,
             ))

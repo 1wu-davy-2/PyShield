@@ -1,4 +1,4 @@
-"""On-site diagnostics: python -m _shield_runtime status|verify."""
+"""On-site diagnostics: python -m _shield_runtime status|verify|fingerprint."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import json
 import sys
 
 from . import LicenseError, license_status, verify_package
+from . import _machine
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -22,11 +23,23 @@ def build_parser() -> argparse.ArgumentParser:
     verify = subparsers.add_parser("verify", help="verify the signed package manifest")
     verify.add_argument("--full", action="store_true", help="also hash templates and data files")
     verify.add_argument("--json", action="store_true", help="print JSON")
+
+    fp = subparsers.add_parser(
+        "fingerprint", help="print this machine's fingerprint (no license needed)"
+    )
+    fp.add_argument("--json", action="store_true", help="print JSON")
     return parser
 
 
 def print_status(report: dict) -> None:
     fingerprints = report.get("fingerprints") or []
+    mode = report.get("bind_mode") or "any"
+    if mode == "fixed":
+        binding = ", ".join(fingerprints) if fingerprints else "fixed (no fingerprints)"
+    elif mode == "first-run":
+        binding = f"first-run -> {report.get('bound_fingerprint') or '-'}"
+    else:
+        binding = "any machine"
     lines = [
         f"build id:      {report['build_id']}",
         f"license:       {report['license']}",
@@ -36,7 +49,7 @@ def print_status(report: dict) -> None:
         f"in grace:      {'yes' if report.get('in_grace') else 'no'}",
         f"last seen:     {report.get('last_seen') or '-'}",
         f"customer:      {report.get('customer') or '-'}",
-        f"fingerprints:  {', '.join(fingerprints) if fingerprints else 'any'}",
+        f"binding:       {binding}",
         f"cipher:        {report.get('cipher')}",
         f"integrity:     {report.get('integrity')}",
     ]
@@ -55,6 +68,13 @@ def print_verify(report: dict) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command == "fingerprint":
+        value = _machine.machine_fingerprint()
+        if args.json:
+            print(json.dumps({"fingerprint": value}, indent=2, sort_keys=True))
+        else:
+            print(value)
+        return 0
     if args.command == "status":
         try:
             report = license_status(refresh=True)

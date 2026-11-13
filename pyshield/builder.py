@@ -11,6 +11,7 @@ import py_compile
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import zlib
@@ -99,6 +100,7 @@ class BuildOptions:
     expire: str | None = None
     grace_days: int = 0
     bind_device: list[str] = field(default_factory=list)
+    bind_first_run: bool = False
     cipher: str = "auto"
     customer: str | None = None
     integrity: str = "protected"
@@ -460,13 +462,15 @@ def verify_build(
     expire_date: date | None,
     fingerprints: list[str],
     python_executable: str | None = None,
+    bind_mode: str = licensing.BIND_ANY,
 ) -> None:
     if expire_date is not None and expire_date < date.today():
         log("skipping verification: the build is already expired")
         return
-    if fingerprints and fingerprint.machine_fingerprint() not in fingerprints:
-        log("skipping verification: the build is bound to another machine")
-        return
+    if bind_mode == licensing.BIND_FIXED and fingerprints:
+        if fingerprint.machine_fingerprint() not in fingerprints:
+            log("skipping verification: the build is bound to another machine")
+            return
     executable = python_executable
     if not executable:
         if getattr(sys, "frozen", False):
@@ -475,11 +479,27 @@ def verify_build(
         executable = sys.executable
     env = os.environ.copy()
     env["PYSHELD_LICENSE"] = str(license_path)
+
+    temp_binding: Path | None = None
+    if bind_mode == licensing.BIND_FIRST_RUN:
+        # Never consume the customer's first-run binding on the build machine.
+        handle = tempfile.NamedTemporaryFile(
+            prefix="pyshield-verify-", suffix=".binding", delete=False,
+        )
+        temp_binding = Path(handle.name)
+        handle.close()
+        temp_binding.unlink(missing_ok=True)
+        env[licensing.BINDING_FILE_ENV] = str(temp_binding)
+
     log(f"running manage.py check with {executable}")
-    result = subprocess.run(
-        [executable, str(output / "manage.py"), "check"],
-        cwd=output, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
-    )
+    try:
+        result = subprocess.run(
+            [executable, str(output / "manage.py"), "check"],
+            cwd=output, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
+        )
+    finally:
+        if temp_binding is not None:
+            temp_binding.unlink(missing_ok=True)
     if result.returncode != 0:
         details = (result.stdout + result.stderr).strip()
         raise BuildError("protected project failed manage.py check:\n" + details)
@@ -538,6 +558,14 @@ def build(options: BuildOptions) -> BuildResult:
     except licensing.LicenseError as exc:
         raise BuildError(str(exc)) from exc
     fingerprints = licensing.normalize_fingerprints(options.bind_device)
+    if options.bind_first_run and fingerprints:
+        raise BuildError("--bind-first-run and --bind-device are mutually exclusive")
+    if options.bind_first_run:
+        bind_mode = licensing.BIND_FIRST_RUN
+    elif fingerprints:
+        bind_mode = licensing.BIND_FIXED
+    else:
+        bind_mode = licensing.BIND_ANY
 
     local = fingerprint.machine_fingerprint()
     report_log(options, f"pyshield {__version__} on CPython {sys.version_info[0]}.{sys.version_info[1]}")
@@ -553,9 +581,12 @@ def build(options: BuildOptions) -> BuildResult:
     report_log(options, f"expire:   {expire_date.isoformat() if expire_date else 'never'}")
     if grace_days:
         report_log(options, f"grace:    {grace_days} days after expiry")
-    report_log(options, f"bound to: {', '.join(fingerprints) if fingerprints else 'any machine'}")
-    if options.bind_device and local not in fingerprints:
-        report_log(options, f"note: this machine's fingerprint is {local}")
+    if bind_mode == licensing.BIND_FIRST_RUN:
+        report_log(options, "bound to: first machine at first launch")
+    else:
+        report_log(options, f"bound to: {', '.join(fingerprints) if fingerprints else 'any machine'}")
+        if options.bind_device and local not in fingerprints:
+            report_log(options, f"note: this machine's fingerprint is {local}")
     report_log(options, f"modules:  {len(modules)}")
     if options.dry_run:
         for module in modules:
@@ -608,11 +639,14 @@ def build(options: BuildOptions) -> BuildResult:
 
         python_version = f"{sys.version_info[0]}.{sys.version_info[1]}"
         report_stage(options, "license", "writing license", 72)
-        sealed = licensing.create_license(
-            master_key, build_id, build_key, cipher, python_version, signing_key,
-            expires=expire_date, fingerprints=fingerprints, customer=options.customer,
-            grace_days=grace_days,
-        )
+        try:
+            sealed = licensing.create_license(
+                master_key, build_id, build_key, cipher, python_version, signing_key,
+                expires=expire_date, fingerprints=fingerprints, customer=options.customer,
+                grace_days=grace_days, bind_mode=bind_mode,
+            )
+        except licensing.LicenseError as exc:
+            raise BuildError(str(exc)) from exc
         licensing.write_license(temp / LICENSE_FILE, sealed)
         write_marker(
             temp, build_id, cipher, options.integrity, len(modules), runtime_mode
@@ -654,6 +688,9 @@ def build(options: BuildOptions) -> BuildResult:
         "cipher": cipher,
         "integrity": options.integrity,
         "manifest": str(output / MANIFEST_FILE) if options.integrity != "off" else None,
+        "bind_mode": bind_mode,
+        "fingerprints": fingerprints,
+        "customer": options.customer or None,
         "grace_days": grace_days,
         "python": f"{sys.version_info[0]}.{sys.version_info[1]}",
         "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -666,7 +703,7 @@ def build(options: BuildOptions) -> BuildResult:
         report_stage(options, "verify", "verifying protected output", 92)
         verify_build(
             output, license_path, expire_date, fingerprints,
-            python_executable=options.verify_python,
+            python_executable=options.verify_python, bind_mode=bind_mode,
         )
     else:
         report_log(options, "skipping verification: disabled by the caller")
@@ -693,6 +730,7 @@ class IssueOptions:
     expire: str | None = None
     grace_days: int | None = None
     bind_device: list[str] = field(default_factory=list)
+    bind_first_run: bool = False
     customer: str | None = None
     no_restrictions: bool = False
 
@@ -708,37 +746,81 @@ def issue(options: IssueOptions) -> tuple[Path, dict]:
     cipher = secret.get("cipher", "chacha")
     python_version = secret.get("python", f"{sys.version_info[0]}.{sys.version_info[1]}")
 
-    try:
-        grace_days = licensing.parse_grace_days(
-            secret.get("grace_days", 0) if options.grace_days is None else options.grace_days
-        )
-    except licensing.LicenseError as exc:
-        raise BuildError(str(exc)) from exc
-
-    if options.no_restrictions:
-        expire_date = None
-        fingerprints: list[str] = []
-    else:
-        try:
-            expire_date = licensing.parse_expire(options.expire)
-        except licensing.LicenseError as exc:
-            raise BuildError(str(exc)) from exc
-        fingerprints = licensing.normalize_fingerprints(options.bind_device)
-
-    sealed = licensing.create_license(
-        master_key, build_id, build_key, cipher, python_version, signing_key,
-        expires=expire_date, fingerprints=fingerprints, customer=options.customer,
-        grace_days=grace_days,
-    )
-
     if options.out:
         target = Path(options.out).resolve()
     else:
         target = Path(secret.get("license") or Path(secret["output"]) / LICENSE_FILE).resolve()
+
+    previous: dict | None = None
+    if target.is_file():
+        try:
+            previous = licensing.open_license(
+                master_key, build_id, target.read_bytes(), signing_public_key,
+            )
+        except (OSError, licensing.LicenseError) as exc:
+            log(f"note: the current license at {target} cannot be reused ({exc})")
+
+    if options.no_restrictions:
+        expire_date = None
+        bind_mode = licensing.BIND_ANY
+        fingerprints: list[str] = []
+    else:
+        expire_value = options.expire
+        if expire_value is None and previous is not None:
+            expire_value = previous.get("expires")
+        try:
+            expire_date = licensing.parse_expire(expire_value)
+        except licensing.LicenseError as exc:
+            raise BuildError(str(exc)) from exc
+
+        if options.bind_first_run and options.bind_device:
+            raise BuildError("--bind-first-run and --bind-device are mutually exclusive")
+        if options.bind_first_run:
+            bind_mode = licensing.BIND_FIRST_RUN
+            fingerprints = []
+        elif options.bind_device:
+            bind_mode = licensing.BIND_FIXED
+            fingerprints = licensing.normalize_fingerprints(options.bind_device)
+        elif previous is not None:
+            bind_mode = licensing.bind_mode_of(previous)
+            fingerprints = licensing.normalize_fingerprints(previous.get("fingerprints") or [])
+        else:
+            try:
+                bind_mode = licensing.normalize_bind_mode(
+                    secret.get("bind_mode"), secret.get("fingerprints") or [],
+                )
+            except licensing.LicenseError as exc:
+                raise BuildError(str(exc)) from exc
+            fingerprints = licensing.normalize_fingerprints(secret.get("fingerprints") or [])
+
+    customer = options.customer if options.customer is not None else (
+        (previous or {}).get("customer") or secret.get("customer")
+    )
+    if options.grace_days is not None:
+        grace_source = options.grace_days
+    elif previous is not None:
+        grace_source = previous.get("grace_days", secret.get("grace_days", 0))
+    else:
+        grace_source = secret.get("grace_days", 0)
+    try:
+        grace_days = licensing.parse_grace_days(grace_source)
+    except licensing.LicenseError as exc:
+        raise BuildError(str(exc)) from exc
+
+    try:
+        sealed = licensing.create_license(
+            master_key, build_id, build_key, cipher, python_version, signing_key,
+            expires=expire_date, fingerprints=fingerprints, customer=customer,
+            grace_days=grace_days, bind_mode=bind_mode,
+        )
+    except licensing.LicenseError as exc:
+        raise BuildError(str(exc)) from exc
+
     licensing.write_license(target, sealed)
 
     payload = licensing.open_license(master_key, build_id, sealed, signing_public_key)
     log(f"license written: {target}")
+    log("replace only this license file on site; the protected package stays as it is")
     log(licensing.describe(payload))
     return target, payload
 
@@ -860,6 +942,7 @@ def verify(options: VerifyOptions) -> dict:
                     "expires": payload.get("expires"),
                     "not_before": payload.get("not_before"),
                     "grace_days": payload.get("grace_days", 0),
+                    "bind_mode": licensing.bind_mode_of(payload),
                     "fingerprints": payload.get("fingerprints") or [],
                     "customer": payload.get("customer"),
                 }

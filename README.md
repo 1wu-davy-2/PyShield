@@ -15,7 +15,9 @@ PyShield 是一套自研的 Python / Django 源码保护工具。构建期把业
 - **Django 友好**：保留正常导入、反射、模板、ORM、URL 路由与管理命令；迁移、测试和静态资源默认不加密。
 - **签名完整性清单**：构建时生成 Ed25519 签名的 `.pyshield-manifest.json`，首次加载先校验受保护代码与 runtime 的 SHA-256；许可证、配置、数据库、日志、媒体与 staticfiles 等现场可变文件不受影响。
 - **离线许可证**：支持到期日、宽限期、机器绑定和客户标识，可离线重新签发，无需重新构建。
+- **首次启动绑定**：交付时无法获取客户机指纹时，可选择“首次启动绑定”；程序第一次运行自动锁定该机器并写入带 HMAC 的绑定记录，之后整目录复制到其他机器也无法启动。
 - **许可证防伪**：许可证格式 v2 使用 Ed25519 签名，runtime 只内置公钥；即使攻击者提取对称主密钥，也无法伪造或篡改许可证。
+- **续期不重打包**：到期只影响 `pyshield.lic`；用构建密钥重新签发并替换该文件即可，业务包、绑定记录和客户标识默认原样保留。
 - **续期与时钟保护**：许可证带签发日期，续期后可在进程内热重载；runtime 记录带 HMAC 的最后运行日期，检测明显的系统时钟回拨。
 - **构建绑定**：模块 AAD 同时绑定 `build_id` 与模块 id，跨构建移植密文会解密失败。
 - **多种密码套件**：AES-256-GCM、ChaCha20-Poly1305，以及零依赖的纯 Python ChaCha20 + HMAC-SHA256。
@@ -105,7 +107,8 @@ python -m venv .venv
 | --- | --- |
 | `-e, --expire` | 到期时间：天数或 `YYYY-MM-DD` |
 | `--grace-days` | 到期后的宽限天数，默认 0 |
-| `-b, --bind-device` | 绑定机器指纹，可重复 |
+| `-b, --bind-device` | 绑定指定机器指纹，可重复 |
+| `--bind-first-run` | 首次启动时自动绑定到客户机（与 `-b` 互斥） |
 | `--integrity` | `protected`（默认，代码 + runtime）、`full`（含数据文件）、`off` |
 | `--mutable` | 允许现场修改、不进入清单的额外文件模式（fnmatch），可重复 |
 | `--cipher` | `auto`（默认）、`chacha`、`chacha-pure`、`aesgcm` |
@@ -151,39 +154,56 @@ python -m venv .venv
 - 其他需要现场修改的文件用 `--mutable "path/pattern"` 声明；
 - 校验失败会拒绝加载，错误信息列出前几个不一致的文件。
 
-## 许可证签发
+## 许可证签发与设备绑定
 
-在目标机器取指纹：
+设备绑定有三种模式：
+
+| 模式 | 适用场景 | 行为 |
+| --- | --- | --- |
+| 不绑定 | 通用交付 | 任意兼容机器都能运行 |
+| 首次启动绑定 `--bind-first-run` | 构建时拿不到客户机指纹 | 第一次启动自动锁定该机器 |
+| 指定指纹 `-b <指纹>` | 已知道客户机指纹 | 许可证内写入白名单，可填多台 |
+
+首次启动绑定：
+
+```bash
+python shield.py build -p <project> -o <output> --bind-first-run -e 2027-12-31
+```
+
+- 构建和 `manage.py check` 不消费客户机的首次绑定，校验时使用临时绑定文件；
+- 部署后第一次启动会在输出目录写入 `.pyshield-binding.json`（`build_id`、机器指纹、绑定时间、HMAC），之后每次启动都要求同一台机器；
+- 绑定记录被修改、整包复制到其他机器，或记录被替换成另一台机器，都会拒绝加载；
+- 只读部署可用 `PYSHELD_BINDING_FILE` 指向可写路径；绑定记录放到包外会削弱“复制整包”防护；
+- 更换硬件需要重新绑定：由构建方删除旧绑定文件，或改用 `-b` 签发固定指纹许可证。离线方案无法阻止有权删除本地文件的人重新绑定。
+
+在目标机器取指纹（客户也可自行运行，不需要许可证）：
 
 ```bash
 python shield.py fingerprint
+cd <output> && python -m _shield_runtime fingerprint
 ```
 
-重新签发许可证（不需要重新构建）：
+续期只替换许可证文件：
 
 ```bash
-python shield.py issue --secret <output>.shield-secret.json -e 2027-12-31 -b <机器指纹>
+python shield.py issue --secret <output>.shield-secret.json -e 2027-12-31
 ```
 
-每次签发都会按本次参数重建并重新签名许可证；不传 `-b` 表示不限机器。`issue` 需要构建密钥中的 `signing_key`，因此 `*.shield-secret.json` 必须妥善保管。
-
-续期与宽限期：
-
-```bash
-python shield.py issue --secret <output>.shield-secret.json --out /secure/pyshield.lic -e 2027-12-31 --grace-days 14 -b <机器指纹>
-```
-
-- 宽限期在到期后继续允许运行，默认 0 天；不传 `--grace-days` 时沿用构建时的值；
+- **到期不会废弃业务包**。受保护代码、清单与构建密钥都仍然有效，只有 `pyshield.lic` 过期；重新签发后替换现场的同名文件即可，无需重新构建或重新上传整包；
+- `issue` 默认继承现有许可证的到期日、绑定模式、指纹和客户标识，只覆盖显式传入的参数；首次启动绑定的记录不随续期改变，客户机无需重新绑定；
+- 宽限期在到期后继续允许运行，默认 0 天；不传 `--grace-days` 时沿用原许可证的值；
 - 许可证带 `not_before` 签发日期；现场时钟早于签发日期超过 1 天会拒绝加载；
 - runtime 将带 HMAC 的 `last_seen` 写入 `~/.pyshield/<build_id>.state`（可用 `PYSHELD_STATE_DIR` 指定目录）；发现时钟明显回拨时拒绝加载；
 - 热重载：`from _shield_runtime import license_status; license_status(refresh=True)`，新导入的模块立即使用新许可证，已导入模块不受影响；
-- 时钟状态是尽力而为的防回拨措施；删除状态文件会重置历史，请同时启用 NTP。
+- 时钟状态与首次绑定都是尽力而为的离线措施；删除本地状态可重置历史，请同时启用 NTP 与授权流程。
+
+`issue` 需要构建密钥中的 `signing_key`，因此 `*.shield-secret.json` 必须妥善保管。
 
 ## 现场部署
 
 - **配置外置**：把环境相关配置放在 `local_settings.py`（由 `settings.py` 末尾导入）、`.env` 或环境变量中；这些文件默认明文，不参与清单校验。
 - **部署校验**：先运行 `python -m _shield_runtime verify`（`--full` 同时校验数据文件），再用 `python -m _shield_runtime status` 查看许可证、到期日、宽限期和最后运行日期。
-- **可写目录**：运行用户需要能写许可证所在目录（续期替换）和时钟状态目录；只读部署可用 `PYSHELD_STATE_DIR` 指向可写位置。
+- **可写目录**：运行用户需要能写许可证所在目录（续期替换）；首次启动绑定还需要在输出目录写 `.pyshield-binding.json`。只读部署可用 `PYSHELD_BINDING_FILE` 与 `PYSHELD_STATE_DIR` 指向可写位置。
 - **时间同步**：部署机应启用 NTP/时间同步；容器重建或快照恢复后如出现时钟回拨告警，先校正系统时间。
 - **允许的现场变更**：仅修改清单之外的可变文件；stub、`_shield_runtime/`、`.pyshield-manifest.json` 不可手工编辑，许可证通过 `issue --out` 替换。构建方可随时运行 `python shield.py verify -d <output> --secret <secret>` 复核交付包。
 
@@ -193,6 +213,7 @@ python shield.py issue --secret <output>.shield-secret.json --out /secure/pyshie
 - Ed25519 签名可以阻止伪造许可证，但无法阻止攻击者绕过校验逻辑或 dump 已解密的代码。
 - 完整性清单由 runtime 自身执行校验；如果攻击者可以整体替换 `_shield_runtime/`，清单也会一起失效。它用于发现现场误改或局部篡改，不是二进制级防篡改。
 - 时钟回拨检测依赖本地状态文件，删除状态可重置历史；宽限期和到期日仍应通过合同与授权流程约束。
+- 首次启动绑定把 HMAC 记录写在部署目录，能阻止直接复制整包到其他机器；但拥有写权限的人删除该文件后可以重新绑定，这是纯离线方案的边界。
 - `--integrity full` 会把模板与静态数据纳入校验，现场修改这些文件会阻止启动；需要现场可改的内容应使用 `--mutable` 声明。
 - 构建与部署必须使用相同的 Python 小版本；原生 runtime 还要求相同的操作系统和 CPU 架构。
 - 迁移与测试默认保持明文；模板与静态资源不加密，前端代码对用户可见。

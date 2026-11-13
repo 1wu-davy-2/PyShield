@@ -12,7 +12,7 @@ import unittest
 from datetime import date, timedelta
 from pathlib import Path
 
-from pyshield import builder, crypto, licensing
+from pyshield import builder, crypto, fingerprint, licensing
 
 MANAGE = """\
 import sys
@@ -148,6 +148,118 @@ class BuilderTests(unittest.TestCase):
         completed = self.run_project("check")
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("not licensed", completed.stderr)
+
+    def test_first_run_binding(self) -> None:
+        result = self.build(bind_first_run=True)
+        secret = licensing.read_secret(result.secret)
+        self.assertEqual(secret["bind_mode"], "first-run")
+        self.assertEqual(secret["fingerprints"], [])
+        binding_path = self.output / licensing.BINDING_FILE_NAME
+        self.assertFalse(binding_path.exists())
+
+        completed = self.run_project("check")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        record = json.loads(binding_path.read_text(encoding="utf-8"))
+        self.assertEqual(record["build_id"], secret["build_id"])
+        self.assertEqual(record["fingerprint"], fingerprint.machine_fingerprint())
+
+        completed = self.run_project("check")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+        completed = self.run_runtime("status", "--json")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        status = json.loads(completed.stdout)
+        self.assertEqual(status["bind_mode"], "first-run")
+        self.assertEqual(status["bound_fingerprint"], fingerprint.machine_fingerprint())
+
+        completed = self.run_runtime("fingerprint", "--json")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(
+            json.loads(completed.stdout)["fingerprint"], fingerprint.machine_fingerprint()
+        )
+
+    def test_first_run_binding_rejects_other_machine(self) -> None:
+        result = self.build(bind_first_run=True)
+        secret = licensing.read_secret(result.secret)
+        build_id = secret["build_id"]
+        key = crypto.hkdf_sha256(
+            crypto.b85decode(secret["build_key"]), salt=b"pyshield-binding-v1",
+            info=build_id.encode("utf-8"), length=32,
+        )
+        bound_at = "2026-01-01T00:00:00+00:00"
+        other = "0" * 32
+        mac = hmac.new(
+            key, f"{build_id}|{other}|{bound_at}".encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+        (self.output / licensing.BINDING_FILE_NAME).write_text(json.dumps({
+            "format": 1,
+            "build_id": build_id,
+            "fingerprint": other,
+            "bound_at": bound_at,
+            "mac": mac,
+        }), encoding="utf-8")
+        completed = self.run_project("check")
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("bound to machine", completed.stderr)
+
+    def test_first_run_binding_record_is_tamper_evident(self) -> None:
+        self.build(bind_first_run=True)
+        completed = self.run_project("check")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        path = self.output / licensing.BINDING_FILE_NAME
+        record = json.loads(path.read_text(encoding="utf-8"))
+        record["fingerprint"] = "0" * 32
+        path.write_text(json.dumps(record), encoding="utf-8")
+        completed = self.run_project("check")
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("was modified", completed.stderr)
+
+    def test_build_verification_does_not_consume_first_run_binding(self) -> None:
+        previous = os.environ.get("PYSHELD_STATE_DIR")
+        os.environ["PYSHELD_STATE_DIR"] = str(self.state_dir)
+        try:
+            self.build(bind_first_run=True, no_verify=False)
+        finally:
+            if previous is None:
+                os.environ.pop("PYSHELD_STATE_DIR", None)
+            else:
+                os.environ["PYSHELD_STATE_DIR"] = previous
+        self.assertFalse((self.output / licensing.BINDING_FILE_NAME).exists())
+        completed = self.run_project("check")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_issue_preserves_first_run_binding_and_expiry(self) -> None:
+        result = self.build(
+            expire="2035-01-01", customer="ACME", bind_first_run=True,
+        )
+        completed = self.run_project("check")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+        builder.issue(builder.IssueOptions(secret=str(result.secret)))
+        secret = licensing.read_secret(result.secret)
+        payload = licensing.open_license(
+            crypto.b85decode(secret["master_key"]), secret["build_id"],
+            result.license.read_bytes(), licensing.secret_public_key(secret),
+        )
+        self.assertEqual(payload["expires"], "2035-01-01")
+        self.assertEqual(payload["bind_mode"], "first-run")
+        self.assertEqual(payload["customer"], "ACME")
+
+        completed = self.run_project("check")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_issue_preserves_fixed_binding(self) -> None:
+        local = fingerprint.machine_fingerprint()
+        result = self.build(bind_device=[local], expire="2035-01-01")
+        builder.issue(builder.IssueOptions(secret=str(result.secret), expire="2036-01-01"))
+        secret = licensing.read_secret(result.secret)
+        payload = licensing.open_license(
+            crypto.b85decode(secret["master_key"]), secret["build_id"],
+            result.license.read_bytes(), licensing.secret_public_key(secret),
+        )
+        self.assertEqual(payload["bind_mode"], "fixed")
+        self.assertEqual(payload["fingerprints"], [local])
+        self.assertEqual(payload["expires"], "2036-01-01")
 
     def test_tampered_payload(self) -> None:
         self.build()

@@ -338,14 +338,24 @@
                 </div>
 
                 <div class="field">
+                  <label>设备绑定</label>
+                  <div class="segmented" id="bindingGroup" role="radiogroup" aria-label="设备绑定">
+                    <button class="segment" data-value="any" role="radio"><span>不绑定</span><small>任意机器运行</small></button>
+                    <button class="segment" data-value="first-run" role="radio"><span>首次启动绑定</span><small>客户机自动锁定</small></button>
+                    <button class="segment" data-value="fixed" role="radio"><span>指定指纹</span><small>构建时锁定</small></button>
+                  </div>
+                  <p class="field-hint" id="bindingHint">客户机指纹未知时选“首次启动绑定”：程序第一次运行会锁定该机器，部署包可整目录复制但只能在首台机器启动。</p>
+                </div>
+
+                <div class="field" id="bindDeviceField" hidden>
                   <div class="field-label-row">
-                    <label for="bindDevice">绑定机器指纹</label>
+                    <label for="bindDevice">机器指纹</label>
                     <button class="link-btn" id="useMachine">使用本机</button>
                   </div>
                   <div class="input-shell">
-                    <input id="bindDevice" type="text" spellcheck="false" placeholder="多个指纹用逗号分隔，留空表示不绑定设备">
+                    <input id="bindDevice" type="text" spellcheck="false" placeholder="多个指纹用逗号分隔">
                   </div>
-                  <p class="field-hint">绑定后许可证仅在指定设备生效。</p>
+                  <p class="field-hint">仅在“指定指纹”模式生效；客户可运行 <code>python -m _shield_runtime fingerprint</code> 提供指纹。</p>
                 </div>
               </section>
 
@@ -411,6 +421,7 @@
                   <div><dt>算法</dt><dd id="summaryCipher">ChaCha20 · 纯 Python</dd></div>
                   <div><dt>运行时</dt><dd id="summaryRuntime">字节码运行时</dd></div>
                   <div><dt>完整性</dt><dd id="summaryIntegrity">保护核心</dd></div>
+                  <div><dt>设备绑定</dt><dd id="summaryBinding">不绑定设备</dd></div>
                   <div><dt>许可证</dt><dd id="summaryLicense">永久</dd></div>
                 </dl>
 

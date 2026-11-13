@@ -26,6 +26,7 @@ class LicensingTests(unittest.TestCase):
         payload = licensing.open_license(self.master, self.build_id, sealed, self.public)
         self.assertEqual(payload["build_id"], self.build_id)
         self.assertEqual(payload["expires"], expires.isoformat())
+        self.assertEqual(payload["bind_mode"], licensing.BIND_FIXED)
         self.assertEqual(payload["fingerprints"], ["abc123"])
         self.assertEqual(payload["customer"], "ACME")
         self.assertEqual(crypto.b85decode(payload["build_key"]), self.build_key)
@@ -128,6 +129,31 @@ class LicensingTests(unittest.TestCase):
     def test_fingerprint_normalization(self) -> None:
         values = licensing.normalize_fingerprints([" ABC ", "abc", "", "DEF"])
         self.assertEqual(values, ["abc", "def"])
+
+    def test_first_run_binding(self) -> None:
+        sealed = self.make(bind_mode=licensing.BIND_FIRST_RUN, fingerprints=["abc"])
+        payload = licensing.open_license(self.master, self.build_id, sealed, self.public)
+        self.assertEqual(payload["bind_mode"], licensing.BIND_FIRST_RUN)
+        self.assertEqual(payload["fingerprints"], [])
+        self.assertEqual(licensing.validate_payload(payload, machine_fingerprint="zzz"), [])
+        self.assertEqual(licensing.bind_mode_of(payload), licensing.BIND_FIRST_RUN)
+
+    def test_unbound_license(self) -> None:
+        sealed = self.make(bind_mode=licensing.BIND_ANY)
+        payload = licensing.open_license(self.master, self.build_id, sealed, self.public)
+        self.assertEqual(payload["bind_mode"], licensing.BIND_ANY)
+        self.assertEqual(licensing.validate_payload(payload, machine_fingerprint="zzz"), [])
+
+    def test_fixed_binding_requires_fingerprint(self) -> None:
+        with self.assertRaises(licensing.LicenseError):
+            self.make(bind_mode=licensing.BIND_FIXED)
+
+    def test_legacy_license_is_fixed(self) -> None:
+        sealed = self.make(fingerprints=["abc"])
+        payload = licensing.open_license(self.master, self.build_id, sealed, self.public)
+        payload.pop("bind_mode", None)
+        self.assertEqual(licensing.bind_mode_of(payload), licensing.BIND_FIXED)
+        self.assertTrue(licensing.validate_payload(payload, machine_fingerprint="zzz"))
 
     def test_secret_round_trip(self) -> None:
         import tempfile

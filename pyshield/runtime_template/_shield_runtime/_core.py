@@ -18,7 +18,7 @@ import sys
 import threading
 import types
 import zlib
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from . import _crypto
@@ -43,6 +43,14 @@ MANIFEST_CATEGORIES = ("code", "runtime", "data")
 STATE_SALT = b"pyshield-state-v1"
 STATE_DIR_ENV = "PYSHELD_STATE_DIR"
 CLOCK_SKEW_DAYS = 1
+
+BIND_ANY = "any"
+BIND_FIRST_RUN = "first-run"
+BIND_FIXED = "fixed"
+BINDING_FILE = ".pyshield-binding.json"
+BINDING_FILE_ENV = "PYSHELD_BINDING_FILE"
+BINDING_FORMAT = 1
+BINDING_SALT = b"pyshield-binding-v1"
 
 _lock = threading.RLock()
 _state: dict | None = None
@@ -289,6 +297,104 @@ def _write_clock(build_key: bytes, path: Path, seen: date) -> None:
         pass
 
 
+def _binding_path() -> Path:
+    override = os.environ.get(BINDING_FILE_ENV)
+    if override:
+        return Path(override)
+    return _dist_dir() / BINDING_FILE
+
+
+def _binding_key(build_key: bytes) -> bytes:
+    return _crypto.hkdf_sha256(
+        build_key, salt=BINDING_SALT, info=BUILD_ID.encode("utf-8"), length=32
+    )
+
+
+def _binding_mac(key: bytes, fingerprint: str, bound_at: str) -> str:
+    message = "|".join((BUILD_ID, fingerprint, bound_at)).encode("utf-8")
+    return hmac.new(key, message, hashlib.sha256).hexdigest()
+
+
+def _write_binding(key: bytes, path: Path, fingerprint: str) -> str:
+    bound_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    record = {
+        "format": BINDING_FORMAT,
+        "build_id": BUILD_ID,
+        "fingerprint": fingerprint,
+        "bound_at": bound_at,
+        "mac": _binding_mac(key, fingerprint, bound_at),
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(path.name + ".tmp")
+        temporary.write_text(
+            json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        os.replace(temporary, path)
+    except OSError as exc:
+        raise LicenseError(
+            f"PyShield cannot record the first-run binding in {path} ({exc}); "
+            "run once with write permission or ask the vendor for a fixed license"
+        ) from exc
+    return bound_at
+
+
+def _check_first_run_binding(build_key: bytes) -> str:
+    path = _binding_path()
+    current = _machine.machine_fingerprint().lower()
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        _write_binding(_binding_key(build_key), path, current)
+        return current
+    except OSError as exc:
+        raise LicenseError(f"PyShield binding file {path} cannot be read: {exc}") from exc
+    try:
+        record = json.loads(raw)
+        fingerprint = str(record["fingerprint"]).lower()
+        bound_at = str(record["bound_at"])
+        mac = str(record["mac"])
+    except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise LicenseError(
+            f"PyShield binding file {path} is damaged; restore it from backup "
+            "or contact the vendor"
+        ) from exc
+    if record.get("format") != BINDING_FORMAT or record.get("build_id") != BUILD_ID:
+        raise LicenseError(f"PyShield binding file {path} belongs to a different build")
+    expected = _binding_mac(_binding_key(build_key), fingerprint, bound_at)
+    if not hmac.compare_digest(expected, mac):
+        raise LicenseError(
+            f"PyShield binding file {path} was modified; restore it from backup "
+            "or contact the vendor"
+        )
+    if fingerprint != current:
+        raise LicenseError(
+            f"this deployment is bound to machine {fingerprint} "
+            f"(current machine {current}); contact the vendor to rebind it"
+        )
+    return fingerprint
+
+
+def _check_binding(build_key: bytes, payload: dict) -> tuple[str, list[str], str | None]:
+    mode = str(payload.get("bind_mode") or "").strip().lower()
+    fingerprints = [str(item).lower() for item in payload.get("fingerprints") or []]
+    if mode not in (BIND_ANY, BIND_FIRST_RUN, BIND_FIXED):
+        mode = BIND_FIXED if fingerprints else BIND_ANY
+    if mode == BIND_ANY:
+        return mode, [], None
+    if mode == BIND_FIRST_RUN:
+        return mode, [], _check_first_run_binding(build_key)
+    if not fingerprints:
+        raise LicenseError("license uses fixed binding but lists no fingerprints")
+    current = _machine.machine_fingerprint().lower()
+    if current not in fingerprints:
+        raise LicenseError(
+            f"this machine is not licensed (fingerprint {current}); "
+            "contact the vendor to reissue the license"
+        )
+    return mode, fingerprints, current
+
+
 def _check_clock(build_key: bytes) -> str:
     today = date.today()
     seen, path = _read_clock(build_key)
@@ -353,6 +459,7 @@ def _load_state() -> dict:
         if len(build_key) != 32:
             raise LicenseError("license contains an invalid build key")
 
+        bind_mode, fingerprints, bound_fingerprint = _check_binding(build_key, payload)
         last_seen = _check_clock(build_key)
 
         today = date.today()
@@ -389,15 +496,6 @@ def _load_state() -> dict:
                 raise LicenseError(f"license expired on {expires}")
             in_grace = today > expires_date
 
-        fingerprints = [str(item).lower() for item in payload.get("fingerprints") or []]
-        if fingerprints:
-            current = _machine.machine_fingerprint()
-            if current not in fingerprints:
-                raise LicenseError(
-                    f"this machine is not licensed (fingerprint {current}); "
-                    "contact the vendor to reissue the license"
-                )
-
         _state = {
             "build_key": build_key,
             "license": path,
@@ -406,7 +504,9 @@ def _load_state() -> dict:
             "grace_days": grace_days,
             "in_grace": in_grace,
             "last_seen": last_seen,
+            "bind_mode": bind_mode,
             "fingerprints": fingerprints,
+            "bound_fingerprint": bound_fingerprint,
             "customer": payload.get("customer"),
         }
         return _state
@@ -465,7 +565,9 @@ def license_status(refresh: bool = False) -> dict:
         "grace_days": state["grace_days"],
         "in_grace": state["in_grace"],
         "last_seen": state["last_seen"],
+        "bind_mode": state["bind_mode"],
         "fingerprints": state["fingerprints"],
+        "bound_fingerprint": state["bound_fingerprint"],
         "customer": state["customer"],
         "cipher": CIPHER,
         "integrity": INTEGRITY_MODE,

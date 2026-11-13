@@ -11,6 +11,11 @@
   };
   const INTEGRITY_LABELS = { protected: "保护核心", full: "完整校验", off: "关闭" };
   const RUNTIME_LABELS = { source: "源码运行时", pyc: "字节码运行时" };
+  const BINDING_LABELS = {
+    any: "不绑定设备",
+    "first-run": "首次启动自动绑定",
+    fixed: "指定指纹",
+  };
   const HISTORY_STATUS = {
     success: ["成功", "success"],
     failed: ["失败", "danger"],
@@ -177,7 +182,11 @@
       expire_days: $("#expireDays").value,
       expire_date: $("#expireDate").value,
       grace_days: $("#graceDays").value,
-      fingerprints: splitList($("#bindDevice").value, /[\s,;，；]+/),
+      bind_mode: getSegment("bindingGroup"),
+      fingerprints:
+        getSegment("bindingGroup") === "fixed"
+          ? splitList($("#bindDevice").value, /[\s,;，；]+/)
+          : [],
       customer: $("#customer").value.trim(),
       encrypt_migrations: $("#encryptMigrations").checked,
       encrypt_tests: $("#encryptTests").checked,
@@ -195,6 +204,13 @@
     return "永久";
   }
 
+  function bindingLabel(form) {
+    if (!form || form.bind_mode === "any") return BINDING_LABELS.any;
+    if (form.bind_mode === "first-run") return BINDING_LABELS["first-run"];
+    const count = form.fingerprints.length;
+    return count ? `指定指纹 · ${count} 个` : "指定指纹 · 未填写";
+  }
+
   function baseName(path) {
     const text = String(path || "").replace(/[\\/]+$/, "");
     const parts = text.split(/[\\/]/);
@@ -205,6 +221,20 @@
     const mode = getSegment("expiryGroup");
     $("#expireDaysField").hidden = mode !== "days";
     $("#expireDateField").hidden = mode !== "date";
+  }
+
+  function syncBindingFields() {
+    const mode = getSegment("bindingGroup");
+    $("#bindDeviceField").hidden = mode !== "fixed";
+    const hint = $("#bindingHint");
+    if (mode === "first-run") {
+      hint.textContent =
+        "客户机指纹未知时用此模式：程序第一次运行会锁定该机器，部署包只能在首台启动的客户机运行。";
+    } else if (mode === "fixed") {
+      hint.textContent = "构建时写入指定指纹；更换机器需重新签发许可证或在许可证中追加新指纹。";
+    } else {
+      hint.textContent = "不绑定：部署包可在任意兼容机器运行。首次启动绑定适合交付时无法获取客户机指纹的场景。";
+    }
   }
 
   function syncSecretPreview() {
@@ -224,6 +254,7 @@
     $("#summaryCipher").textContent = CIPHER_LABELS[form.cipher] || form.cipher;
     $("#summaryRuntime").textContent = RUNTIME_LABELS[form.runtime] || form.runtime;
     $("#summaryIntegrity").textContent = INTEGRITY_LABELS[form.integrity] || form.integrity;
+    $("#summaryBinding").textContent = bindingLabel(form);
     $("#summaryLicense").textContent = expiresLabel(form);
     $("#statLicense").textContent = expiresLabel(form);
     if (!state.lastSummary) {
@@ -408,6 +439,7 @@
     }
     if (!current.includes(state.machine)) current.push(state.machine);
     input.value = current.join(", ");
+    syncSummary();
     toast("已加入本机指纹");
   }
 
@@ -858,9 +890,11 @@
     setSegment("integrityGroup", settings.integrity || "protected");
     setSegment("runtimeGroup", settings.runtime || "pyc");
     setSegment("expiryGroup", "never");
+    setSegment("bindingGroup", "any");
     $("#noVerify").checked = settings.no_verify === true;
     $("#suffixHint").textContent = settings.output_suffix || "-shielded";
     syncExpiryFields();
+    syncBindingFields();
   }
 
   async function boot() {
@@ -930,6 +964,7 @@
       size: 2145892,
       size_text: "2.0 MB",
       expires: "永久",
+      binding: "any",
       customer: null,
     };
   }
@@ -974,7 +1009,7 @@
         ok: true,
         app: {
           title: "PyShield 加密构建器",
-          version: "0.4.0",
+          version: "0.5.0",
           python: "3.12.0",
           python_minor: "3.12",
           config_dir: "C:\\Users\\demo\\AppData\\Roaming\\PyShieldBuilder",
@@ -1025,7 +1060,7 @@
     if (name === "start_build") {
       previewState.percent = 0;
       previewState.logs = [
-        "10:24:01  pyshield 0.4.0 on CPython 3.12",
+        "10:24:01  pyshield 0.5.0 on CPython 3.12",
         "10:24:01  project:  E:\\projects\\erp-portal",
         "10:24:01  output:   E:\\projects\\erp-portal-shielded",
         "10:24:01  cipher:   chacha",
@@ -1108,6 +1143,10 @@
     onSegment("integrityGroup", null);
     onSegment("expiryGroup", () => {
       syncExpiryFields();
+      syncSummary();
+    });
+    onSegment("bindingGroup", () => {
+      syncBindingFields();
       syncSummary();
     });
 
