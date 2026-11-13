@@ -572,12 +572,17 @@ def _granted_page(serial: str, machine: str, document: dict, link: str) -> str:
   </dl>
 </div>
 <div class="card">
-  <p style="margin:0 0 12px">如果桌面应用没有自动打开，点击下面的按钮。</p>
-  <a class="btn" href="{html.escape(link)}">打开 PyShield 并激活</a>
-  <p class="note">应用也会自动轮询授权状态；回到应用后稍等几秒即可看到「试用版」标识。</p>
+  <p style="margin:0 0 12px"><strong>点击下面的按钮回到 PyShield。</strong>浏览器如果弹出「是否打开 PyShield」，请选择允许。</p>
+  <a class="btn" id="openApp" href="{html.escape(link)}" style="font-size:15px;padding:12px 22px">打开 PyShield 并激活</a>
+  <p class="note">应用也会自动轮询授权状态；即使浏览器拦截了跳转，桌面应用也会在几秒内自己切到前台并显示「试用版」。</p>
 </div>
 <script>
-  setTimeout(function () {{ window.location.href = {json.dumps(link)}; }}, 600);
+  (function () {{
+    var link = {json.dumps(link)};
+    try {{ window.location.replace(link); }} catch (error) {{}}
+    var button = document.getElementById("openApp");
+    if (button) button.focus();
+  }})();
 </script>
 """
     return _page("试用已开通", body)

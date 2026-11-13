@@ -92,6 +92,7 @@ events(id, at, serial, machine, action, remote, detail)
 | 轮询 | `fetch_status()` → `status=granted` |
 | 领取 | `claim()` → `apply_document()` 验签并写入 `tool-license.json` |
 | 深链 | `pyshield://activate?serial=…`，`gui/instance.py` 负责转给已运行实例 |
+| 回到前台 | 授权到账后 `Api._raise_window()` 还原、置顶并闪烁窗口；浏览器拦截自定义协议也能自动聚焦 |
 
 深链在 Windows 上由 `HKCU\Software\Classes\pyshield` 注册，**仅在打包后的 exe** 中写入（`sys.frozen`），源码运行不会改注册表。可用 `PYSHELD_SKIP_PROTOCOL=1` 关闭。
 

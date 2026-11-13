@@ -652,6 +652,39 @@ class Api:
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "url": url, "trial": self._trial_state()}
 
+    def _raise_window(self) -> None:
+        """Bring the builder window to the foreground after a remote activation."""
+        window = self._window
+        if window is None:
+            return
+        for action in ("show", "restore"):
+            try:
+                getattr(window, action)()
+            except Exception:  # noqa: BLE001 - window backends differ
+                pass
+        try:
+            window.on_top = True
+        except Exception:  # noqa: BLE001
+            pass
+        if sys.platform == "win32":
+            try:
+                import ctypes
+
+                native = getattr(window, "native", None)
+                handle = int(getattr(native, "Handle", 0) or 0)
+                if handle:
+                    user32 = ctypes.windll.user32
+                    user32.ShowWindow(handle, 9)  # SW_RESTORE
+                    user32.SetForegroundWindow(handle)
+                    user32.FlashWindow(handle, True)
+            except Exception:  # noqa: BLE001
+                pass
+        time.sleep(0.2)
+        try:
+            window.on_top = False
+        except Exception:  # noqa: BLE001
+            pass
+
     def _claim_trial(self, server: str):
         """Verify claims from the local dev site with its own key."""
         public_key = None
@@ -674,6 +707,7 @@ class Api:
             entitlement = self._claim_trial(server)
         except (trial_license.TrialError, tool_license.ToolLicenseError, OSError) as exc:
             return {"ok": False, "error": str(exc), "trial": self._trial_state()}
+        self._raise_window()
         return {
             "ok": True,
             "granted": True,

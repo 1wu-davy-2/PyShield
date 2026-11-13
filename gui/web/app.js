@@ -1199,9 +1199,9 @@
     stopTrialPoll();
     state.trialTries = 0;
     $("#trialPollHint").hidden = false;
-    state.trialTimer = setInterval(async () => {
+    const tick = async () => {
       state.trialTries += 1;
-      if (state.trialTries > 40) {
+      if (state.trialTries > 48) {
         stopTrialPoll("等待授权超时，可稍后点「刷新授权状态」");
         return;
       }
@@ -1215,7 +1215,9 @@
         return;
       }
       if (response && response.trial) renderTrial(response);
-    }, 3000);
+    };
+    tick();
+    state.trialTimer = setInterval(tick, 2500);
   }
 
   async function trialOpen(edition) {
