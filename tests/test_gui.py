@@ -16,7 +16,7 @@ from tests.test_builder import make_project
 
 class CoreHelperTests(unittest.TestCase):
     def test_default_output_and_secret_path(self) -> None:
-        root = Path(tempfile.gettempdir()) / "pyshield-core"
+        root = (Path(tempfile.gettempdir()) / "pyshield-core").resolve()
         output = core.default_output(str(root / "demo"), "-shielded")
         self.assertEqual(output.name, "demo-shielded")
         self.assertEqual(output.parent, root)
@@ -48,7 +48,7 @@ class CoreHelperTests(unittest.TestCase):
 class RequestValidationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.project = self.root / "project"
         self.project.mkdir()
         make_project(self.project)
@@ -155,7 +155,7 @@ class RequestValidationTests(unittest.TestCase):
 class SettingsAndHistoryTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.patch = mock.patch.dict(
             "os.environ", {core.CONFIG_ENV: str(self.root / "config")}
         )
@@ -204,7 +204,7 @@ class SettingsAndHistoryTests(unittest.TestCase):
 class BuildManagerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.project = self.root / "project"
         self.project.mkdir()
         make_project(self.project)
@@ -295,7 +295,7 @@ class BuildManagerTests(unittest.TestCase):
 class ApiTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.project = self.root / "project"
         self.project.mkdir()
         make_project(self.project)
