@@ -85,7 +85,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--days", type=int, default=14)
     parser.add_argument("--builds", type=int, default=3)
     parser.add_argument("--reset", action="store_true", help="delete the demo directory first")
-    parser.add_argument("--gui", action="store_true", help="launch the desktop app with the demo env")
+    parser.add_argument("--gui", action="store_true", help="launch the desktop app from source")
+    parser.add_argument("--exe", default="", help="launch a packaged PyShieldBuilder executable")
     parser.add_argument("--open", action="store_true", help="open the application page in a browser")
     parser.add_argument("--exhaust", action="store_true", help="pre-consume the trial quota")
     args = parser.parse_args(argv)
@@ -135,10 +136,17 @@ def main(argv: list[str] | None = None) -> int:
 
         webbrowser.open(page)
 
+    env = os.environ.copy()
     if args.gui:
-        env = os.environ.copy()
         subprocess.Popen([sys.executable, "-m", "gui"], cwd=str(ROOT), env=env)
-        print("[demo] desktop app launched")
+        print("[demo] desktop app launched (source)")
+    if args.exe:
+        target = Path(args.exe).expanduser().resolve()
+        if not target.is_file():
+            print(f"[demo] executable not found: {target}", file=sys.stderr)
+        else:
+            subprocess.Popen([str(target)], cwd=str(target.parent), env=env)
+            print(f"[demo] packaged app launched: {target}")
 
     try:
         thread.join()

@@ -142,7 +142,8 @@ events(id, at, serial, machine, action, remote, detail)
 
 ```bash
 python tools/trial_demo.py                 # 只起服务，浏览器打开打印出来的申请页
-python tools/trial_demo.py --gui           # 起服务并打开桌面应用
+python tools/trial_demo.py --gui           # 起服务并打开源码版应用
+python tools/trial_demo.py --exe dist/PyShieldBuilder.exe   # 用演示环境启动打包版
 python tools/trial_demo.py --exhaust --gui # 预先用掉 3 次额度，直接看「试用已结束」
 python tools/trial_demo.py --reset         # 清空演示数据重来
 ```
