@@ -11,7 +11,10 @@ import py_compile
 import shutil
 import subprocess
 import sys
+import threading
+import time
 import zlib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -74,6 +77,10 @@ class BuildError(Exception):
     """Raised when a build cannot be completed."""
 
 
+class BuildCancelled(BuildError):
+    """Raised when the caller cancels a running build."""
+
+
 @dataclass
 class Module:
     path: Path
@@ -100,6 +107,10 @@ class BuildOptions:
     no_verify: bool = False
     force: bool = False
     dry_run: bool = False
+    verify_python: str | None = None
+    cancel: threading.Event | None = field(default=None, repr=False, compare=False)
+    progress: Callable[[str, int], None] | None = field(default=None, repr=False, compare=False)
+    log_sink: Callable[[str], None] | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass
@@ -110,10 +121,41 @@ class BuildResult:
     build_id: str
     modules: int
     cipher: str
+    elapsed: float = 0.0
+    output_size: int = 0
 
 
 def log(message: str) -> None:
-    print(f"[pyshield] {message}")
+    if sys.stdout is not None:
+        print(f"[pyshield] {message}", flush=True)
+
+
+def report_log(options: BuildOptions, message: str) -> None:
+    log(message)
+    if options.log_sink is not None:
+        try:
+            options.log_sink(message)
+        except Exception:
+            pass
+
+
+def report_stage(options: BuildOptions, stage: str, message: str, percent: int) -> None:
+    report_log(options, message)
+    report_progress(options, stage, percent)
+
+
+def report_progress(options: BuildOptions, stage: str, percent: int) -> None:
+    if options.progress is not None:
+        try:
+            options.progress(stage, percent)
+        except Exception:
+            pass
+
+
+def check_cancel(options: BuildOptions) -> None:
+    if options.cancel is not None and options.cancel.is_set():
+        raise BuildCancelled("build cancelled")
+
 
 
 def path_is_within(child: Path, parent: Path) -> bool:
@@ -412,23 +454,46 @@ def can_remove_output(output: Path) -> bool:
     return (output / MARKER_FILE).is_file()
 
 
-def verify_build(output: Path, license_path: Path, expire_date: date | None, fingerprints: list[str]) -> None:
+def verify_build(
+    output: Path,
+    license_path: Path,
+    expire_date: date | None,
+    fingerprints: list[str],
+    python_executable: str | None = None,
+) -> None:
     if expire_date is not None and expire_date < date.today():
         log("skipping verification: the build is already expired")
         return
     if fingerprints and fingerprint.machine_fingerprint() not in fingerprints:
         log("skipping verification: the build is bound to another machine")
         return
+    executable = python_executable
+    if not executable:
+        if getattr(sys, "frozen", False):
+            log("skipping verification: no external Python interpreter was selected")
+            return
+        executable = sys.executable
     env = os.environ.copy()
     env["PYSHELD_LICENSE"] = str(license_path)
-    log("running manage.py check on the protected output")
+    log(f"running manage.py check with {executable}")
     result = subprocess.run(
-        [sys.executable, str(output / "manage.py"), "check"],
+        [executable, str(output / "manage.py"), "check"],
         cwd=output, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     if result.returncode != 0:
         details = (result.stdout + result.stderr).strip()
         raise BuildError("protected project failed manage.py check:\n" + details)
+
+
+def directory_size(root: Path) -> int:
+    total = 0
+    for path in root.rglob("*"):
+        try:
+            if path.is_file():
+                total += path.stat().st_size
+        except OSError:
+            continue
+    return total
 
 
 def clean_pycache(root: Path) -> None:
@@ -437,9 +502,11 @@ def clean_pycache(root: Path) -> None:
 
 
 def build(options: BuildOptions) -> BuildResult:
+    started = time.monotonic()
     project = Path(options.project).resolve()
     output = Path(options.output).resolve()
 
+    report_stage(options, "init", "validating build options", 2)
     if not (project / "manage.py").is_file():
         raise BuildError(f"manage.py not found in {project}")
     if options.runtime_native and options.runtime_pyc:
@@ -473,27 +540,30 @@ def build(options: BuildOptions) -> BuildResult:
     fingerprints = licensing.normalize_fingerprints(options.bind_device)
 
     local = fingerprint.machine_fingerprint()
-    log(f"pyshield {__version__} on CPython {sys.version_info[0]}.{sys.version_info[1]}")
-    log(f"project:  {project}")
-    log(f"output:   {output}")
-    log(f"cipher:   {cipher}")
-    log(f"runtime:  {runtime_mode}")
-    log(f"integrity: {options.integrity}")
+    report_log(options, f"pyshield {__version__} on CPython {sys.version_info[0]}.{sys.version_info[1]}")
+    report_log(options, f"project:  {project}")
+    report_log(options, f"output:   {output}")
+    report_log(options, f"cipher:   {cipher}")
+    report_log(options, f"runtime:  {runtime_mode}")
+    report_log(options, f"integrity: {options.integrity}")
     if options.integrity == "full":
-        log("note: full integrity verifies templates and static data on every start")
+        report_log(options, "note: full integrity verifies templates and static data on every start")
     if cipher in {"aesgcm", "chacha20poly1305"}:
-        log(f"note: {cipher} builds require the 'cryptography' package on the deployment machine")
-    log(f"expire:   {expire_date.isoformat() if expire_date else 'never'}")
+        report_log(options, f"note: {cipher} builds require the 'cryptography' package on the deployment machine")
+    report_log(options, f"expire:   {expire_date.isoformat() if expire_date else 'never'}")
     if grace_days:
-        log(f"grace:    {grace_days} days after expiry")
-    log(f"bound to: {', '.join(fingerprints) if fingerprints else 'any machine'}")
+        report_log(options, f"grace:    {grace_days} days after expiry")
+    report_log(options, f"bound to: {', '.join(fingerprints) if fingerprints else 'any machine'}")
     if options.bind_device and local not in fingerprints:
-        log(f"note: this machine's fingerprint is {local}")
-    log(f"modules:  {len(modules)}")
+        report_log(options, f"note: this machine's fingerprint is {local}")
+    report_log(options, f"modules:  {len(modules)}")
     if options.dry_run:
         for module in modules:
-            log(f"  would protect {module.relative.as_posix()} as {module.module_id}")
-        return BuildResult(output, licensing.secret_path_for(output), output / LICENSE_FILE, "-", len(modules), cipher)
+            report_log(options, f"  would protect {module.relative.as_posix()} as {module.module_id}")
+        return BuildResult(
+            output, licensing.secret_path_for(output), output / LICENSE_FILE,
+            "-", len(modules), cipher, time.monotonic() - started,
+        )
 
     if not can_remove_output(output) and not options.force:
         raise BuildError(
@@ -512,25 +582,32 @@ def build(options: BuildOptions) -> BuildResult:
         shutil.rmtree(temp, ignore_errors=True)
 
     try:
-        log("copying project data files")
+        check_cancel(options)
+        report_stage(options, "copy", "copying project data files", 10)
         shutil.copytree(project, temp, ignore=copy_ignore)
+        check_cancel(options)
 
-        log("encrypting Python modules")
-        for module in modules:
+        total = len(modules)
+        report_stage(options, "encrypt", f"encrypting {total} Python modules", 15)
+        for index, module in enumerate(modules, 1):
+            check_cancel(options)
             payload = protect_module(module, build_key, build_id, cipher)
             stub = make_stub(payload, module.module_id)
             target = temp / module.relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(stub, encoding="utf-8", newline="\n")
+            report_log(options, f"  protected {module.relative.as_posix()}")
+            report_progress(options, "encrypt", 15 + int(45 * index / total))
 
-        log("installing runtime")
+        check_cancel(options)
+        report_stage(options, "runtime", "installing runtime", 66)
         install_runtime(
             temp, build_id, master_key, signing_public_key, cipher,
             options.integrity, options.runtime_pyc, options.runtime_native,
         )
 
         python_version = f"{sys.version_info[0]}.{sys.version_info[1]}"
-        log("writing license")
+        report_stage(options, "license", "writing license", 72)
         sealed = licensing.create_license(
             master_key, build_id, build_key, cipher, python_version, signing_key,
             expires=expire_date, fingerprints=fingerprints, customer=options.customer,
@@ -542,7 +619,7 @@ def build(options: BuildOptions) -> BuildResult:
         )
 
         if options.integrity != "off":
-            log("writing signed package manifest")
+            report_stage(options, "manifest", "writing signed package manifest", 78)
             payload = manifest.build_payload(
                 temp,
                 build_id,
@@ -555,6 +632,8 @@ def build(options: BuildOptions) -> BuildResult:
             )
             manifest.write_manifest(temp / MANIFEST_FILE, payload)
 
+        check_cancel(options)
+        report_stage(options, "publish", "publishing output directory", 84)
         if output.exists():
             shutil.rmtree(output)
         os.replace(temp, output)
@@ -563,6 +642,7 @@ def build(options: BuildOptions) -> BuildResult:
         raise
 
     secret_path = licensing.secret_path_for(output)
+    report_stage(options, "secret", "writing build secret", 88)
     licensing.write_secret(secret_path, {
         "format": licensing.FORMAT,
         "tool": f"pyshield {__version__}",
@@ -583,14 +663,27 @@ def build(options: BuildOptions) -> BuildResult:
 
     license_path = output / LICENSE_FILE
     if not options.no_verify:
-        verify_build(output, license_path, expire_date, fingerprints)
+        report_stage(options, "verify", "verifying protected output", 92)
+        verify_build(
+            output, license_path, expire_date, fingerprints,
+            python_executable=options.verify_python,
+        )
+    else:
+        report_log(options, "skipping verification: disabled by the caller")
+    report_stage(options, "cleanup", "cleaning bytecode caches", 96)
     clean_pycache(output)
 
-    log(f"done: {output}")
-    log(f"license:  {license_path}")
-    log(f"secret:   {secret_path} (keep private; needed to reissue licenses)")
-    log(f"deploy the whole directory: {output}")
-    return BuildResult(output, secret_path, license_path, build_id, len(modules), cipher)
+    result = BuildResult(
+        output, secret_path, license_path, build_id, len(modules), cipher,
+        time.monotonic() - started, directory_size(output),
+    )
+    report_log(options, f"done: {output}")
+    report_log(options, f"license:  {license_path}")
+    report_log(options, f"secret:   {secret_path} (keep private; needed to reissue licenses)")
+    report_log(options, f"deploy the whole directory: {output}")
+    report_stage(options, "done", f"build complete in {result.elapsed:.1f}s", 100)
+    return result
+
 
 
 @dataclass

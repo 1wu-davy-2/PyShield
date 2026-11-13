@@ -7,5 +7,10 @@
 # Cython>=3
 # setuptools>=68
 
+# 可选：桌面构建器（打包 PyShieldBuilder.exe 时需要）
+# pywebview==6.2.1
+# pythonnet==3.2.1
+# pyinstaller==6.22.3
+
 # 示例 Django 项目（仅 demo 使用）
 Django==6.1.3

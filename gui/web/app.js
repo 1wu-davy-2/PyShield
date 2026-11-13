@@ -1,0 +1,1215 @@
+(() => {
+  "use strict";
+
+  const $ = (selector, root = document) => root.querySelector(selector);
+  const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+
+  const CIPHER_LABELS = {
+    "chacha-pure": "ChaCha20 · 纯 Python",
+    chacha: "ChaCha20-Poly1305",
+    aesgcm: "AES-256-GCM",
+  };
+  const INTEGRITY_LABELS = { protected: "保护核心", full: "完整校验", off: "关闭" };
+  const RUNTIME_LABELS = { source: "源码运行时", pyc: "字节码运行时" };
+  const HISTORY_STATUS = {
+    success: ["成功", "success"],
+    failed: ["失败", "danger"],
+    cancelled: ["已取消", "warning"],
+  };
+  const VIEW_META = {
+    workspace: {
+      title: "加密构建",
+      subtitle: "选择项目目录，配置保护参数，一键生成可部署的受保护副本。",
+      pill: "Django",
+    },
+    history: {
+      title: "构建记录",
+      subtitle: "查看本机最近的构建输出、状态与耗时。",
+      pill: "Local",
+    },
+    settings: {
+      title: "设置",
+      subtitle: "配置新构建的默认算法、运行时与解释器检测策略。",
+      pill: "Preferences",
+    },
+    about: {
+      title: "关于",
+      subtitle: "了解 PyShield 的保护链路与安全边界。",
+      pill: "Info",
+    },
+  };
+
+  const state = {
+    app: null,
+    settings: null,
+    history: [],
+    machine: "",
+    view: "workspace",
+    busy: false,
+    pollTimer: null,
+    renderedLogs: 0,
+    lastStatus: "idle",
+    lastSummary: null,
+    errors: [],
+    outputAuto: true,
+    verifyAuto: true,
+    verifyWasAuto: false,
+    inspectTimer: null,
+    inspectSeq: 0,
+    maximized: false,
+    preview: new URLSearchParams(location.search).get("preview") === "1",
+  };
+
+  // ---------------------------------------------------------------- bridge
+
+  function bridgeReady() {
+    if (window.pywebview && window.pywebview.api) return Promise.resolve(true);
+    if (state.preview) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(false), 8000);
+      window.addEventListener(
+        "pywebviewready",
+        () => {
+          clearTimeout(timer);
+          resolve(true);
+        },
+        { once: true }
+      );
+    });
+  }
+
+  async function call(name, ...args) {
+    if (window.pywebview && window.pywebview.api && typeof window.pywebview.api[name] === "function") {
+      try {
+        const result = await window.pywebview.api[name](...args);
+        return result == null ? { ok: false, error: "后端没有返回结果" } : result;
+      } catch (error) {
+        return { ok: false, error: String((error && error.message) || error) };
+      }
+    }
+    if (state.preview) return mockApi(name, args);
+    return { ok: false, error: "界面桥接尚未就绪，请重新启动应用。" };
+  }
+
+  // ---------------------------------------------------------------- toast
+
+  let toastTimer = null;
+  function toast(message, kind = "info") {
+    const node = $("#toast");
+    $("#toastText").textContent = message;
+    node.classList.remove("is-error", "is-success");
+    if (kind === "error") node.classList.add("is-error");
+    if (kind === "success") node.classList.add("is-success");
+    node.hidden = false;
+    requestAnimationFrame(() => node.classList.add("is-visible"));
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      node.classList.remove("is-visible");
+      setTimeout(() => {
+        node.hidden = true;
+      }, 220);
+    }, 3400);
+  }
+
+  // ---------------------------------------------------------------- segments
+
+  function setSegment(groupId, value) {
+    const group = document.getElementById(groupId);
+    if (!group) return;
+    let matched = false;
+    $$(".segment", group).forEach((button) => {
+      const active = button.dataset.value === value;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-checked", active ? "true" : "false");
+      if (active) matched = true;
+    });
+    if (!matched) {
+      const first = $(".segment", group);
+      if (first) first.classList.add("is-active");
+    }
+  }
+
+  function getSegment(groupId) {
+    const active = $(`.segment.is-active[data-value]`, document.getElementById(groupId));
+    return active ? active.dataset.value : "";
+  }
+
+  function onSegment(groupId, handler) {
+    const group = document.getElementById(groupId);
+    if (!group) return;
+    group.addEventListener("click", (event) => {
+      const button = event.target.closest(".segment");
+      if (!button) return;
+      setSegment(groupId, button.dataset.value);
+      if (handler) handler(button.dataset.value);
+      syncSummary();
+    });
+  }
+
+  // ---------------------------------------------------------------- form
+
+  function splitList(text, separators) {
+    const seen = new Set();
+    const result = [];
+    String(text || "")
+      .split(separators)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .forEach((item) => {
+        const value = separators === /[\s,;，；]+/ ? item.toLowerCase() : item;
+        if (!seen.has(value)) {
+          seen.add(value);
+          result.push(value);
+        }
+      });
+    return result;
+  }
+
+  function collect() {
+    return {
+      project: $("#projectPath").value.trim(),
+      output: $("#outputPath").value.trim(),
+      verify_python: $("#verifyPython").value.trim(),
+      cipher: getSegment("cipherGroup"),
+      integrity: getSegment("integrityGroup"),
+      runtime: getSegment("runtimeGroup"),
+      expiry_mode: getSegment("expiryGroup"),
+      expire_days: $("#expireDays").value,
+      expire_date: $("#expireDate").value,
+      grace_days: $("#graceDays").value,
+      fingerprints: splitList($("#bindDevice").value, /[\s,;，；]+/),
+      customer: $("#customer").value.trim(),
+      encrypt_migrations: $("#encryptMigrations").checked,
+      encrypt_tests: $("#encryptTests").checked,
+      mutable_patterns: $("#mutablePatterns").value,
+      excludes: $("#excludes").value,
+      no_verify: $("#noVerify").checked,
+      force: $("#forceOverwrite").checked,
+    };
+  }
+
+  function expiresLabel(form) {
+    if (!form) return "永久";
+    if (form.expiry_mode === "days") return `${form.expire_days || "?"} 天`;
+    if (form.expiry_mode === "date") return form.expire_date || "指定日期";
+    return "永久";
+  }
+
+  function baseName(path) {
+    const text = String(path || "").replace(/[\\/]+$/, "");
+    const parts = text.split(/[\\/]/);
+    return parts[parts.length - 1] || "";
+  }
+
+  function syncExpiryFields() {
+    const mode = getSegment("expiryGroup");
+    $("#expireDaysField").hidden = mode !== "days";
+    $("#expireDateField").hidden = mode !== "date";
+  }
+
+  function syncSecretPreview() {
+    const output = $("#outputPath").value.trim();
+    $("#secretPreview").textContent = output
+      ? `${baseName(output)}.shield-secret.json`
+      : "…shield-secret.json";
+  }
+
+  function syncSummary() {
+    const form = collect();
+    const project = form.project || "—";
+    $("#summaryProject").textContent = project;
+    $("#summaryProject").title = project;
+    $("#summaryOutput").textContent = form.output || "—";
+    $("#summaryOutput").title = form.output || "";
+    $("#summaryCipher").textContent = CIPHER_LABELS[form.cipher] || form.cipher;
+    $("#summaryRuntime").textContent = RUNTIME_LABELS[form.runtime] || form.runtime;
+    $("#summaryIntegrity").textContent = INTEGRITY_LABELS[form.integrity] || form.integrity;
+    $("#summaryLicense").textContent = expiresLabel(form);
+    $("#statLicense").textContent = expiresLabel(form);
+    if (!state.lastSummary) {
+      $("#statLicenseHint").textContent = "当前表单未签发";
+    }
+    $("#suffixHint").textContent = (state.settings && state.settings.output_suffix) || "-shielded";
+    syncSecretPreview();
+    if (state.busy) return;
+    if (state.lastSummary) {
+      const badge = $("#summaryBadge");
+      badge.textContent = "待重新构建";
+      badge.className = "status-badge warning";
+    }
+  }
+
+  function scheduleInspect(delay = 420) {
+    clearTimeout(state.inspectTimer);
+    state.inspectTimer = setTimeout(inspectNow, delay);
+  }
+
+  async function inspectNow() {
+    const sequence = ++state.inspectSeq;
+    const form = collect();
+    const response = await call("inspect", form);
+    if (sequence !== state.inspectSeq || !response.ok) return;
+
+    if (state.outputAuto && response.output && !$("#outputPath").value.trim()) {
+      $("#outputPath").value = response.output;
+      syncSecretPreview();
+    }
+
+    const project = response.project || {};
+    const badge = $("#projectBadge");
+    if (form.project && project.valid) {
+      badge.textContent = "已识别";
+      badge.className = "status-badge success";
+      const packageNames = Array.isArray(project.packages) ? project.packages : [];
+      const hintPackages = packageNames.slice(0, 3).join("、");
+      $("#projectHint").textContent = hintPackages
+        ? `发现 ${project.modules} 个待加密模块 · 应用包：${hintPackages}${packageNames.length > 3 ? " 等" : ""}`
+        : `发现 ${project.modules} 个待加密模块`;
+      $("#statModules").textContent = String(project.modules);
+      $("#statModulesHint").textContent = packageNames.length
+        ? `${packageNames.length} 个应用包 · 点击开始执行`
+        : "点击开始执行加密";
+    } else if (form.project) {
+      badge.textContent = "无效目录";
+      badge.className = "status-badge danger";
+      $("#projectHint").textContent = "该目录下没有 manage.py，请重新选择 Django 项目根目录。";
+      $("#statModules").textContent = "—";
+      $("#statModulesHint").textContent = "未检测到可加密模块";
+    } else {
+      badge.textContent = "未选择";
+      badge.className = "status-badge";
+      $("#projectHint").textContent = "选择项目后自动识别应用包与待加密模块。";
+      $("#statModules").textContent = "—";
+      $("#statModulesHint").textContent = "选择项目后自动检测";
+    }
+
+    state.errors = Array.isArray(response.errors) ? response.errors : [];
+
+    const verifyInput = $("#verifyPython");
+    if (
+      response.suggested_verify &&
+      state.verifyAuto &&
+      !verifyInput.value.trim()
+    ) {
+      verifyInput.value = response.suggested_verify.executable;
+      state.verifyWasAuto = true;
+    }
+
+    const notice = $("#verifyNotice");
+    const noticeText = $("#verifyNoticeText");
+    if (response.verify_error) {
+      notice.hidden = false;
+      noticeText.textContent = response.verify_error;
+      $("#verifyHint").textContent = "校验将不会执行，构建仍可继续。";
+    } else if (response.verify) {
+      notice.hidden = true;
+      $("#verifyHint").textContent = `${response.verify.summary} · 将执行 manage.py check`;
+    } else if (response.suggested_verify) {
+      notice.hidden = true;
+      $("#verifyHint").textContent = `${response.suggested_verify.summary} · 自动检测`;
+    } else {
+      notice.hidden = false;
+      noticeText.textContent =
+        "未找到安装了 Django 且 Python 版本匹配的解释器，构建将跳过 manage.py check。";
+      $("#verifyHint").textContent = "可手动选择项目虚拟环境中的 python.exe。";
+    }
+
+    if (!state.machine && response.machine) {
+      state.machine = response.machine;
+      $("#machineFingerprint").value = response.machine;
+      $("#infoMachine").textContent = response.machine;
+    }
+  }
+
+  function onProjectInput() {
+    if (state.outputAuto) {
+      const project = $("#projectPath").value.trim();
+      const suffix = (state.settings && state.settings.output_suffix) || "-shielded";
+      $("#outputPath").value = project ? `${project.replace(/[\\/]+$/, "")}${suffix}` : "";
+    }
+    if (state.verifyWasAuto) {
+      $("#verifyPython").value = "";
+      state.verifyWasAuto = false;
+    }
+    state.verifyAuto = true;
+    syncSummary();
+    scheduleInspect();
+  }
+
+  // ---------------------------------------------------------------- browse
+
+  async function browseProject() {
+    const response = await call("browse_project");
+    if (!response.ok) {
+      if (!response.cancelled && response.error) toast(response.error, "error");
+      return;
+    }
+    state.outputAuto = true;
+    $("#projectPath").value = response.project || "";
+    $("#outputPath").value = response.output || "";
+    state.verifyAuto = true;
+    state.verifyWasAuto = false;
+    syncSummary();
+    await inspectNow();
+    toast("已载入项目目录");
+  }
+
+  async function browseOutput() {
+    const response = await call(
+      "browse_output",
+      $("#projectPath").value.trim(),
+      $("#outputPath").value.trim()
+    );
+    if (!response.ok) {
+      if (!response.cancelled && response.error) toast(response.error, "error");
+      return;
+    }
+    state.outputAuto = false;
+    $("#outputPath").value = response.output || "";
+    syncSecretPreview();
+    scheduleInspect(200);
+  }
+
+  async function browsePython() {
+    const response = await call("browse_python");
+    if (!response.ok) {
+      if (!response.cancelled && response.error) toast(response.error, "error");
+      return;
+    }
+    state.verifyAuto = false;
+    state.verifyWasAuto = false;
+    $("#verifyPython").value = response.python.executable;
+    toast(`已选择 Python ${response.python.version}`, "success");
+    await inspectNow();
+  }
+
+  async function copyFingerprint() {
+    const value = $("#machineFingerprint").value.trim();
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      toast("机器指纹已复制", "success");
+    } catch (error) {
+      const input = $("#machineFingerprint");
+      input.removeAttribute("readonly");
+      input.select();
+      document.execCommand("copy");
+      input.setAttribute("readonly", "readonly");
+      toast("机器指纹已复制", "success");
+    }
+  }
+
+  function useMachine() {
+    const input = $("#bindDevice");
+    const current = splitList(input.value, /[\s,;，；]+/);
+    if (!state.machine) {
+      toast("尚未读取到本机指纹", "error");
+      return;
+    }
+    if (!current.includes(state.machine)) current.push(state.machine);
+    input.value = current.join(", ");
+    toast("已加入本机指纹");
+  }
+
+  // ---------------------------------------------------------------- errors
+
+  function showErrors(errors) {
+    const box = $("#formErrors");
+    const list = $("#formErrorsList");
+    list.textContent = "";
+    if (!errors || !errors.length) {
+      box.hidden = true;
+      return;
+    }
+    errors.forEach((message) => {
+      const item = document.createElement("li");
+      item.textContent = message;
+      list.appendChild(item);
+    });
+    box.hidden = false;
+  }
+
+  // ---------------------------------------------------------------- build
+
+  function setBusy(busy) {
+    state.busy = busy;
+    $("#startBtn").disabled = busy;
+    $("#startBtn").querySelector("span").textContent = busy ? "构建中…" : "开始加密";
+    $("#cancelBtn").hidden = !busy;
+    $("#navBuildDot").hidden = !busy;
+    $(".stack").classList.toggle("is-locked", busy);
+    $("#progressBlock").hidden = !busy && state.lastStatus === "idle";
+    if (busy) {
+      const badge = $("#summaryBadge");
+      badge.textContent = "构建中";
+      badge.className = "status-badge warning";
+      $("#resultBanner").hidden = true;
+      $("#resultActions").hidden = true;
+    }
+  }
+
+  function resetTerminal() {
+    const terminal = $("#terminal");
+    terminal.textContent = "";
+    state.renderedLogs = 0;
+  }
+
+  function appendLogLine(line) {
+    const terminal = $("#terminal");
+    const placeholder = terminal.querySelector(".terminal-placeholder");
+    if (placeholder) placeholder.remove();
+    const nearBottom =
+      terminal.scrollHeight - terminal.scrollTop - terminal.clientHeight < 48;
+    const node = document.createElement("span");
+    node.className = "log-line " + logClass(line);
+    node.textContent = line;
+    terminal.appendChild(node);
+    if (nearBottom || state.renderedLogs < 2) terminal.scrollTop = terminal.scrollHeight;
+  }
+
+  function logClass(line) {
+    const text = String(line).toLowerCase();
+    if (text.includes("error") || text.includes("failed") || text.includes("cannot") || text.includes("取消")) {
+      return "is-error";
+    }
+    if (text.includes("warn") || text.includes("note:") || text.includes("skipping")) {
+      return "is-warn";
+    }
+    if (text.includes("done:") || text.includes("protected ") || text.includes("build complete")) {
+      return "is-good";
+    }
+    return "";
+  }
+
+  function renderLogs(logs) {
+    if (!Array.isArray(logs)) return;
+    if (logs.length < state.renderedLogs) {
+      resetTerminal();
+    }
+    for (let index = state.renderedLogs; index < logs.length; index += 1) {
+      appendLogLine(logs[index]);
+    }
+    state.renderedLogs = logs.length;
+    if (logs.length && $("#liveDot").classList.contains("is-live")) {
+      $("#terminal").scrollTop = $("#terminal").scrollHeight;
+    }
+  }
+
+  function renderProgress(snapshot) {
+    const percent = Math.max(0, Math.min(100, Number(snapshot.percent) || 0));
+    $("#progressBlock").hidden = false;
+    $("#progressStage").textContent = snapshot.stage_label || "准备中";
+    $("#progressPercent").textContent = `${percent}%`;
+    $("#progressBar").style.width = `${percent}%`;
+    $("#liveDot").classList.toggle("is-live", snapshot.status === "running");
+  }
+
+  async function startBuild() {
+    if (state.busy) return;
+    showErrors([]);
+    const form = collect();
+    resetTerminal();
+    $("#progressBlock").hidden = false;
+    $("#progressBar").style.width = "0%";
+    $("#progressPercent").textContent = "0%";
+    $("#progressStage").textContent = "校验配置";
+    $("#resultBanner").hidden = true;
+    $("#resultActions").hidden = true;
+    setBusy(true);
+    state.lastStatus = "running";
+
+    const response = await call("start_build", form);
+    if (!response.ok) {
+      setBusy(false);
+      state.lastStatus = "idle";
+      $("#progressBlock").hidden = true;
+      showErrors(response.errors || (response.error ? [response.error] : ["构建无法启动。"]));
+      toast("请先修正表单问题", "error");
+      return;
+    }
+    if (response.note) appendLogLine(response.note);
+    toast("构建已开始");
+    pollBuild();
+  }
+
+  async function pollBuild() {
+    clearTimeout(state.pollTimer);
+    if (!state.busy) return;
+    const response = await call("snapshot");
+    if (!response.ok) {
+      state.pollTimer = setTimeout(pollBuild, 800);
+      return;
+    }
+    const snapshot = response.state || {};
+    renderProgress(snapshot);
+    renderLogs(snapshot.logs);
+    if (snapshot.status === "running") {
+      state.pollTimer = setTimeout(pollBuild, 350);
+    } else {
+      finishBuild(snapshot);
+    }
+  }
+
+  function finishBuild(snapshot) {
+    setBusy(false);
+    state.lastStatus = snapshot.status;
+    $("#progressBlock").hidden = false;
+    $("#liveDot").classList.remove("is-live");
+    renderProgress(snapshot);
+
+    const banner = $("#resultBanner");
+    const icon = $("#resultIcon");
+    banner.hidden = false;
+    banner.className = "result-banner";
+
+    if (snapshot.status === "success") {
+      const summary = snapshot.summary || {};
+      state.lastSummary = summary;
+      const badge = $("#summaryBadge");
+      badge.textContent = "构建完成";
+      badge.className = "status-badge success";
+      icon.innerHTML = '<svg class="icon"><use href="#i-check"/></svg>';
+      $("#resultTitle").textContent = "构建完成";
+      $("#resultText").textContent = `已生成 ${summary.modules} 个加密模块 · ${summary.size_text} · 用时 ${summary.elapsed}s`;
+      $("#resultActions").hidden = false;
+      $("#statModules").textContent = String(summary.modules);
+      $("#statSize").textContent = summary.size_text;
+      $("#statElapsed").textContent = `${summary.elapsed}s`;
+      $("#statLicense").textContent = summary.expires || "永久";
+      $("#statSizeHint").textContent = "上一次构建输出";
+      $("#statElapsedHint").textContent = "内置引擎，无需外部依赖";
+      $("#statLicenseHint").textContent = "许可证已写入输出目录";
+      toast("加密构建完成", "success");
+    } else if (snapshot.status === "cancelled") {
+      const badge = $("#summaryBadge");
+      badge.textContent = "已取消";
+      badge.className = "status-badge warning";
+      banner.classList.add("is-warning");
+      icon.innerHTML = '<svg class="icon"><use href="#i-alert"/></svg>';
+      $("#resultTitle").textContent = "构建已取消";
+      $("#resultText").textContent = "临时目录已清理，未发布新的输出。";
+      toast("构建已取消", "error");
+    } else {
+      const badge = $("#summaryBadge");
+      badge.textContent = "构建失败";
+      badge.className = "status-badge danger";
+      banner.classList.add("is-error");
+      icon.innerHTML = '<svg class="icon"><use href="#i-alert"/></svg>';
+      $("#resultTitle").textContent = "构建失败";
+      $("#resultText").textContent = snapshot.error || "构建过程中出现未知错误。";
+      $("#statLicenseHint").textContent = "构建失败，未签发许可证";
+      toast("构建失败", "error");
+      appendLogLine(`ERROR ${snapshot.error || "unknown error"}`);
+    }
+    refreshHistory();
+  }
+
+  async function cancelBuild() {
+    const response = await call("cancel_build");
+    if (!response.ok) {
+      toast(response.error || "取消失败", "error");
+      return;
+    }
+    $("#cancelBtn").disabled = true;
+    toast("正在取消构建…");
+    setTimeout(() => {
+      $("#cancelBtn").disabled = false;
+    }, 1200);
+  }
+
+  // ---------------------------------------------------------------- history
+
+  function formatTime(value) {
+    if (!value) return "—";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    const pad = (number) => String(number).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  function renderHistory(entries) {
+    state.history = Array.isArray(entries) ? entries : [];
+    $("#historyCount").textContent = String(state.history.length);
+    const body = $("#historyBody");
+    const empty = $("#historyEmpty");
+    const table = $(".data-table");
+    body.textContent = "";
+    const hasRows = state.history.length > 0;
+    table.hidden = !hasRows;
+    empty.hidden = hasRows;
+    if (!hasRows) return;
+
+    state.history.forEach((entry) => {
+      const row = document.createElement("tr");
+
+      const projectCell = document.createElement("td");
+      const projectWrap = document.createElement("div");
+      projectWrap.className = "cell-title";
+      const projectName = document.createElement("strong");
+      projectName.textContent = entry.project_name || baseName(entry.project) || "未命名项目";
+      const projectMeta = document.createElement("span");
+      projectMeta.textContent = entry.customer || entry.build_id || "Django 项目";
+      projectWrap.append(projectName, projectMeta);
+      projectCell.appendChild(projectWrap);
+
+      const outputCell = document.createElement("td");
+      const output = document.createElement("div");
+      output.className = "cell-path";
+      output.textContent = entry.output || "—";
+      output.title = entry.output || "";
+      outputCell.appendChild(output);
+
+      const modulesCell = document.createElement("td");
+      modulesCell.textContent = entry.modules == null ? "—" : String(entry.modules);
+
+      const cipherCell = document.createElement("td");
+      cipherCell.textContent = CIPHER_LABELS[entry.cipher] || entry.cipher || "—";
+
+      const elapsedCell = document.createElement("td");
+      elapsedCell.textContent = entry.elapsed == null ? "—" : `${entry.elapsed}s`;
+
+      const statusCell = document.createElement("td");
+      const status = HISTORY_STATUS[entry.status] || [entry.status || "未知", "soft"];
+      const statusBadge = document.createElement("span");
+      statusBadge.className = `status-badge ${status[1]}`;
+      statusBadge.textContent = status[0];
+      statusCell.appendChild(statusBadge);
+
+      const timeCell = document.createElement("td");
+      timeCell.className = "cell-mono";
+      timeCell.textContent = formatTime(entry.created);
+
+      const actionCell = document.createElement("td");
+      const actions = document.createElement("div");
+      actions.className = "cell-actions";
+
+      const openButton = document.createElement("button");
+      openButton.className = "table-action";
+      openButton.title = "打开输出目录";
+      openButton.innerHTML = '<svg class="icon"><use href="#i-folder"/></svg>';
+      openButton.disabled = !entry.output || entry.missing === true || entry.status !== "success";
+      openButton.addEventListener("click", () => reveal(entry.output));
+
+      const secretButton = document.createElement("button");
+      secretButton.className = "table-action";
+      secretButton.title = "定位构建密钥";
+      secretButton.innerHTML = '<svg class="icon"><use href="#i-key"/></svg>';
+      secretButton.disabled = !entry.secret;
+      secretButton.addEventListener("click", () => reveal(entry.secret));
+
+      actions.append(openButton, secretButton);
+      actionCell.appendChild(actions);
+
+      row.append(
+        projectCell,
+        outputCell,
+        modulesCell,
+        cipherCell,
+        elapsedCell,
+        statusCell,
+        timeCell,
+        actionCell
+      );
+      if (entry.error) row.title = entry.error;
+      body.appendChild(row);
+    });
+  }
+
+  async function refreshHistory() {
+    const response = await call("get_history");
+    if (response.ok) renderHistory(response.history);
+    else if (Array.isArray(response.history)) renderHistory(response.history);
+  }
+
+  async function clearHistory() {
+    if (!state.history.length) {
+      toast("当前没有构建记录");
+      return;
+    }
+    if (!window.confirm("确定清空所有本地构建记录？此操作不影响已生成的输出目录。")) return;
+    const response = await call("clear_history");
+    if (!response.ok) {
+      toast(response.error || "清空失败", "error");
+      return;
+    }
+    renderHistory([]);
+    toast("构建记录已清空", "success");
+  }
+
+  async function reveal(path) {
+    if (!path) return;
+    const response = await call("reveal", path);
+    if (!response.ok) toast(response.error || "路径不存在", "error");
+  }
+
+  // ---------------------------------------------------------------- settings
+
+  function syncSettingsForm() {
+    const settings = state.settings || {};
+    $("#settingCipher").value = settings.cipher || "chacha-pure";
+    $("#settingIntegrity").value = settings.integrity || "protected";
+    $("#settingRuntime").value = settings.runtime || "pyc";
+    $("#settingSuffix").value = settings.output_suffix || "-shielded";
+    $("#settingAutoPython").checked = settings.auto_detect_python !== false;
+    $("#settingNoVerify").checked = settings.no_verify === true;
+  }
+
+  async function saveSettings() {
+    const payload = {
+      cipher: $("#settingCipher").value,
+      integrity: $("#settingIntegrity").value,
+      runtime: $("#settingRuntime").value,
+      output_suffix: $("#settingSuffix").value.trim(),
+      auto_detect_python: $("#settingAutoPython").checked,
+      no_verify: $("#settingNoVerify").checked,
+    };
+    const response = await call("save_settings", payload);
+    if (!response.ok) {
+      toast(response.error || "保存失败", "error");
+      return;
+    }
+    state.settings = response.settings;
+    $("#suffixHint").textContent = response.settings.output_suffix;
+    if (state.outputAuto) {
+      const project = $("#projectPath").value.trim();
+      if (project) $("#outputPath").value = `${project.replace(/[\\/]+$/, "")}${response.settings.output_suffix}`;
+    }
+    syncSecretPreview();
+    syncSummary();
+    toast("默认设置已保存", "success");
+  }
+
+  // ---------------------------------------------------------------- navigation
+
+  function switchView(view) {
+    if (!VIEW_META[view]) return;
+    state.view = view;
+    $$(".nav-item").forEach((item) => {
+      item.classList.toggle("is-active", item.dataset.view === view);
+    });
+    $$(".view").forEach((section) => {
+      section.hidden = section.id !== `view-${view}`;
+    });
+    const meta = VIEW_META[view];
+    $("#pageTitle").textContent = meta.title;
+    $("#pageSubtitle").textContent = meta.subtitle;
+    $("#pagePill").textContent = meta.pill;
+    if (view === "history") refreshHistory();
+    if (view === "settings") syncSettingsForm();
+    $(".content").scrollTop = 0;
+  }
+
+  // ---------------------------------------------------------------- window
+
+  async function windowAction(action) {
+    if (action === "close" && state.busy) {
+      toast("构建进行中，请先取消或等待完成", "error");
+      return;
+    }
+    if (action === "maximize") {
+      const response = await call("window_action", "maximize", state.maximized);
+      if (!response.ok) {
+        if (response.error) toast(response.error, "error");
+        return;
+      }
+      state.maximized = !state.maximized;
+      $("#maxBtn").innerHTML = state.maximized
+        ? '<svg class="icon"><use href="#i-restore"/></svg>'
+        : '<svg class="icon"><use href="#i-maximize"/></svg>';
+      $("#maxBtn").title = state.maximized ? "还原" : "最大化";
+      return;
+    }
+    const response = await call("window_action", action);
+    if (!response.ok && response.error) toast(response.error, "error");
+  }
+
+  // ---------------------------------------------------------------- stats
+
+  function applyLatestSummary() {
+    const success = state.history.find((entry) => entry.status === "success");
+    if (!success) return;
+    $("#statModules").textContent = success.modules == null ? "—" : String(success.modules);
+    $("#statSize").textContent = success.size_text || "—";
+    $("#statElapsed").textContent = success.elapsed == null ? "—" : `${success.elapsed}s`;
+    $("#statLicense").textContent = success.expires || "永久";
+    $("#statSizeHint").textContent = "最近一次构建输出";
+    $("#statElapsedHint").textContent = "最近一次构建耗时";
+    $("#statLicenseHint").textContent = "最近一次构建签发";
+  }
+
+  // ---------------------------------------------------------------- boot
+
+  function fillAbout() {
+    if (!state.app) return;
+    $("#appVersion").textContent = state.app.version;
+    $("#appPython").textContent = state.app.python;
+    $("#aboutVersion").textContent = `v${state.app.version}`;
+    $("#infoVersion").textContent = state.app.version;
+    $("#infoPython").textContent = state.app.python;
+    $("#infoPythonMinor").textContent = state.app.python_minor;
+    $("#infoConfig").textContent = state.app.config_dir;
+    $("#configDir").textContent = state.app.config_dir;
+    $("#infoMachine").textContent = state.machine || "—";
+  }
+
+  function applyDefaultsToForm() {
+    const settings = state.settings || {};
+    setSegment("cipherGroup", settings.cipher || "chacha-pure");
+    setSegment("integrityGroup", settings.integrity || "protected");
+    setSegment("runtimeGroup", settings.runtime || "pyc");
+    setSegment("expiryGroup", "never");
+    $("#noVerify").checked = settings.no_verify === true;
+    $("#suffixHint").textContent = settings.output_suffix || "-shielded";
+    syncExpiryFields();
+  }
+
+  async function boot() {
+    const ready = await bridgeReady();
+    if (!ready && !state.preview) {
+      toast("无法连接本地构建引擎，请重新启动应用", "error");
+      return;
+    }
+    const response = await call("bootstrap");
+    if (!response.ok) {
+      toast(response.error || "初始化失败", "error");
+      return;
+    }
+    state.app = response.app;
+    state.settings = response.settings;
+    state.machine = response.machine || "";
+    $("#machineFingerprint").value = state.machine;
+    applyDefaultsToForm();
+    fillAbout();
+    renderHistory(response.history || []);
+    applyLatestSummary();
+
+    const latest = (response.history || []).find((entry) => entry.project);
+    if (latest && latest.project) {
+      $("#projectPath").value = latest.project;
+      const suffix = response.settings.output_suffix || "-shielded";
+      $("#outputPath").value = `${latest.project.replace(/[\\/]+$/, "")}${suffix}`;
+      state.outputAuto = true;
+    } else if (state.preview) {
+      $("#projectPath").value = "E:\\projects\\erp-portal";
+      $("#outputPath").value = "E:\\projects\\erp-portal-shielded";
+      state.outputAuto = true;
+    }
+
+    const snapshot = response.state || {};
+    if (snapshot.status === "running" && snapshot.started) {
+      setBusy(true);
+      state.lastStatus = "running";
+      renderProgress(snapshot);
+      renderLogs(snapshot.logs);
+      pollBuild();
+    } else if (snapshot.summary && snapshot.status === "success") {
+      state.lastSummary = snapshot.summary;
+      state.lastStatus = "success";
+    }
+
+    syncSummary();
+    await inspectNow();
+  }
+
+  // ---------------------------------------------------------------- preview
+
+  const previewState = { percent: 0, logs: [], timer: null };
+
+  function previewSummary() {
+    return {
+      project: "E:\\projects\\erp-portal",
+      output: "E:\\projects\\erp-portal-shielded",
+      secret: "E:\\projects\\erp-portal-shielded.shield-secret.json",
+      license: "E:\\projects\\erp-portal-shielded\\pyshield.lic",
+      build_id: "9f3c1a72b0d84e51",
+      modules: 48,
+      cipher: "chacha",
+      integrity: "protected",
+      runtime: "pyc",
+      elapsed: 12.6,
+      size: 2145892,
+      size_text: "2.0 MB",
+      expires: "永久",
+      customer: null,
+    };
+  }
+
+  function mockApi(name, args) {
+    if (name === "bootstrap") {
+      const history = [
+        {
+          id: "1",
+          created: new Date().toISOString(),
+          status: "success",
+          project: "E:\\projects\\erp-portal",
+          project_name: "erp-portal",
+          output: "E:\\projects\\erp-portal-shielded",
+          secret: "E:\\projects\\erp-portal-shielded.shield-secret.json",
+          cipher: "chacha",
+          integrity: "protected",
+          runtime: "pyc",
+          modules: 48,
+          elapsed: 12.6,
+          size_text: "2.0 MB",
+          expires: "永久",
+        },
+        {
+          id: "2",
+          created: new Date(Date.now() - 86400000).toISOString(),
+          status: "success",
+          project: "E:\\projects\\crm-suite",
+          project_name: "crm-suite",
+          output: "E:\\projects\\crm-suite-shielded",
+          secret: "E:\\projects\\crm-suite-shielded.shield-secret.json",
+          cipher: "chacha-pure",
+          integrity: "full",
+          runtime: "pyc",
+          modules: 71,
+          elapsed: 18.2,
+          size_text: "3.4 MB",
+          expires: "2027-06-30",
+        },
+      ];
+      return Promise.resolve({
+        ok: true,
+        app: {
+          title: "PyShield 加密构建器",
+          version: "0.4.0",
+          python: "3.12.0",
+          python_minor: "3.12",
+          config_dir: "C:\\Users\\demo\\AppData\\Roaming\\PyShieldBuilder",
+          platform: "win32",
+        },
+        defaults: {
+          cipher: "chacha-pure",
+          integrity: "protected",
+          runtime: "pyc",
+          output_suffix: "-shielded",
+          auto_detect_python: true,
+          no_verify: false,
+        },
+        settings: {
+          cipher: "chacha-pure",
+          integrity: "protected",
+          runtime: "pyc",
+          output_suffix: "-shielded",
+          auto_detect_python: true,
+          no_verify: false,
+        },
+        history,
+        machine: "9f3c1a72b0d84e51c4a201e57d8b16a3",
+        state: { status: "idle", percent: 0, logs: [] },
+      });
+    }
+    if (name === "inspect") {
+      const payload = args[0] || {};
+      return Promise.resolve({
+        ok: true,
+        errors: [],
+        project: {
+          valid: Boolean(payload.project),
+          name: "erp-portal",
+          modules: 48,
+          packages: ["accounts", "orders", "billing", "portal"],
+        },
+        output: payload.output || "",
+        verify: null,
+        verify_error: null,
+        suggested_verify: {
+          executable: "E:\\projects\\erp-portal\\.venv\\Scripts\\python.exe",
+          summary: "Python 3.12.0 · Django 6.1.3 · cryptography 50.0.2",
+        },
+        machine: "9f3c1a72b0d84e51c4a201e57d8b16a3",
+      });
+    }
+    if (name === "start_build") {
+      previewState.percent = 0;
+      previewState.logs = [
+        "10:24:01  pyshield 0.4.0 on CPython 3.12",
+        "10:24:01  project:  E:\\projects\\erp-portal",
+        "10:24:01  output:   E:\\projects\\erp-portal-shielded",
+        "10:24:01  cipher:   chacha",
+        "10:24:01  modules:  48",
+      ];
+      clearInterval(previewState.timer);
+      previewState.timer = setInterval(() => {
+        previewState.percent = Math.min(100, previewState.percent + 8);
+        if (previewState.percent % 24 === 0) {
+          previewState.logs.push(`10:24:02    protected apps/${previewState.percent}/module.py`);
+        }
+      }, 300);
+      return Promise.resolve({ ok: true, note: "自动检测到校验解释器：.venv\\Scripts\\python.exe" });
+    }
+    if (name === "snapshot") {
+      const done = previewState.percent >= 100;
+      if (done) {
+        clearInterval(previewState.timer);
+        if (!previewState.logs.some((line) => line.includes("done:"))) {
+          previewState.logs.push(
+            "10:24:14  done: E:\\projects\\erp-portal-shielded",
+            "10:24:14  build complete in 12.6s"
+          );
+        }
+      }
+      return Promise.resolve({
+        ok: true,
+        state: {
+          status: done ? "success" : "running",
+          stage: done ? "done" : "encrypt",
+          stage_label: done ? "构建完成" : "加密 Python 模块",
+          percent: previewState.percent,
+          logs: previewState.logs.slice(),
+          error: null,
+          summary: done ? previewSummary() : null,
+        },
+      });
+    }
+    if (name === "get_history") {
+      return Promise.resolve({ ok: true, history: [] });
+    }
+    if (name === "browse_project") {
+      return Promise.resolve({
+        ok: true,
+        project: "E:\\projects\\erp-portal",
+        output: "E:\\projects\\erp-portal-shielded",
+      });
+    }
+    if (name === "browse_output") {
+      return Promise.resolve({ ok: true, output: "E:\\projects\\erp-portal-shielded" });
+    }
+    if (name === "browse_python") {
+      return Promise.resolve({
+        ok: true,
+        python: {
+          executable: "E:\\projects\\erp-portal\\.venv\\Scripts\\python.exe",
+          version: "3.12.0",
+          summary: "Python 3.12.0 · Django 6.1.3",
+        },
+      });
+    }
+    if (name === "fingerprint") {
+      return Promise.resolve({ ok: true, machine: "9f3c1a72b0d84e51c4a201e57d8b16a3" });
+    }
+    if (name === "save_settings") {
+      return Promise.resolve({ ok: true, settings: args[0] || {} });
+    }
+    if (name === "reveal") return Promise.resolve({ ok: true });
+    if (name === "window_action") return Promise.resolve({ ok: true });
+    if (name === "cancel_build") return Promise.resolve({ ok: true });
+    if (name === "clear_history") return Promise.resolve({ ok: true, history: [] });
+    return Promise.resolve({ ok: false, error: `预览模式未实现 ${name}` });
+  }
+
+  // ---------------------------------------------------------------- events
+
+  function bindEvents() {
+    onSegment("cipherGroup", null);
+    onSegment("runtimeGroup", null);
+    onSegment("integrityGroup", null);
+    onSegment("expiryGroup", () => {
+      syncExpiryFields();
+      syncSummary();
+    });
+
+    $("#projectPath").addEventListener("input", onProjectInput);
+    $("#outputPath").addEventListener("input", () => {
+      state.outputAuto = false;
+      syncSummary();
+      scheduleInspect();
+    });
+    $("#verifyPython").addEventListener("input", () => {
+      state.verifyAuto = false;
+      state.verifyWasAuto = false;
+      syncSummary();
+      scheduleInspect();
+    });
+    [
+      "#expireDays",
+      "#expireDate",
+      "#graceDays",
+      "#customer",
+      "#bindDevice",
+      "#encryptMigrations",
+      "#encryptTests",
+      "#noVerify",
+      "#forceOverwrite",
+      "#mutablePatterns",
+      "#excludes",
+    ].forEach((selector) => {
+      const node = $(selector);
+      if (!node) return;
+      node.addEventListener("change", () => {
+        syncSummary();
+        if (["#encryptMigrations", "#encryptTests", "#excludes"].includes(selector)) {
+          scheduleInspect();
+        }
+      });
+      node.addEventListener("input", syncSummary);
+    });
+
+    $("#browseProject").addEventListener("click", browseProject);
+    $("#browseOutput").addEventListener("click", browseOutput);
+    $("#browsePython").addEventListener("click", browsePython);
+    $("#copyFingerprint").addEventListener("click", copyFingerprint);
+    $("#useMachine").addEventListener("click", useMachine);
+    $("#startBtn").addEventListener("click", startBuild);
+    $("#cancelBtn").addEventListener("click", cancelBuild);
+    $("#openOutput").addEventListener("click", () => {
+      if (state.lastSummary) reveal(state.lastSummary.output);
+    });
+    $("#openSecret").addEventListener("click", () => {
+      if (state.lastSummary) reveal(state.lastSummary.secret);
+    });
+    $("#clearLog").addEventListener("click", () => {
+      resetTerminal();
+      const placeholder = document.createElement("span");
+      placeholder.className = "terminal-placeholder";
+      placeholder.textContent = state.busy ? "构建日志继续输出…" : "等待构建任务…";
+      $("#terminal").appendChild(placeholder);
+    });
+
+    $("#advancedToggle").addEventListener("click", () => {
+      const body = $("#advancedBody");
+      const open = body.hidden;
+      body.hidden = !open;
+      $("#advancedToggle").classList.toggle("is-open", open);
+      $("#advancedToggle").setAttribute("aria-expanded", open ? "true" : "false");
+    });
+
+    $$(".nav-item").forEach((item) => {
+      item.addEventListener("click", () => switchView(item.dataset.view));
+    });
+    $("#emptyGoBuild").addEventListener("click", () => switchView("workspace"));
+    $("#clearHistory").addEventListener("click", clearHistory);
+
+    $$(".win-btn").forEach((button) => {
+      button.addEventListener("click", () => windowAction(button.dataset.window));
+    });
+    $(".topbar-title").addEventListener("dblclick", () => windowAction("maximize"));
+
+    $("#refreshBtn").addEventListener("click", async () => {
+      $("#refreshBtn").classList.add("is-spinning");
+      const response = await call("fingerprint");
+      if (response.ok && response.machine) {
+        state.machine = response.machine;
+        $("#machineFingerprint").value = response.machine;
+        $("#infoMachine").textContent = response.machine;
+      }
+      await inspectNow();
+      await refreshHistory();
+      setTimeout(() => $("#refreshBtn").classList.remove("is-spinning"), 300);
+      toast("环境状态已刷新");
+    });
+
+    $("#saveSettings").addEventListener("click", saveSettings);
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && state.busy) {
+        event.preventDefault();
+        cancelBuild();
+      }
+    });
+  }
+
+  bindEvents();
+  boot();
+})();

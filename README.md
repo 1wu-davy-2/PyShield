@@ -11,6 +11,7 @@ PyShield 是一套自研的 Python / Django 源码保护工具。构建期把业
 ## 特性
 
 - **源码不落地**：模块编译为 code object 后经 zlib 压缩，再用每个模块独立的 AEAD 密钥加密；发布目录只保留 Base85 stub。
+- **桌面构建器**：`PyShieldBuilder.exe` 是免安装的 Windows 单文件程序，选择 Django 目录、配置参数、点击一次即可完成加密；Web UI、runtime 模板与构建引擎全部内嵌，不依赖外部 Python 或 PyShield 源码。
 - **Django 友好**：保留正常导入、反射、模板、ORM、URL 路由与管理命令；迁移、测试和静态资源默认不加密。
 - **签名完整性清单**：构建时生成 Ed25519 签名的 `.pyshield-manifest.json`，首次加载先校验受保护代码与 runtime 的 SHA-256；许可证、配置、数据库、日志、媒体与 staticfiles 等现场可变文件不受影响。
 - **离线许可证**：支持到期日、宽限期、机器绑定和客户标识，可离线重新签发，无需重新构建。
@@ -35,6 +36,11 @@ PyShield 是一套自研的 Python / Django 源码保护工具。构建期把业
 - 目标项目自身的运行依赖（Django 等）
 - 使用 AES-GCM / ChaCha20-Poly1305 时需要 `cryptography`
 - 使用原生 runtime 时，需要与构建机相同的操作系统、CPU 架构和 Python ABI
+
+桌面构建器打包（仅开发构建 exe 时需要）：
+
+- Windows 10/11 与 WebView2 Runtime
+- `pywebview`、`pythonnet`、`cryptography`、`PyInstaller`
 
 ## 快速开始
 
@@ -67,6 +73,20 @@ python manage.py runserver 0.0.0.0:8000
 ```
 
 生产环境请使用正式的 WSGI / ASGI 服务器，并按项目常规方式配置静态文件与 `ALLOWED_HOSTS`。现场配置建议放在 `local_settings.py`、`.env` 或环境变量中，这些文件默认保持明文且不参与完整性校验。
+
+### 桌面构建器
+
+Windows 用户可以直接运行 `PyShieldBuilder.exe`：选择 Django 项目目录，确认输出位置和参数，点击“开始加密”。默认输出到与项目同级的 `<项目名>-shielded`，构建密钥写到 `<输出目录>.shield-secret.json`。
+
+从源码打包 exe：
+
+```bash
+python -m venv .venv
+.venv/Scripts/python -m pip install pyinstaller==6.22.3 pywebview==6.2.1 pythonnet==3.2.1 cryptography
+.venv/Scripts/python -m PyInstaller --noconfirm --clean PyShieldBuilder.spec
+```
+
+详见[桌面构建器文档](docs/desktop-builder.md)。桌面版内置 CPython 3.12 与全部界面资源，产物仍需部署在 CPython 3.12.x 上。
 
 ## 常用命令
 
@@ -181,6 +201,7 @@ python shield.py issue --secret <output>.shield-secret.json --out /secure/pyshie
 ## 文档
 
 - [执行手册](docs/runbook.md)：构建、部署、许可证、更新与故障排查
+- [桌面构建器](docs/desktop-builder.md)：exe 使用、打包、内置资源与部署约束
 - [实现思路](docs/implementation.md)：密钥体系、信封格式、运行时加载与设计取舍
 
 ## 许可证

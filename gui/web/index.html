@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'">
+  <title>PyShield 加密构建器</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <svg class="icon-sprite" aria-hidden="true">
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 2.8v5.1c0 4.5-2.9 7.8-7 9.1-4.1-1.3-7-4.6-7-9.1V5.8L12 3z"/><path d="M9.2 11.8l1.9 1.9 3.8-3.9"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5l10 6.5-10 6.5z"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5A2 2 0 0 1 5.5 5.5h4l2 2h7a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V7.5z"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><path d="M4 7v4h4"/><path d="M4.8 11a7.4 7.4 0 1 1 .9 6.2"/><path d="M12 8v4.5l3 1.8"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.1"/><path d="M19.2 13.4a7.6 7.6 0 0 0 0-2.8l2-1.5-2-3.4-2.3 1a7.6 7.6 0 0 0-2.4-1.4L14.2 3h-4.4l-.4 2.3A7.6 7.6 0 0 0 7 6.7l-2.3-1-2 3.4 2 1.5a7.6 7.6 0 0 0 0 2.8l-2 1.5 2 3.4 2.3-1a7.6 7.6 0 0 0 2.4 1.4l.4 2.3h4.4l.4-2.3a7.6 7.6 0 0 0 2.4-1.4l2.3 1 2-3.4-2-1.5z"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5"/><path d="M12 11v5"/><path d="M12 8h.01"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-13.8-4.6L4 8.6"/><path d="M4 4v4.6h4.6"/><path d="M4 13a8 8 0 0 0 13.8 4.6L20 15.4"/><path d="M20 20v-4.6h-4.6"/></symbol>
+    <symbol id="i-minimize" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-maximize" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+    <symbol id="i-restore" viewBox="0 0 24 24"><rect x="5.5" y="8.5" width="10" height="10" rx="2"/><path d="M9 5.5h7a2 2 0 0 1 2 2v7"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><path d="M8.5 7L4 12l4.5 5"/><path d="M15.5 7L20 12l-4.5 5"/><path d="M13.2 5l-2.4 14"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="M4 8l8-4 8 4-8 4-8-4z"/><path d="M4 8v8l8 4 8-4V8"/><path d="M12 12v8"/></symbol>
+    <symbol id="i-timer" viewBox="0 0 24 24"><circle cx="12" cy="13" r="7"/><path d="M12 10v3.5l2.4 1.6"/><path d="M9.5 3h5"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8.5" cy="14.5" r="3.5"/><path d="M11 12l8-8"/><path d="M16 6l2 2"/><path d="M13.5 8.5l2 2"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.2L19 7"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4.5l8.2 14.2H3.8L12 4.5z"/><path d="M12 9.5v4"/><path d="M12 16.5h.01"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="M7.5 9.5l3 2.5-3 2.5"/><path d="M12.5 15h4"/></symbol>
+    <symbol id="i-chip" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M10 3.5v3M14 3.5v3M10 17.5v3M14 17.5v3M3.5 10h3M3.5 14h3M17.5 10h3M17.5 14h3"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 5h5v5"/><path d="M19 5l-7.5 7.5"/><path d="M18.5 14v4a1.5 1.5 0 0 1-1.5 1.5H6A1.5 1.5 0 0 1 4.5 18V7A1.5 1.5 0 0 1 6 5.5h4"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="9.5" rx="2.5"/><path d="M8 10V7.5a4 4 0 0 1 8 0V10"/><path d="M12 14v2"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14"/><path d="M9.5 7V5.5A1.5 1.5 0 0 1 11 4h2a1.5 1.5 0 0 1 1.5 1.5V7"/><path d="M7 7l.8 12h8.4L17 7"/></symbol>
+  </svg>
+
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand pywebview-drag-region">
+        <div class="brand-logo">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 2.8v5.1c0 4.5-2.9 7.8-7 9.1-4.1-1.3-7-4.6-7-9.1V5.8L12 3z" fill="currentColor" opacity=".95"/><path d="M9.1 11.7l2 2 3.9-4" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="brand-text">
+          <strong>PyShield</strong>
+          <span>加密构建器</span>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <p class="nav-caption">工作区</p>
+        <button class="nav-item is-active" id="navWorkspace" data-view="workspace">
+          <svg class="icon"><use href="#i-shield"/></svg>
+          <span>加密构建</span>
+          <span class="nav-live" id="navBuildDot" hidden></span>
+        </button>
+        <button class="nav-item" id="navHistory" data-view="history">
+          <svg class="icon"><use href="#i-history"/></svg>
+          <span>构建记录</span>
+          <span class="nav-count" id="historyCount">0</span>
+        </button>
+        <p class="nav-caption">应用</p>
+        <button class="nav-item" id="navSettings" data-view="settings">
+          <svg class="icon"><use href="#i-settings"/></svg>
+          <span>设置</span>
+        </button>
+        <button class="nav-item" id="navAbout" data-view="about">
+          <svg class="icon"><use href="#i-info"/></svg>
+          <span>关于</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <div class="offline-card">
+          <div class="offline-icon"><svg class="icon"><use href="#i-lock"/></svg></div>
+          <div>
+            <strong>本地离线构建</strong>
+            <p>加密与签名都在本机完成，密钥不会离开此设备。</p>
+          </div>
+        </div>
+        <div class="sidebar-meta">
+          <span>v<span id="appVersion">—</span></span>
+          <span class="meta-dot"></span>
+          <span>CPython <span id="appPython">—</span></span>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-title pywebview-drag-region">
+          <div class="title-line">
+            <h1 id="pageTitle">加密构建</h1>
+            <span class="title-pill" id="pagePill">Django</span>
+          </div>
+          <p id="pageSubtitle">选择项目目录，配置保护参数，一键生成可部署的受保护副本。</p>
+        </div>
+        <div class="topbar-actions">
+          <button class="icon-btn" id="refreshBtn" title="重新检测环境">
+            <svg class="icon"><use href="#i-refresh"/></svg>
+          </button>
+          <div class="window-controls">
+            <button class="win-btn" data-window="minimize" title="最小化"><svg class="icon"><use href="#i-minimize"/></svg></button>
+            <button class="win-btn" data-window="maximize" id="maxBtn" title="最大化"><svg class="icon"><use href="#i-maximize"/></svg></button>
+            <button class="win-btn danger" data-window="close" title="关闭"><svg class="icon"><use href="#i-close"/></svg></button>
+          </div>
+        </div>
+      </header>
+
+      <div class="content">
+        <section class="view" id="view-workspace">
+          <div class="stats-grid">
+            <article class="stat-card">
+              <div class="stat-head">
+                <span>加密模块</span>
+                <span class="stat-icon blue"><svg class="icon"><use href="#i-code"/></svg></span>
+              </div>
+              <div class="stat-value" id="statModules">—</div>
+              <div class="stat-foot" id="statModulesHint">选择项目后自动检测</div>
+            </article>
+            <article class="stat-card">
+              <div class="stat-head">
+                <span>输出体积</span>
+                <span class="stat-icon teal"><svg class="icon"><use href="#i-box"/></svg></span>
+              </div>
+              <div class="stat-value" id="statSize">—</div>
+              <div class="stat-foot" id="statSizeHint">构建完成后统计</div>
+            </article>
+            <article class="stat-card">
+              <div class="stat-head">
+                <span>构建耗时</span>
+                <span class="stat-icon amber"><svg class="icon"><use href="#i-timer"/></svg></span>
+              </div>
+              <div class="stat-value" id="statElapsed">—</div>
+              <div class="stat-foot" id="statElapsedHint">内置引擎，无需外部依赖</div>
+            </article>
+            <article class="stat-card">
+              <div class="stat-head">
+                <span>许可证状态</span>
+                <span class="stat-icon violet"><svg class="icon"><use href="#i-key"/></svg></span>
+              </div>
+              <div class="stat-value" id="statLicense">—</div>
+              <div class="stat-foot" id="statLicenseHint">当前表单未签发</div>
+            </article>
+          </div>
+
+          <div class="workspace-grid">
+            <div class="stack">
+              <section class="card">
+                <header class="card-head">
+                  <div>
+                    <h2>项目与输出</h2>
+                    <p>选择 Django 源码目录，确认生成位置</p>
+                  </div>
+                  <span class="status-badge" id="projectBadge">未选择</span>
+                </header>
+
+                <div class="field">
+                  <div class="field-label-row">
+                    <label for="projectPath">Django 项目目录</label>
+                    <span class="label-note">必须包含 <code>manage.py</code></span>
+                  </div>
+                  <div class="input-row">
+                    <div class="input-shell">
+                      <svg class="icon"><use href="#i-folder"/></svg>
+                      <input id="projectPath" type="text" spellcheck="false" placeholder="例如 E:\projects\my-shop">
+                    </div>
+                    <button class="btn secondary" id="browseProject">浏览</button>
+                  </div>
+                  <p class="field-hint" id="projectHint">选择项目后自动识别应用包与待加密模块。</p>
+                </div>
+
+                <div class="field">
+                  <div class="field-label-row">
+                    <label for="outputPath">输出目录</label>
+                    <span class="label-note">默认追加 <code id="suffixHint">-shielded</code></span>
+                  </div>
+                  <div class="input-row">
+                    <div class="input-shell">
+                      <svg class="icon"><use href="#i-box"/></svg>
+                      <input id="outputPath" type="text" spellcheck="false" placeholder="与项目同级的受保护副本目录">
+                    </div>
+                    <button class="btn secondary" id="browseOutput">浏览</button>
+                  </div>
+                  <p class="field-hint">构建密钥另存为 <code id="secretPreview">…shield-secret.json</code>，请单独保管。</p>
+                </div>
+
+                <div class="field-grid">
+                  <div class="field">
+                    <div class="field-label-row">
+                      <label for="verifyPython">校验解释器</label>
+                      <span class="mini-tag">可选</span>
+                    </div>
+                    <div class="input-row">
+                      <div class="input-shell">
+                        <svg class="icon"><use href="#i-terminal"/></svg>
+                        <input id="verifyPython" type="text" spellcheck="false" placeholder="自动检测项目 .venv">
+                      </div>
+                      <button class="btn secondary compact" id="browsePython">选择</button>
+                    </div>
+                    <p class="field-hint" id="verifyHint">用于运行 manage.py check，不参与输出运行时。</p>
+                  </div>
+                  <div class="field">
+                    <div class="field-label-row">
+                      <label for="machineFingerprint">本机指纹</label>
+                      <span class="mini-tag">只读</span>
+                    </div>
+                    <div class="input-row">
+                      <div class="input-shell readonly">
+                        <svg class="icon"><use href="#i-chip"/></svg>
+                        <input id="machineFingerprint" type="text" readonly>
+                      </div>
+                      <button class="icon-btn bordered" id="copyFingerprint" title="复制指纹"><svg class="icon"><use href="#i-copy"/></svg></button>
+                    </div>
+                    <p class="field-hint">设备绑定时使用，不会上传。</p>
+                  </div>
+                </div>
+
+                <div class="notice" id="verifyNotice" hidden>
+                  <svg class="icon"><use href="#i-alert"/></svg>
+                  <span id="verifyNoticeText"></span>
+                </div>
+              </section>
+
+              <section class="card">
+                <header class="card-head">
+                  <div>
+                    <h2>加密选项</h2>
+                    <p>算法、运行时形态与完整性清单</p>
+                  </div>
+                </header>
+
+                <div class="field">
+                  <div class="field-label-row">
+                    <label>模块加密算法</label>
+                    <span class="label-note">模块内容使用 AEAD 信封封装</span>
+                  </div>
+                  <div class="segmented wide" id="cipherGroup" role="radiogroup" aria-label="加密算法">
+                    <button class="segment" data-value="chacha-pure" role="radio">
+                      <span>ChaCha20 · 纯 Python</span>
+                      <small>零依赖 · 兼容性最好</small>
+                    </button>
+                    <button class="segment" data-value="chacha" role="radio">
+                      <span>ChaCha20-Poly1305</span>
+                      <small>部署机需 cryptography</small>
+                    </button>
+                    <button class="segment" data-value="aesgcm" role="radio">
+                      <span>AES-256-GCM</span>
+                      <small>部署机需 cryptography</small>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="field-grid">
+                  <div class="field">
+                    <label>运行时形态</label>
+                    <div class="segmented" id="runtimeGroup" role="radiogroup" aria-label="运行时形态">
+                      <button class="segment" data-value="source" role="radio">
+                        <span>源码运行时</span>
+                        <small>便于排查</small>
+                      </button>
+                      <button class="segment" data-value="pyc" role="radio">
+                        <span>字节码运行时</span>
+                        <small>推荐</small>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label>完整性清单</label>
+                    <div class="segmented" id="integrityGroup" role="radiogroup" aria-label="完整性清单">
+                      <button class="segment" data-value="protected" role="radio">
+                        <span>保护核心</span>
+                        <small>代码 + 运行时</small>
+                      </button>
+                      <button class="segment" data-value="full" role="radio">
+                        <span>完整校验</span>
+                        <small>含静态数据</small>
+                      </button>
+                      <button class="segment" data-value="off" role="radio">
+                        <span>关闭</span>
+                        <small>不生成清单</small>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="inline-note">
+                  <svg class="icon"><use href="#i-shield"/></svg>
+                  <span>签名清单会记录每个受保护文件，部署后任何改动都会在启动时被拒绝。</span>
+                </div>
+              </section>
+
+              <section class="card">
+                <header class="card-head">
+                  <div>
+                    <h2>许可证</h2>
+                    <p>签名许可证在构建时写入输出目录</p>
+                  </div>
+                  <span class="status-badge soft">Ed25519 签名</span>
+                </header>
+
+                <div class="field">
+                  <label>有效期</label>
+                  <div class="segmented" id="expiryGroup" role="radiogroup" aria-label="有效期">
+                    <button class="segment" data-value="never" role="radio"><span>永久</span><small>不设置到期</small></button>
+                    <button class="segment" data-value="days" role="radio"><span>按天数</span><small>构建日起算</small></button>
+                    <button class="segment" data-value="date" role="radio"><span>指定日期</span><small>精确到天</small></button>
+                  </div>
+                </div>
+
+                <div class="field-grid three">
+                  <div class="field" id="expireDaysField" hidden>
+                    <label for="expireDays">有效天数</label>
+                    <div class="input-shell">
+                      <input id="expireDays" type="number" min="1" max="36500" value="30">
+                    </div>
+                  </div>
+                  <div class="field" id="expireDateField" hidden>
+                    <label for="expireDate">到期日期</label>
+                    <div class="input-shell">
+                      <input id="expireDate" type="date">
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label for="graceDays">宽限天数</label>
+                    <div class="input-shell">
+                      <input id="graceDays" type="number" min="0" max="3650" value="0">
+                    </div>
+                    <p class="field-hint">到期后仍可运行的缓冲期。</p>
+                  </div>
+                  <div class="field">
+                    <label for="customer">客户名称</label>
+                    <div class="input-shell">
+                      <input id="customer" type="text" placeholder="可选，写入许可证">
+                    </div>
+                    <p class="field-hint">用于区分交付对象。</p>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <div class="field-label-row">
+                    <label for="bindDevice">绑定机器指纹</label>
+                    <button class="link-btn" id="useMachine">使用本机</button>
+                  </div>
+                  <div class="input-shell">
+                    <input id="bindDevice" type="text" spellcheck="false" placeholder="多个指纹用逗号分隔，留空表示不绑定设备">
+                  </div>
+                  <p class="field-hint">绑定后许可证仅在指定设备生效。</p>
+                </div>
+              </section>
+
+              <section class="card">
+                <header class="card-head">
+                  <div>
+                    <h2>高级选项</h2>
+                    <p>迁移、测试与现场可变文件</p>
+                  </div>
+                  <button class="chevron-btn" id="advancedToggle" aria-expanded="false" title="展开">
+                    <svg class="icon"><use href="#i-chevron"/></svg>
+                  </button>
+                </header>
+                <div class="advanced-body" id="advancedBody" hidden>
+                  <div class="toggle-grid">
+                    <label class="toggle-row">
+                      <span><strong>加密 migrations</strong><small>迁移文件默认保持明文</small></span>
+                      <input type="checkbox" class="switch" id="encryptMigrations">
+                    </label>
+                    <label class="toggle-row">
+                      <span><strong>加密 tests</strong><small>测试文件默认保持明文</small></span>
+                      <input type="checkbox" class="switch" id="encryptTests">
+                    </label>
+                    <label class="toggle-row">
+                      <span><strong>跳过 manage.py check</strong><small>仅构建，不启动校验</small></span>
+                      <input type="checkbox" class="switch" id="noVerify">
+                    </label>
+                    <label class="toggle-row">
+                      <span><strong>覆盖非 PyShield 目录</strong><small>允许替换同名非构建输出</small></span>
+                      <input type="checkbox" class="switch" id="forceOverwrite">
+                    </label>
+                  </div>
+
+                  <div class="field-grid">
+                    <div class="field">
+                      <label for="mutablePatterns">现场可变文件（mutable）</label>
+                      <textarea id="mutablePatterns" rows="3" placeholder="例如 staticfiles/*, media/*, *.log"></textarea>
+                      <p class="field-hint">这些文件不进入完整性清单，可在部署后修改。</p>
+                    </div>
+                    <div class="field">
+                      <label for="excludes">额外排除路径</label>
+                      <textarea id="excludes" rows="3" placeholder="例如 scripts/*, */management/*"></textarea>
+                      <p class="field-hint">匹配的 Python 文件不加密。</p>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <div class="side-stack">
+              <section class="card summary-card">
+                <header class="card-head">
+                  <div>
+                    <h2>构建摘要</h2>
+                    <p>执行前请确认输出与许可证</p>
+                  </div>
+                  <span class="status-badge soft" id="summaryBadge">待构建</span>
+                </header>
+
+                <dl class="summary-list">
+                  <div><dt>项目</dt><dd id="summaryProject">—</dd></div>
+                  <div><dt>输出</dt><dd id="summaryOutput">—</dd></div>
+                  <div><dt>算法</dt><dd id="summaryCipher">ChaCha20 · 纯 Python</dd></div>
+                  <div><dt>运行时</dt><dd id="summaryRuntime">字节码运行时</dd></div>
+                  <div><dt>完整性</dt><dd id="summaryIntegrity">保护核心</dd></div>
+                  <div><dt>许可证</dt><dd id="summaryLicense">永久</dd></div>
+                </dl>
+
+                <div class="progress-block" id="progressBlock" hidden>
+                  <div class="progress-head">
+                    <span id="progressStage">准备中</span>
+                    <strong id="progressPercent">0%</strong>
+                  </div>
+                  <div class="progress-track"><div class="progress-bar" id="progressBar"></div></div>
+                </div>
+
+                <div class="form-errors" id="formErrors" hidden>
+                  <div class="form-errors-title"><svg class="icon"><use href="#i-alert"/></svg> 请先修正以下问题</div>
+                  <ul id="formErrorsList"></ul>
+                </div>
+
+                <div class="result-banner" id="resultBanner" hidden>
+                  <div class="result-icon" id="resultIcon"><svg class="icon"><use href="#i-check"/></svg></div>
+                  <div>
+                    <strong id="resultTitle">构建完成</strong>
+                    <p id="resultText"></p>
+                  </div>
+                </div>
+
+                <button class="btn primary action" id="startBtn">
+                  <svg class="icon"><use href="#i-play"/></svg>
+                  <span>开始加密</span>
+                </button>
+                <button class="btn ghost danger-text" id="cancelBtn" hidden>取消构建</button>
+
+                <div class="result-actions" id="resultActions" hidden>
+                  <button class="btn secondary" id="openOutput"><svg class="icon"><use href="#i-folder"/></svg>打开输出目录</button>
+                  <button class="btn secondary" id="openSecret"><svg class="icon"><use href="#i-key"/></svg>查看构建密钥</button>
+                </div>
+
+                <p class="security-note">
+                  <svg class="icon"><use href="#i-lock"/></svg>
+                  <span>构建密钥只在本机生成。部署时只分发输出目录，切勿带上 <code>*.shield-secret.json</code>。</span>
+                </p>
+              </section>
+
+              <section class="card terminal-card">
+                <header class="card-head">
+                  <div class="terminal-title">
+                    <span class="live-dot" id="liveDot"></span>
+                    <h2>构建日志</h2>
+                  </div>
+                  <button class="link-btn" id="clearLog">清空</button>
+                </header>
+                <pre class="terminal" id="terminal"><span class="terminal-placeholder">等待构建任务…</span></pre>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="view-history" hidden>
+          <section class="card">
+            <header class="card-head">
+              <div>
+                <h2>构建记录</h2>
+                <p>最近 100 次本地构建，记录只保存在本机</p>
+              </div>
+              <button class="btn secondary" id="clearHistory"><svg class="icon"><use href="#i-trash"/></svg>清空记录</button>
+            </header>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>项目</th>
+                    <th>输出目录</th>
+                    <th>模块</th>
+                    <th>算法</th>
+                    <th>耗时</th>
+                    <th>状态</th>
+                    <th>时间</th>
+                    <th class="right">操作</th>
+                  </tr>
+                </thead>
+                <tbody id="historyBody"></tbody>
+              </table>
+              <div class="empty-state" id="historyEmpty" hidden>
+                <div class="empty-icon"><svg class="icon"><use href="#i-history"/></svg></div>
+                <strong>还没有构建记录</strong>
+                <p>完成一次加密后，这里会显示输出目录与状态。</p>
+                <button class="btn secondary" id="emptyGoBuild">去构建</button>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="view-settings" hidden>
+          <div class="settings-grid">
+            <section class="card">
+              <header class="card-head">
+                <div>
+                  <h2>构建默认值</h2>
+                  <p>新建构建时自动带入的表单设置</p>
+                </div>
+              </header>
+              <div class="field-grid">
+                <div class="field">
+                  <label for="settingCipher">默认算法</label>
+                  <select id="settingCipher">
+                    <option value="chacha-pure">ChaCha20 · 纯 Python</option>
+                    <option value="chacha">ChaCha20-Poly1305</option>
+                    <option value="aesgcm">AES-256-GCM</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="settingIntegrity">默认完整性</label>
+                  <select id="settingIntegrity">
+                    <option value="protected">保护核心</option>
+                    <option value="full">完整校验</option>
+                    <option value="off">关闭</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="settingRuntime">默认运行时</label>
+                  <select id="settingRuntime">
+                    <option value="pyc">字节码运行时（推荐）</option>
+                    <option value="source">源码运行时</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="settingSuffix">输出目录后缀</label>
+                  <div class="input-shell"><input id="settingSuffix" type="text" placeholder="-shielded"></div>
+                </div>
+              </div>
+              <div class="toggle-grid">
+                <label class="toggle-row">
+                  <span><strong>自动检测校验解释器</strong><small>优先使用项目 .venv 中安装 Django 的 Python</small></span>
+                  <input type="checkbox" class="switch" id="settingAutoPython">
+                </label>
+                <label class="toggle-row">
+                  <span><strong>默认跳过 manage.py check</strong><small>只构建不校验，适合 CI 或无依赖环境</small></span>
+                  <input type="checkbox" class="switch" id="settingNoVerify">
+                </label>
+              </div>
+              <div class="settings-actions">
+                <button class="btn primary" id="saveSettings">保存设置</button>
+                <span class="field-hint">设置保存在 <code id="configDir">—</code></span>
+              </div>
+            </section>
+
+            <section class="card">
+              <header class="card-head">
+                <div>
+                  <h2>本机环境</h2>
+                  <p>内置引擎与部署约束</p>
+                </div>
+              </header>
+              <dl class="info-list">
+                <div><dt>应用版本</dt><dd id="infoVersion">—</dd></div>
+                <div><dt>内置 CPython</dt><dd id="infoPython">—</dd></div>
+                <div><dt>部署要求</dt><dd>与内置版本相同的小版本（<span id="infoPythonMinor">—</span>.x）</dd></div>
+                <div><dt>本机指纹</dt><dd class="mono" id="infoMachine">—</dd></div>
+                <div><dt>配置目录</dt><dd class="mono" id="infoConfig">—</dd></div>
+              </dl>
+              <div class="inline-note">
+                <svg class="icon"><use href="#i-alert"/></svg>
+                <span>受保护模块依赖 CPython 的 marshal 格式，跨小版本部署会直接拒绝加载。</span>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="view-about" hidden>
+          <div class="about-hero card">
+            <div class="about-logo">
+              <svg viewBox="0 0 24 24"><path d="M12 3l7 2.8v5.1c0 4.5-2.9 7.8-7 9.1-4.1-1.3-7-4.6-7-9.1V5.8L12 3z" fill="currentColor"/><path d="M9.1 11.7l2 2 3.9-4" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div class="about-copy">
+              <div class="title-line"><h2>PyShield 加密构建器</h2><span class="status-badge soft" id="aboutVersion">v—</span></div>
+              <p>面向 Django 项目的离线源码保护工具。模块编译为字节码后使用 AEAD 信封加密，运行时在内存中解密，并通过 Ed25519 签名许可证与完整性清单校验部署环境。</p>
+            </div>
+          </div>
+
+          <div class="about-grid">
+            <section class="card">
+              <header class="card-head"><div><h2>保护链路</h2><p>从源码到现场部署</p></div></header>
+              <ol class="flow-list">
+                <li><span>01</span><div><strong>模块加密</strong><p>compile → marshal → zlib → AEAD，每模块独立派生密钥。</p></div></li>
+                <li><span>02</span><div><strong>运行时注入</strong><p>受保护模块由 stub 载入，解密后才进入内存。</p></div></li>
+                <li><span>03</span><div><strong>许可证签名</strong><p>Ed25519 签名，包含到期、宽限与设备绑定。</p></div></li>
+                <li><span>04</span><div><strong>完整性清单</strong><p>签名文件清单，部署后篡改会被启动校验拦截。</p></div></li>
+              </ol>
+            </section>
+
+            <section class="card">
+              <header class="card-head"><div><h2>安全边界</h2><p>了解工具的能力与限制</p></div></header>
+              <div class="boundary-list">
+                <div class="boundary-item"><svg class="icon ok"><use href="#i-check"/></svg><div><strong>可以做到</strong><p>阻止直接读取源码，发现文件篡改，控制许可证有效期与设备。</p></div></div>
+                <div class="boundary-item"><svg class="icon warn"><use href="#i-alert"/></svg><div><strong>无法绝对阻止</strong><p>主密钥必须内嵌在分发目录中，具备逆向能力的攻击者仍可提取。</p></div></div>
+                <div class="boundary-item"><svg class="icon info"><use href="#i-lock"/></svg><div><strong>必须守住</strong><p><code>*.shield-secret.json</code> 只留在构建方，泄露后可伪造许可证。</p></div></div>
+              </div>
+              <p class="security-note">
+                <svg class="icon"><use href="#i-shield"/></svg>
+                <span>源码保护用于提高逆向成本，不构成绝对 DRM。敏感业务请配合服务端鉴权与合同约束。</span>
+              </p>
+            </section>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" hidden>
+    <span class="toast-dot"></span>
+    <span id="toastText"></span>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

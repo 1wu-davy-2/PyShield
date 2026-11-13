@@ -16,7 +16,9 @@ PyShield 是一套自研的 Python / Django 源码保护工具：构建期把 Py
 | `pyshield/manifest.py` | 签名完整性清单：文件发现、分类、SHA-256、签名与校验 |
 | `pyshield/fingerprint.py` | 跨平台机器指纹 |
 | `pyshield/runtime_template/` | 随包运行库模板，含完整性校验、时钟状态、诊断入口与 Cython 原生 ChaCha 源文件 |
-| `tests/` | 加密、签名、许可证与构建流程测试 |
+| `gui/` | 桌面构建器：pywebview 窗口、JS 桥接、表单校验与内嵌 Web UI |
+| `PyShieldBuilder.spec` | PyInstaller 单文件打包配置 |
+| `tests/` | 加密、签名、许可证、构建流程与桌面构建器后端测试 |
 | `docs/` | 本手册与《实现思路》 |
 
 核心实现只依赖 Python 标准库；Ed25519 有纯 Python 实现；AES-256-GCM 和 ChaCha20-Poly1305 需要可选的 `cryptography`；原生 runtime 需要可选的 Cython、setuptools 和 C 编译器。
@@ -109,6 +111,19 @@ python shield.py fingerprint
 python shield.py fingerprint --json
 python shield.py selftest
 ```
+
+### 桌面构建器（Windows）
+
+`PyShieldBuilder.exe` 把构建引擎、Web UI、runtime 模板和可选 `cryptography` 全部打进单文件，双击即可使用：
+
+1. 选择包含 `manage.py` 的 Django 项目根目录；
+2. 默认输出到同级 `<项目名>-shielded`，构建密钥写到 `<输出目录>.shield-secret.json`；
+3. 选择算法、运行时、完整性、许可证与设备绑定；
+4. 点击“开始加密”，在右侧查看阶段、进度与日志。
+
+桌面版内置 CPython 3.12，产物必须部署在 3.12.x；`manage.py check` 使用项目自己的 Python，仅要求同小版本且安装了 Django，找不到时自动跳过。设置与最近 100 次构建记录保存在 `%APPDATA%\PyShieldBuilder`，可用 `PYSHELD_GUI_CONFIG_DIR` 覆盖。
+
+打包与完整说明见[桌面构建器文档](desktop-builder.md)。
 
 ## 4. 部署与运行
 
@@ -302,6 +317,7 @@ python -m unittest discover -s tests -v
 - 构建器生成结构、runtime 安装、stub 可执行、输出目录保护；
 - 完整性模式：`protected` 允许数据修改、`full` 检测数据修改、`off` 不生成清单、`--mutable` 排除；
 - 时钟回拨检测、`verify` 命令、runtime `status` / `verify` 入口；
+- 桌面构建器：默认输出、表单校验、设置/历史持久化、后端探针与进程内构建；
 - 原生 runtime 构建与 `--cipher chacha-pure` 快速解密（需要 Cython 与 C 编译器，否则跳过）。
 
 ## 9. 安全事项
