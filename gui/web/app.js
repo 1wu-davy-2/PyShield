@@ -32,6 +32,11 @@
       subtitle: "查看本机最近的构建输出、状态与耗时。",
       pill: "Local",
     },
+    trial: {
+      title: "版本与试用",
+      subtitle: "选择版本，用本机序列号在官网自助申请试用授权。",
+      pill: "License",
+    },
     settings: {
       title: "设置",
       subtitle: "配置新构建的默认算法、运行时与解释器检测策略。",
@@ -64,6 +69,9 @@
     maximized: false,
     preview: new URLSearchParams(location.search).get("preview") === "1",
     license: null,
+    trial: null,
+    trialTimer: null,
+    trialTries: 0,
   };
 
   const LICENSE_MODE_LABELS = {
@@ -843,6 +851,15 @@
     return "—";
   }
 
+  function licenseTrialDays(expires) {
+    if (!expires) return null;
+    const target = new Date(`${expires}T00:00:00`);
+    if (Number.isNaN(target.getTime())) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.max(0, Math.round((target - today) / 86400000));
+  }
+
   function licenseExpiryText(license) {
     if (!license) return "—";
     if (license.mode === "trial") {
@@ -865,7 +882,10 @@
     pill.classList.remove("is-success", "is-warning", "is-danger");
     pill.classList.add(`is-${tone}`);
     const editionLabel = EDITION_LABELS[data.edition] || LICENSE_MODE_LABELS[mode] || "未知";
-    if (mode === "licensed") {
+    if (mode === "licensed" && data.edition === "trial") {
+      const days = licenseTrialDays(data.expires);
+      pillText.textContent = days == null ? "试用版" : `试用 · ${days} 天`;
+    } else if (mode === "licensed") {
       pillText.textContent = editionLabel;
     } else if (mode === "trial") {
       const days = (data.trial || {}).days_left;
@@ -998,6 +1018,189 @@
     if (applyLicenseResponse(response, "本机授权已解除")) await refreshLicense();
   }
 
+  // ---------------------------------------------------------------- trial
+
+  const TRIAL_MODE_TEXT = {
+    unlicensed: "未激活",
+    licensed: "正式授权",
+    trial: "试用中",
+    development: "开发模式",
+    invalid: "授权异常",
+  };
+
+  function shortMachine(machine) {
+    const value = String(machine || "");
+    if (!value) return "—";
+    return value.length > 20 ? `${value.slice(0, 20)}…` : value;
+  }
+
+  function renderTrial(response) {
+    const data = (response && response.trial) || null;
+    const badge = $("#trialBadge");
+    if (!data || !data.serial) {
+      badge.className = "status-badge danger";
+      badge.textContent = "不可用";
+      $("#trialSub").textContent = (data && data.error) || "无法读取本机序列号";
+      return;
+    }
+    state.trial = data;
+    const server = data.server || "";
+    if (server && !$("#trialServer").value.trim()) $("#trialServer").value = server;
+
+    const active = Boolean(data.active && data.trial);
+    const licensed = data.mode === "licensed" && !data.trial;
+    const invalid = data.mode === "invalid";
+    badge.className = `status-badge ${active ? "warning" : licensed ? "success" : invalid ? "danger" : ""}`;
+    badge.textContent = active ? "试用中" : licensed ? "正式授权" : TRIAL_MODE_TEXT[data.mode] || "未激活";
+
+    $("#trialHeadline").textContent = active
+      ? "试用版已激活"
+      : licensed
+        ? "当前为正式授权"
+        : "选择适合你的版本";
+    $("#trialSub").textContent = active
+      ? `剩余 ${data.days_left == null ? "—" : data.days_left} 天、${data.builds_left == null ? "—" : data.builds_left} 次构建。到期后加密构建会被拒绝，已生成的产物不受影响。`
+      : licensed
+        ? "已安装正式授权，可以继续使用全部已购买功能。"
+        : "免费版可自助开通：14 天、3 次加密构建，无需付款。";
+
+    $("#trialSerial").textContent = data.serial || "—";
+    $("#trialMachine").textContent = shortMachine(data.machine);
+    $("#trialDays").textContent = data.days_left == null ? "—" : `${data.days_left} 天`;
+    $("#trialBuilds").textContent = data.builds_left == null
+      ? "—"
+      : `${data.builds_left}${data.build_limit ? ` / ${data.build_limit}` : ""} 次`;
+    $("#trialExpires").textContent = data.expires || "—";
+
+    const serverBadge = $("#trialServerBadge");
+    serverBadge.textContent = server ? "已配置" : "未配置";
+    serverBadge.className = `status-badge ${server ? "success" : "warning"}`;
+
+    $("#navTrialBadge").hidden = !active;
+    $("#planTrial").classList.toggle("is-current", active);
+    const trialButton = $('[data-plan-open="trial"]');
+    if (trialButton) trialButton.textContent = active ? "重新打开官网" : "申请 14 天试用";
+
+    const banner = $("#trialBanner");
+    banner.hidden = !active;
+    if (active) {
+      $("#trialBannerText").textContent =
+        `试用版 · 剩余 ${data.days_left == null ? "—" : data.days_left} 天 · 剩余 ${data.builds_left == null ? "—" : data.builds_left} 次构建`;
+    }
+  }
+
+  async function refreshTrial(options = {}) {
+    const response = await call("trial_state");
+    if (!response || !response.ok) {
+      renderTrial(response);
+      if (!options.silent) toast((response && response.error) || "无法读取试用状态", "error");
+      return response;
+    }
+    renderTrial(response);
+    return response;
+  }
+
+  function stopTrialPoll(message) {
+    if (state.trialTimer) clearInterval(state.trialTimer);
+    state.trialTimer = null;
+    const hint = $("#trialPollHint");
+    if (hint) hint.hidden = true;
+    if (message) toast(message, "error");
+  }
+
+  function startTrialPoll() {
+    stopTrialPoll();
+    state.trialTries = 0;
+    $("#trialPollHint").hidden = false;
+    state.trialTimer = setInterval(async () => {
+      state.trialTries += 1;
+      if (state.trialTries > 40) {
+        stopTrialPoll("等待授权超时，可稍后点「刷新授权状态」");
+        return;
+      }
+      const response = await call("trial_poll");
+      if (response && response.granted) {
+        stopTrialPoll();
+        toast("试用授权已激活", "success");
+        renderTrial(response);
+        if (response.license) renderLicense(response.license);
+        else await refreshLicense();
+        return;
+      }
+      if (response && response.trial) renderTrial(response);
+    }, 3000);
+  }
+
+  async function trialOpen(edition) {
+    const input = $("#trialServer").value.trim().replace(/\/+$/, "");
+    $("#trialServer").value = input;
+    if (input && ((state.settings || {}).trial_server || "") !== input) {
+      const saved = await call("trial_set_server", input);
+      if (saved && saved.ok) state.settings = { ...(state.settings || {}), trial_server: saved.server };
+    }
+    const response = await call("trial_open", edition);
+    if (!response || !response.ok) {
+      toast((response && response.error) || "无法打开官网", "error");
+      return;
+    }
+    toast("已打开浏览器，请在网页上完成申请", "success");
+    if (edition === "trial") startTrialPoll();
+  }
+
+  async function trialSaveServer() {
+    const value = $("#trialServer").value.trim().replace(/\/+$/, "");
+    $("#trialServer").value = value;
+    const response = await call("trial_set_server", value);
+    if (!response || !response.ok) {
+      toast((response && response.error) || "保存失败", "error");
+      return;
+    }
+    state.settings = { ...(state.settings || {}), trial_server: response.server };
+    renderTrial(response);
+    toast(value ? "试用服务地址已保存" : "已清空试用服务地址", "success");
+  }
+
+  async function trialApplyCode() {
+    const input = $("#trialCodeInput");
+    const value = input.value.trim();
+    if (!value) {
+      input.focus();
+      toast("请输入序列号", "error");
+      return;
+    }
+    const response = await call("trial_apply", value);
+    if (!response || !response.ok) {
+      toast((response && response.error) || "激活失败", "error");
+      return;
+    }
+    renderTrial(response);
+    if (response.license) renderLicense(response.license);
+    else await refreshLicense();
+    $("#trialCodeRow").hidden = true;
+    input.value = "";
+    toast("激活成功", "success");
+  }
+
+  async function copySerial() {
+    const value = $("#trialSerial").textContent.trim();
+    if (!value || value === "—") return;
+    try {
+      await navigator.clipboard.writeText(value);
+      toast("序列号已复制", "success");
+    } catch (error) {
+      toast("复制失败，请手动选择文本", "error");
+    }
+  }
+
+  async function refreshAll() {
+    await refreshLicense();
+    await refreshTrial({ silent: true });
+  }
+
+  window.pyshieldTrialRefresh = () => {
+    refreshAll();
+  };
+
   // ---------------------------------------------------------------- navigation
 
   function switchView(view) {
@@ -1103,6 +1306,9 @@
     state.machine = response.machine || "";
     $("#machineFingerprint").value = state.machine;
     renderLicense(response.license || null);
+    renderTrial({ trial: response.trial });
+    const initialView = new URLSearchParams(location.search).get("view");
+    if (initialView && VIEW_META[initialView]) switchView(initialView);
     applyDefaultsToForm();
     fillAbout();
     renderHistory(response.history || []);
@@ -1157,6 +1363,27 @@
       expires: "永久",
       binding: "any",
       customer: null,
+    };
+  }
+
+  function mockTrial() {
+    return {
+      ok: true,
+      serial: "PS-7Q4M-2XK9-TL5B",
+      machine: "9f3c1a72b0d84e51c4a201e57d8b16a3",
+      created: "2026-11-08T10:00:00+00:00",
+      server: "https://license.pyshield.dev",
+      edition: "trial",
+      mode: "licensed",
+      trial: true,
+      active: true,
+      expires: "2026-11-22",
+      days_left: 9,
+      builds_left: 2,
+      build_limit: 3,
+      license_id: "TRIAL-PS-7Q4M-2XK9-TL5B",
+      protocol: true,
+      deep_link: "pyshield://activate?serial=PS-7Q4M-2XK9-TL5B",
     };
   }
 
@@ -1222,9 +1449,11 @@
           auto_detect_python: true,
           no_verify: false,
           activation_server: "",
+          trial_server: "https://license.pyshield.dev",
         },
-        history,
+        history: history,
         machine: "9f3c1a72b0d84e51c4a201e57d8b16a3",
+        trial: mockTrial(),
         license: {
           mode: "licensed",
           valid: true,
@@ -1232,14 +1461,14 @@
           machine: "9f3c1a72b0d84e51c4a201e57d8b16a3",
           license_path: "C:\\Users\\demo\\AppData\\Roaming\\PyShield\\tool-license.json",
           public_key_configured: true,
-          license_id: "PS-2026-0042",
-          customer: "Acme Software",
-          edition: "pro",
-          features: ["gui", "offline-activation"],
-          expires: "2027-11-13",
-          grace_days: 14,
+          license_id: "TRIAL-PS-7Q4M-2XK9-TL5B",
+          customer: "试用用户",
+          edition: "trial",
+          features: ["gui"],
+          expires: "2026-11-22",
+          grace_days: 0,
           trial: null,
-          quota: { used: 9, limit: 50 },
+          quota: { used: 1, limit: 3 },
           checked: new Date().toISOString(),
         },
         state: { status: "idle", percent: 0, logs: [] },
@@ -1256,14 +1485,14 @@
           machine: "9f3c1a72b0d84e51c4a201e57d8b16a3",
           license_path: "C:\\Users\\demo\\AppData\\Roaming\\PyShield\\tool-license.json",
           public_key_configured: true,
-          license_id: "PS-2026-0042",
-          customer: "Acme Software",
-          edition: "pro",
-          features: ["gui", "offline-activation"],
-          expires: "2027-11-13",
-          grace_days: 14,
+          license_id: "TRIAL-PS-7Q4M-2XK9-TL5B",
+          customer: "试用用户",
+          edition: "trial",
+          features: ["gui"],
+          expires: "2026-11-22",
+          grace_days: 0,
           trial: null,
-          quota: { used: 9, limit: 50 },
+          quota: { used: 1, limit: 3 },
           checked: new Date().toISOString(),
         },
       });
@@ -1285,6 +1514,30 @@
     }
     if (name === "license_revocations") {
       return Promise.resolve({ ok: true, revoked: 0 });
+    }
+    if (name === "trial_state") {
+      return Promise.resolve({ ok: true, trial: mockTrial() });
+    }
+    if (name === "trial_open") {
+      return Promise.resolve({
+        ok: true,
+        url: "https://license.pyshield.dev/activate?serial=PS-7Q4M-2XK9-TL5B",
+        trial: mockTrial(),
+      });
+    }
+    if (name === "trial_set_server") {
+      const server = String((args && args[0]) || "");
+      return Promise.resolve({
+        ok: true,
+        server,
+        trial: { ...mockTrial(), server: server || mockTrial().server },
+      });
+    }
+    if (name === "trial_poll") {
+      return Promise.resolve({ ok: true, granted: false, status: "pending", trial: mockTrial() });
+    }
+    if (name === "trial_apply") {
+      return Promise.resolve({ ok: true, granted: true, trial: mockTrial(), license: null });
     }
     if (name === "inspect") {
       const payload = args[0] || {};
@@ -1500,6 +1753,25 @@
     $("#licenseHeartbeat").addEventListener("click", licenseHeartbeat);
     $("#licenseRevocations").addEventListener("click", licenseRevocations);
     $("#licenseDeactivate").addEventListener("click", licenseDeactivate);
+    $("#trialSaveServer").addEventListener("click", trialSaveServer);
+    $("#trialRefresh").addEventListener("click", async () => {
+      const response = await refreshTrial();
+      if (response && response.ok) toast("授权状态已刷新", "success");
+    });
+    $("#trialCopySerial").addEventListener("click", copySerial);
+    $$("[data-plan-open]").forEach((button) => {
+      button.addEventListener("click", () => trialOpen(button.dataset.planOpen || "trial"));
+    });
+    $("#trialApplyCode").addEventListener("click", () => {
+      const row = $("#trialCodeRow");
+      row.hidden = !row.hidden;
+      if (!row.hidden) $("#trialCodeInput").focus();
+    });
+    $("#trialCodeSubmit").addEventListener("click", trialApplyCode);
+    $("#trialCodeInput").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") trialApplyCode();
+    });
+    $("#trialBannerAction").addEventListener("click", () => switchView("trial"));
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && state.busy) {
         event.preventDefault();

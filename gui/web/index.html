@@ -60,6 +60,11 @@
           <span class="nav-count" id="historyCount">0</span>
         </button>
         <p class="nav-caption">应用</p>
+        <button class="nav-item" id="navTrial" data-view="trial">
+          <svg class="icon"><use href="#i-key"/></svg>
+          <span>版本与试用</span>
+          <span class="nav-count" id="navTrialBadge" hidden>试用</span>
+        </button>
         <button class="nav-item" id="navSettings" data-view="settings">
           <svg class="icon"><use href="#i-settings"/></svg>
           <span>设置</span>
@@ -113,6 +118,13 @@
 
       <div class="content">
         <section class="view" id="view-workspace">
+          <div class="trial-banner" id="trialBanner" hidden>
+            <div class="trial-banner-copy">
+              <span class="status-badge warning" id="trialBannerBadge">试用版</span>
+              <span id="trialBannerText">试用授权加载中…</span>
+            </div>
+            <button class="btn ghost small" id="trialBannerAction">升级版本</button>
+          </div>
           <div class="stats-grid">
             <article class="stat-card">
               <div class="stat-head">
@@ -513,6 +525,96 @@
                 <button class="btn secondary" id="emptyGoBuild">去构建</button>
               </div>
             </div>
+          </section>
+        </section>
+
+        <section class="view" id="view-trial" hidden>
+          <section class="card trial-hero">
+            <div class="trial-hero-main">
+              <div class="trial-hero-copy">
+                <div class="title-line">
+                  <span class="status-badge" id="trialBadge">检测中</span>
+                  <h2 id="trialHeadline">选择适合你的版本</h2>
+                </div>
+                <p id="trialSub">免费版可自助开通：14 天、3 次加密构建，无需付款。</p>
+              </div>
+              <div class="trial-serial">
+                <span>本机序列号</span>
+                <strong class="mono" id="trialSerial">—</strong>
+                <button class="btn ghost small" id="trialCopySerial">复制</button>
+              </div>
+            </div>
+            <dl class="trial-meta">
+              <div><dt>机器码</dt><dd class="mono" id="trialMachine">—</dd></div>
+              <div><dt>剩余天数</dt><dd id="trialDays">—</dd></div>
+              <div><dt>剩余构建</dt><dd id="trialBuilds">—</dd></div>
+              <div><dt>到期时间</dt><dd id="trialExpires">—</dd></div>
+            </dl>
+          </section>
+
+          <div class="plan-grid">
+            <article class="plan-card" id="planTrial" data-plan="trial">
+              <header><h3>免费版</h3><span class="plan-tag">立即可用</span></header>
+              <p class="plan-price">14 天 · 3 次加密</p>
+              <ul class="plan-list">
+                <li>完整模块加密与签名清单</li>
+                <li>ChaCha20 纯 Python 运行时</li>
+                <li>绑定本机，到期自动失效</li>
+              </ul>
+              <p class="plan-limit">不含原生运行时、产物签发与 CI 构建</p>
+              <button class="btn primary" data-plan-open="trial">申请 14 天试用</button>
+            </article>
+
+            <article class="plan-card" data-plan="pro">
+              <header><h3>专业版</h3><span class="plan-tag soft">按席位</span></header>
+              <p class="plan-price">年订阅 · 月度构建配额</p>
+              <ul class="plan-list">
+                <li>原生运行时（Cython 编译）</li>
+                <li>产物许可证签发与续期</li>
+                <li>多项目交付与团队协作</li>
+              </ul>
+              <p class="plan-limit">需要商务开通，官网申请报价</p>
+              <button class="btn secondary" data-plan-open="pro">前往官网了解</button>
+            </article>
+
+            <article class="plan-card" data-plan="enterprise">
+              <header><h3>企业版</h3><span class="plan-tag soft">多席位</span></header>
+              <p class="plan-price">私有部署 · 离线激活</p>
+              <ul class="plan-list">
+                <li>离线激活与 CI 构建令牌</li>
+                <li>撤销列表、审计与配额管理</li>
+                <li>可对接内部签发服务</li>
+              </ul>
+              <p class="plan-limit">支持私有化部署与定制交付</p>
+              <button class="btn secondary" data-plan-open="enterprise">联系企业版</button>
+            </article>
+          </div>
+
+          <section class="card trial-connect">
+            <header class="card-head">
+              <div>
+                <h2>授权服务</h2>
+                <p>申请、回传与状态查询都走这个地址</p>
+              </div>
+              <span class="status-badge" id="trialServerBadge">未配置</span>
+            </header>
+            <div class="field">
+              <label for="trialServer">试用服务地址</label>
+              <div class="input-shell">
+                <input id="trialServer" type="text" placeholder="https://license.example.com" spellcheck="false">
+              </div>
+              <p class="field-hint">本地调试可填 http://127.0.0.1:8090；生产环境必须使用 HTTPS。</p>
+            </div>
+            <div class="trial-connect-actions">
+              <button class="btn secondary" id="trialSaveServer">保存地址</button>
+              <button class="btn secondary" id="trialRefresh">刷新授权状态</button>
+              <button class="btn ghost" id="trialApplyCode">我已获得激活码</button>
+            </div>
+            <div class="trial-code-row" id="trialCodeRow" hidden>
+              <input id="trialCodeInput" class="input" placeholder="PS-XXXX-XXXX-XXXX" spellcheck="false">
+              <button class="btn secondary" id="trialCodeSubmit">激活</button>
+            </div>
+            <p class="trial-poll" id="trialPollHint" hidden>已打开官网，正在等待授权回传…</p>
           </section>
         </section>
 

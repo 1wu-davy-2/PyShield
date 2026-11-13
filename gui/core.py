@@ -52,6 +52,7 @@ DEFAULT_SETTINGS = {
     "auto_detect_python": True,
     "no_verify": False,
     "activation_server": "",
+    "trial_server": "",
 }
 
 PROBE_SCRIPT = r"""
@@ -454,6 +455,7 @@ def load_settings() -> dict:
     settings["auto_detect_python"] = bool(settings.get("auto_detect_python"))
     settings["no_verify"] = bool(settings.get("no_verify"))
     settings["activation_server"] = str(settings.get("activation_server") or "").strip().rstrip("/")
+    settings["trial_server"] = str(settings.get("trial_server") or "").strip().rstrip("/")
     return settings
 
 
@@ -475,6 +477,7 @@ def save_settings(payload: dict) -> dict:
     settings["auto_detect_python"] = bool(settings.get("auto_detect_python"))
     settings["no_verify"] = bool(settings.get("no_verify"))
     settings["activation_server"] = str(settings.get("activation_server") or "").strip().rstrip("/")
+    settings["trial_server"] = str(settings.get("trial_server") or "").strip().rstrip("/")
     _write_json(settings_path(), settings)
     return settings
 

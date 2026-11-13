@@ -15,9 +15,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from pyshield import __version__, activation, builder, fingerprint, tool_license
+from pyshield import __version__, activation, builder, fingerprint, tool_license, trial_license
 
-from . import core
+from . import core, instance
 
 STAGE_LABELS = {
     "init": "校验配置",
@@ -335,6 +335,7 @@ class Api:
             "history": history,
             "machine": machine,
             "license": self._license_status(),
+            "trial": self._trial_state(),
             "state": self.manager.snapshot(),
         }
 
@@ -572,6 +573,97 @@ class Api:
         except (activation.ActivationError, tool_license.ToolLicenseError, OSError) as exc:
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "revoked": revoked, "license": self._license_status()}
+
+    # -- trial registration ------------------------------------------------
+
+    def _trial_server(self) -> str:
+        settings = core.load_settings()
+        return (
+            settings.get("trial_server")
+            or settings.get("activation_server")
+            or trial_license.default_server()
+        )
+
+    def _trial_state(self) -> dict:
+        server = self._trial_server()
+        try:
+            data = trial_license.status(server)
+        except (trial_license.TrialError, tool_license.ToolLicenseError, OSError) as exc:
+            return {"ok": False, "error": str(exc), "server": server}
+        data["protocol"] = instance.protocol_registered()
+        data["deep_link"] = trial_license.deep_link(data["serial"])
+        data["server"] = server
+        return {"ok": True, **data}
+
+    def trial_state(self) -> dict:
+        data = self._trial_state()
+        return {"ok": bool(data.get("ok")), "trial": data, "error": data.get("error")}
+
+    def trial_set_server(self, server: str = "") -> dict:
+        value = str(server or "").strip().rstrip("/")
+        if value:
+            try:
+                trial_license.handshake_url(value)
+            except trial_license.TrialError as exc:
+                return {"ok": False, "error": str(exc), "trial": self._trial_state()}
+        settings = core.load_settings()
+        settings["trial_server"] = value
+        try:
+            core.save_settings(settings)
+        except OSError as exc:
+            return {"ok": False, "error": f"无法保存试用服务地址：{exc}"}
+        return {"ok": True, "server": value, "trial": self._trial_state()}
+
+    def trial_open(self, edition: str = "trial") -> dict:
+        server = self._trial_server()
+        if not server:
+            return {"ok": False, "error": "请先填写试用服务地址。"}
+        try:
+            url = trial_license.open_site(server, edition or "trial")
+        except trial_license.TrialError as exc:
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "url": url, "trial": self._trial_state()}
+
+    def trial_poll(self) -> dict:
+        server = self._trial_server()
+        if not server:
+            return {"ok": False, "error": "请先填写试用服务地址。", "trial": self._trial_state()}
+        try:
+            remote = trial_license.fetch_status(server)
+        except trial_license.TrialError as exc:
+            return {"ok": False, "error": str(exc), "trial": self._trial_state()}
+        state = str(remote.get("status") or "")
+        if state != "granted":
+            return {"ok": True, "granted": False, "status": state, "trial": self._trial_state()}
+        try:
+            entitlement = trial_license.claim_and_apply(server)
+        except (trial_license.TrialError, tool_license.ToolLicenseError, OSError) as exc:
+            return {"ok": False, "error": str(exc), "trial": self._trial_state()}
+        return {
+            "ok": True,
+            "granted": True,
+            "license_id": entitlement.license_id,
+            "license": tool_license.check().to_dict(),
+            "trial": self._trial_state(),
+        }
+
+    def trial_apply(self, serial: str = "") -> dict:
+        text = str(serial or "").strip()
+        if not text:
+            return {"ok": False, "error": "请输入序列号。"}
+        try:
+            normalized = trial_license.normalize_serial(text)
+        except trial_license.TrialError as exc:
+            return {"ok": False, "error": str(exc)}
+        if normalized != trial_license.local_serial():
+            return {"ok": False, "error": "该序列号不属于本机，请在本机重新申请。"}
+        return self.trial_poll()
+
+    def trial_handle_link(self, link: str = "") -> dict:
+        serial = instance.serial_from_link(str(link or ""))
+        if not serial:
+            return {"ok": False, "error": "激活链接无效。"}
+        return self.trial_apply(serial)
 
     def start_build(self, payload: dict | None = None) -> dict:
         request = core.BuildRequest.from_payload(payload)

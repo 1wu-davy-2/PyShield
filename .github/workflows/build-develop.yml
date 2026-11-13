@@ -41,6 +41,39 @@ jobs:
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
 
+  trial-flow:
+    name: Trial registration flow
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: test
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Walk the registration flow
+        run: |
+          set -euo pipefail
+          python -m pyshield.license_admin init --out root-keys
+          export PYSHELD_HOME="$RUNNER_TEMP/home"
+          export PYSHELD_TOOL_PUBLIC_KEY="$(cat root-keys/root.pub)"
+          mkdir -p "$PYSHELD_HOME"
+          python -m pyshield.trial_server --root-key root-keys/root.key --data-dir trial-data --port 8090 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8090/health >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          SERIAL=$(python -c "from pyshield import trial_license; print(trial_license.local_serial())")
+          MACHINE=$(python -c "from pyshield import trial_license; print(trial_license.install_state()['machine'])")
+          echo "serial=$SERIAL"
+          curl -fsS -X POST -d "serial=$SERIAL&machine=$MACHINE&edition=trial" http://127.0.0.1:8090/trial/apply | grep -q "试用已开通"
+          python -c "from pyshield import trial_license, tool_license; e = trial_license.claim_and_apply('http://127.0.0.1:8090'); s = tool_license.check(); print('license', e.license_id, e.edition, e.max_builds_per_month); print('mode', s.mode, 'quota', s.quota.get('limit')); assert s.valid and e.edition == 'trial' and s.quota.get('limit') == 3 and not s.allows('native-runtime')"
+          python -c "import sqlite3; print('trials', sqlite3.connect('trial-data/trials.sqlite3').execute('select serial,status,expires,max_builds from trials').fetchall())"
+
   windows:
     name: Windows single-file builder
     runs-on: windows-latest
