@@ -10,6 +10,7 @@ dist*/
 
 # Commercial tool licensing secrets: never commit
 pyshield/_tool_key.py
+pyshield/_site.py
 root.key
 root.pub
 license-data/

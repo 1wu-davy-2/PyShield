@@ -603,14 +603,14 @@ def check(
                 entitlement = None
         if entitlement is None:
             return ToolLicenseStatus(
-                mode="development",
-                valid=True,
-                reason="development mode: no tool public key configured",
+                mode="unlicensed",
+                valid=False,
+                reason="尚未激活：请先在「版本与试用」中申请试用或导入授权",
                 machine=machine,
                 license_path=str(path),
                 public_key_configured=False,
                 checked=checked,
-                code="development",
+                code="not_activated",
             )
     else:
         try:

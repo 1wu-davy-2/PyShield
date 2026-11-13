@@ -77,6 +77,7 @@
 
   const LICENSE_MODE_LABELS = {
     development: "开发模式",
+    unlicensed: "未激活",
     trial: "试用版",
     licensed: "正式授权",
     invalid: "授权异常",
@@ -580,7 +581,14 @@
       state.lastStatus = "idle";
       $("#progressBlock").hidden = true;
       showErrors(response.errors || (response.error ? [response.error] : ["构建无法启动。"]));
-      if (!maybeShowTrialEnded(response.license)) toast("请先修正表单问题", "error");
+      if (!maybeShowTrialEnded(response.license)) {
+        if (response.license && response.license.code === "not_activated") {
+          switchView("trial");
+          toast("请先申请试用或导入授权", "error");
+        } else {
+          toast("请先修正表单问题", "error");
+        }
+      }
       return;
     }
     if (response.note) appendLogLine(response.note);
@@ -877,7 +885,7 @@
     const data = license || { mode: "invalid", valid: false, reason: "尚未读取授权状态" };
     state.license = data;
     const mode = data.mode || "invalid";
-    const tone = !data.valid ? "danger" : mode === "licensed" ? "success" : "warning";
+    const tone = !data.valid ? (mode === "unlicensed" ? "warning" : "danger") : mode === "licensed" ? "success" : "warning";
     const pill = $("#licensePill");
     const pillText = $("#licensePillText");
     pill.classList.remove("is-success", "is-warning", "is-danger");
@@ -1092,7 +1100,13 @@
     }
     state.trial = data;
     const server = data.server || "";
-    if (server && !$("#trialServer").value.trim()) $("#trialServer").value = server;
+    const devConfig = $("#trialDevConfig");
+    const devMode = Boolean(state.app && state.app.dev);
+    if (devConfig) {
+      devConfig.hidden = !devMode;
+      const input = $("#trialServer");
+      if (devMode && server && input && !input.value.trim()) input.value = server;
+    }
 
     const active = Boolean(data.active && data.trial);
     const ended = Boolean(data.trial && !data.active);
@@ -1130,20 +1144,35 @@
       : `${data.builds_left}${data.build_limit ? ` / ${data.build_limit}` : ""} 次`;
     $("#trialExpires").textContent = data.expires || "—";
 
+    $("#trialServerLine").textContent = server
+      ? "已连接，可申请试用与刷新授权"
+      : "未配置，请联系供应商获取授权";
     const serverBadge = $("#trialServerBadge");
-    serverBadge.textContent = server ? "已配置" : "未配置";
-    serverBadge.className = `status-badge ${server ? "success" : "warning"}`;
+    serverBadge.textContent = server ? "已连接" : "不可用";
+    serverBadge.className = `status-badge ${server ? "success" : "danger"}`;
 
     $("#navTrialBadge").hidden = !active;
     $("#planTrial").classList.toggle("is-current", active);
     const trialButton = $('[data-plan-open="trial"]');
     if (trialButton) trialButton.textContent = active ? "重新打开官网" : "申请 14 天试用";
+    $$("[data-plan-open]").forEach((button) => {
+      button.disabled = !server;
+      button.title = server ? "" : "授权服务未配置，暂时无法在线申请";
+    });
 
+    const needsActivation = data.mode === "unlicensed";
     const banner = $("#trialBanner");
-    banner.hidden = !active;
-    if (active) {
-      $("#trialBannerText").textContent =
-        `试用版 · 剩余 ${data.days_left == null ? "—" : data.days_left} 天 · 剩余 ${data.builds_left == null ? "—" : data.builds_left} 次构建`;
+    banner.hidden = !(active || ended || needsActivation);
+    if (!banner.hidden) {
+      const bannerBadge = $("#trialBannerBadge");
+      bannerBadge.textContent = active ? "试用版" : ended ? "试用已结束" : "未激活";
+      bannerBadge.className = `status-badge ${active ? "warning" : "danger"}`;
+      $("#trialBannerText").textContent = active
+        ? `试用版 · 剩余 ${data.days_left == null ? "—" : data.days_left} 天 · 剩余 ${data.builds_left == null ? "—" : data.builds_left} 次构建`
+        : ended
+          ? "试用额度已用完，购买专业版后可继续构建"
+          : "尚未激活，先申请 14 天免费试用再开始构建";
+      $("#trialBannerAction").textContent = active ? "升级版本" : "去申请";
     }
   }
 
@@ -1367,7 +1396,11 @@
     renderTrial({ trial: response.trial });
     maybeShowTrialEnded(response.license);
     const initialView = new URLSearchParams(location.search).get("view");
-    if (initialView && VIEW_META[initialView]) switchView(initialView);
+    if (initialView && VIEW_META[initialView]) {
+      switchView(initialView);
+    } else if (response.license && response.license.mode === "unlicensed") {
+      switchView("trial");
+    }
     applyDefaultsToForm();
     applyEditionLimits(state.license);
     fillAbout();
@@ -1440,6 +1473,22 @@
       trial: null,
       checked: new Date().toISOString(),
     };
+    if (state.previewState === "unlicensed") {
+      return {
+        ...base,
+        edition: null,
+        license_id: null,
+        customer: null,
+        features: [],
+        expires: null,
+        mode: "unlicensed",
+        valid: false,
+        code: "not_activated",
+        reason: "尚未激活：请先在「版本与试用」中申请试用或导入授权",
+        public_key_configured: false,
+        quota: null,
+      };
+    }
     if (state.previewState === "exhausted") {
       return {
         ...base,
@@ -1478,6 +1527,17 @@
       protocol: true,
       deep_link: "pyshield://activate?serial=PS-7Q4M-2XK9-TL5B",
     };
+    if (state.previewState === "unlicensed") {
+      trial.mode = "unlicensed";
+      trial.active = false;
+      trial.trial = false;
+      trial.edition = null;
+      trial.server = "";
+      trial.expires = null;
+      trial.days_left = null;
+      trial.builds_left = null;
+      trial.build_limit = null;
+    }
     if (state.previewState === "exhausted") {
       trial.mode = "invalid";
       trial.active = false;

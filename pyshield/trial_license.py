@@ -119,7 +119,15 @@ def local_serial() -> str:
 
 
 def default_server() -> str:
-    return os.environ.get(ENV_TRIAL_SERVER, "").strip().rstrip("/")
+    """Resolve the trial site: environment first, then the build-time default."""
+    value = os.environ.get(ENV_TRIAL_SERVER, "").strip().rstrip("/")
+    if value:
+        return value
+    try:
+        from . import _site  # type: ignore
+    except ImportError:
+        return ""
+    return str(getattr(_site, "DEFAULT_SITE", "") or "").strip().rstrip("/")
 
 
 def _validate_server(server: str) -> str:

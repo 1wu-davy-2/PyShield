@@ -55,12 +55,22 @@ class ToolLicenseTestCase(unittest.TestCase):
         activation.install_license(path, machine="machine-a")
         return path
 
-    def test_development_mode_without_public_key(self) -> None:
+    def test_unlicensed_without_public_key_or_license(self) -> None:
         with mock.patch.dict(os.environ, {tool_license.ENV_PUBLIC_KEY: "dev"}):
+            status = tool_license.check()
+        self.assertEqual(status.mode, "unlicensed")
+        self.assertFalse(status.valid)
+        self.assertEqual(status.code, "not_activated")
+        self.assertFalse(status.allows(tool_license.FEATURE_OEM))
+
+    def test_development_mode_requires_explicit_flag(self) -> None:
+        with mock.patch.dict(os.environ, {
+            tool_license.ENV_PUBLIC_KEY: "dev",
+            tool_license.ENV_DEV: "1",
+        }):
             status = tool_license.check()
         self.assertEqual(status.mode, "development")
         self.assertTrue(status.valid)
-        self.assertTrue(status.allows(tool_license.FEATURE_OEM))
 
     def test_fresh_install_starts_trial(self) -> None:
         status = tool_license.check(machine="machine-a")
@@ -243,8 +253,9 @@ class TrialEditionTests(unittest.TestCase):
         self.assertEqual(status.entitlement.edition, tool_license.EDITION_TRIAL)
         self.assertIn("not verified", status.reason)
 
-    def test_without_any_license_development_mode(self) -> None:
+    def test_without_any_license_is_unlicensed(self) -> None:
         with mock.patch.dict(os.environ, {tool_license.ENV_PUBLIC_KEY: "off"}):
             status = tool_license.check()
-        self.assertEqual(status.mode, "development")
-        self.assertTrue(status.valid)
+        self.assertEqual(status.mode, "unlicensed")
+        self.assertFalse(status.valid)
+        self.assertEqual(status.code, "not_activated")

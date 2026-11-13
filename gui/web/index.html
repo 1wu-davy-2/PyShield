@@ -594,19 +594,11 @@
             <header class="card-head">
               <div>
                 <h2>授权服务</h2>
-                <p>申请、回传与状态查询都走这个地址</p>
+                <p id="trialServerLine">检查中…</p>
               </div>
-              <span class="status-badge" id="trialServerBadge">未配置</span>
+              <span class="status-badge" id="trialServerBadge">检查中</span>
             </header>
-            <div class="field">
-              <label for="trialServer">试用服务地址</label>
-              <div class="input-shell">
-                <input id="trialServer" type="text" placeholder="https://license.example.com" spellcheck="false">
-              </div>
-              <p class="field-hint">本地调试可填 http://127.0.0.1:8090；生产环境必须使用 HTTPS。</p>
-            </div>
             <div class="trial-connect-actions">
-              <button class="btn secondary" id="trialSaveServer">保存地址</button>
               <button class="btn secondary" id="trialRefresh">刷新授权状态</button>
               <button class="btn ghost" id="trialApplyCode">我已获得激活码</button>
             </div>
@@ -615,6 +607,16 @@
               <button class="btn secondary" id="trialCodeSubmit">激活</button>
             </div>
             <p class="trial-poll" id="trialPollHint" hidden>已打开官网，正在等待授权回传…</p>
+            <div class="trial-dev-config" id="trialDevConfig" hidden>
+              <div class="field">
+                <label for="trialServer">试用服务地址（仅开发环境）</label>
+                <div class="input-shell">
+                  <input id="trialServer" type="text" placeholder="http://127.0.0.1:8090" spellcheck="false">
+                </div>
+                <p class="field-hint">发布版通过构建参数注入，不会显示此项。</p>
+              </div>
+              <button class="btn ghost small" id="trialSaveServer">保存地址</button>
+            </div>
           </section>
         </section>
 

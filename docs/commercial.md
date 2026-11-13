@@ -74,7 +74,7 @@ PyShield 涉及两种完全不同的许可证，不能混用：
 
 1. 环境变量 `PYSHELD_TOOL_PUBLIC_KEY`（Base85）；
 2. `pyshield/_tool_key.py` 中的 `PUBLIC_KEY_B85`（商业构建时注入）；
-3. 都没有时进入开发模式，不限制构建。
+3. 都没有时按「未激活」处理：已有本地授权则以未验签方式加载（仅限源码运行），否则要求先申请试用。
 
 商业发布包必须注入公钥，不能依赖环境变量。
 
@@ -225,7 +225,7 @@ python tools/build_commercial.py build --public-key root-keys/root.pub \
   --backend nuitka --signtool "C:/Program Files (x86)/Windows Kits/10/bin/x64/signtool.exe"
 ```
 
-注意：`pyshield/_tool_key.py` 一旦存在于工作区，源码运行也会要求有效授权。开发调试时用 `PYSHELD_DEV=1` 显式进入开发模式。
+注意：打包版本必须注入公钥。源码运行没有公钥时会读取本地授权但不验签；需要不限构建的开发调试时，用 `PYSHELD_DEV=1` 显式进入开发模式。
 
 ## 9. 运营清单
 

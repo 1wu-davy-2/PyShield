@@ -116,7 +116,7 @@ python shield.py license deactivate
 
 - 桌面构建器在“设置”页提供同样的授权导入、在线/离线激活、心跳与撤销更新；
 - CI 节点的构建应显式加 `--ci`（要求授权包含 `ci` 功能），不要复用开发者的交互式授权；
-- 开发仓库默认进入开发模式（不限制构建）；一旦注入了公钥，本地调试需设置 `PYSHELD_DEV=1`；
+- 没有公钥也没有本地授权时显示「未激活」并要求先申请试用；开发调试需要不限制构建时显式设置 `PYSHELD_DEV=1`；
 - 商业发布包用 `python tools/build_commercial.py build --public-key root.pub --backend nuitka` 构建并注入公钥；根私钥必须离线保存，绝不能进入安装包或版本控制。
 
 授权模型、版本划分、激活流程、密钥管理与发布检查清单见[商业授权与交付](docs/commercial.md)。

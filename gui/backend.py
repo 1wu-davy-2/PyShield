@@ -332,6 +332,7 @@ class Api:
                 "python": core.EMBEDDED_PYTHON,
                 "python_minor": core.EMBEDDED_PYTHON_MINOR,
                 "frozen": bool(getattr(sys, "frozen", False)),
+                "dev": bool(os.environ.get(tool_license.ENV_DEV)) or not bool(getattr(sys, "frozen", False)),
                 "config_dir": str(core.config_dir()),
                 "platform": sys.platform,
             },
