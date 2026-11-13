@@ -258,3 +258,5 @@ python tools/build_commercial.py build --public-key root-keys/root.pub \
 - `tools/build_commercial.py`：公钥注入、PyInstaller/Nuitka 打包、代码签名。
 - `gui/backend.py`、`gui/web`：桌面构建器授权状态与激活入口。
 - `tests/test_tool_license.py`、`tests/test_license_server.py`：授权、试用、配额、激活与撤销测试。
+
+后续运营能力（HSM/KMS 签发服务、托管构建、OEM 版税、客户门户与审计报表）的实施顺序与架构见 [Phase 3 路线图](phase3-roadmap.md)。

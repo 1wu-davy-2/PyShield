@@ -254,6 +254,7 @@ python shield.py issue --secret <output>.shield-secret.json -e 2027-12-31
 - [执行手册](docs/runbook.md)：构建、部署、许可证、更新与故障排查
 - [桌面构建器](docs/desktop-builder.md)：exe 使用、打包、内置资源与部署约束
 - [商业授权与交付](docs/commercial.md)：工具授权、版本与功能、激活、配额与水印、商业构建
+- [Phase 3 路线图](docs/phase3-roadmap.md)：HSM/KMS 签发、托管构建、OEM 版税、客户门户与审计
 - [实现思路](docs/implementation.md)：密钥体系、信封格式、运行时加载与设计取舍
 
 ## 许可证
