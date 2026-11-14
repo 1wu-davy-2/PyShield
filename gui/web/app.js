@@ -27,6 +27,11 @@
       subtitle: "选择项目目录，配置保护参数，一键生成可部署的受保护副本。",
       pill: "Django",
     },
+    build: {
+      title: "构建日志",
+      subtitle: "实时查看加密进度，完成后可直接取用产物。",
+      pill: "Build",
+    },
     history: {
       title: "构建记录",
       subtitle: "查看本机最近的构建输出、状态与耗时。",
@@ -69,6 +74,7 @@
     maximized: false,
     preview: new URLSearchParams(location.search).get("preview") === "1",
     previewState: new URLSearchParams(location.search).get("state") || "",
+    lastForm: null,
     license: null,
     trial: null,
     trialTimer: null,
@@ -246,6 +252,8 @@
     const mode = getSegment("expiryGroup");
     $("#expireDaysField").hidden = mode !== "days";
     $("#expireDateField").hidden = mode !== "date";
+    const grid = $("#expireDaysField").closest(".field-grid");
+    if (grid) grid.classList.toggle("is-two", mode === "never");
   }
 
   function syncBindingFields() {
@@ -502,6 +510,10 @@
       badge.className = "status-badge warning";
       $("#resultBanner").hidden = true;
       $("#resultActions").hidden = true;
+      $("#buildResultCard").hidden = true;
+      const buildBadge = $("#buildBadge");
+      buildBadge.textContent = "构建中";
+      buildBadge.className = "status-badge warning";
     }
   }
 
@@ -561,10 +573,38 @@
     $("#liveDot").classList.toggle("is-live", snapshot.status === "running");
   }
 
+  function renderBuildHeader(form, mode = "running") {
+    const name = baseName(form.project) || "项目";
+    $("#buildTitle").textContent = `${name} · 加密构建`;
+    $("#buildProject").textContent = form.project || "—";
+    $("#buildOutput").textContent = form.output || "—";
+    $("#buildCipher").textContent = CIPHER_LABELS[form.cipher] || form.cipher || "—";
+    $("#buildRuntime").textContent = RUNTIME_LABELS[form.runtime] || form.runtime || "—";
+    $("#buildResultPath").textContent = "—";
+    $("#buildResultCard").hidden = true;
+    const badge = $("#buildBadge");
+    if (mode === "success") {
+      badge.textContent = "构建完成";
+      badge.className = "status-badge success";
+      $("#buildSubtitle").textContent = "产物已写入输出目录，可直接部署或继续调整参数。";
+      return;
+    }
+    if (mode === "idle") {
+      badge.textContent = "待开始";
+      badge.className = "status-badge soft";
+      $("#buildSubtitle").textContent = "点击「开始加密」后，这里会显示实时进度与日志。";
+      return;
+    }
+    badge.textContent = "构建中";
+    badge.className = "status-badge warning";
+    $("#buildSubtitle").textContent = "正在生成受保护副本，请保持窗口打开。";
+  }
+
   async function startBuild() {
     if (state.busy) return;
     showErrors([]);
     const form = collect();
+    state.lastForm = form;
     resetTerminal();
     $("#progressBlock").hidden = false;
     $("#progressBar").style.width = "0%";
@@ -592,6 +632,8 @@
       return;
     }
     if (response.note) appendLogLine(response.note);
+    renderBuildHeader(form);
+    switchView("build");
     toast("构建已开始");
     pollBuild();
   }
@@ -643,6 +685,9 @@
       $("#statSizeHint").textContent = "上一次构建输出";
       $("#statElapsedHint").textContent = "内置引擎，无需外部依赖";
       $("#statLicenseHint").textContent = "许可证已写入输出目录";
+      $("#buildBadge").textContent = "构建完成";
+      $("#buildBadge").className = "status-badge success";
+      $("#buildSubtitle").textContent = "产物已写入输出目录，可直接部署或继续调整参数。";
       toast("加密构建完成", "success");
     } else if (snapshot.status === "cancelled") {
       const badge = $("#summaryBadge");
@@ -652,6 +697,9 @@
       icon.innerHTML = '<svg class="icon"><use href="#i-alert"/></svg>';
       $("#resultTitle").textContent = "构建已取消";
       $("#resultText").textContent = "临时目录已清理，未发布新的输出。";
+      $("#buildBadge").textContent = "已取消";
+      $("#buildBadge").className = "status-badge warning";
+      $("#buildSubtitle").textContent = "构建已取消，可以返回调整参数后重新开始。";
       toast("构建已取消", "error");
     } else {
       const badge = $("#summaryBadge");
@@ -662,9 +710,15 @@
       $("#resultTitle").textContent = "构建失败";
       $("#resultText").textContent = snapshot.error || "构建过程中出现未知错误。";
       $("#statLicenseHint").textContent = "构建失败，未签发许可证";
+      $("#buildBadge").textContent = "构建失败";
+      $("#buildBadge").className = "status-badge danger";
+      $("#buildSubtitle").textContent = "构建未完成，日志末尾有具体原因。";
       toast("构建失败", "error");
       appendLogLine(`ERROR ${snapshot.error || "unknown error"}`);
     }
+    const form = state.lastForm || {};
+    $("#buildResultPath").textContent = snapshot.output || form.output || "—";
+    $("#buildResultCard").hidden = false;
     refreshHistory();
   }
 
@@ -1316,8 +1370,9 @@
   function switchView(view) {
     if (!VIEW_META[view]) return;
     state.view = view;
+    const navView = view === "build" ? "workspace" : view;
     $$(".nav-item").forEach((item) => {
-      item.classList.toggle("is-active", item.dataset.view === view);
+      item.classList.toggle("is-active", item.dataset.view === navView);
     });
     $$(".view").forEach((section) => {
       section.hidden = section.id !== `view-${view}`;
@@ -1326,6 +1381,16 @@
     $("#pageTitle").textContent = meta.title;
     $("#pageSubtitle").textContent = meta.subtitle;
     $("#pagePill").textContent = meta.pill;
+    if (view === "build" && !state.busy) {
+      const form = state.lastForm || collect();
+      const done = state.lastStatus === "success";
+      renderBuildHeader(form, done ? "success" : "idle");
+      if (done) {
+        $("#buildResultCard").hidden = false;
+        $("#buildResultPath").textContent =
+          (state.lastSummary && state.lastSummary.output) || form.output || "—";
+      }
+    }
     if (view === "history") refreshHistory();
     if (view === "settings") {
       syncSettingsForm();
@@ -1419,14 +1484,15 @@
     renderTrial({ trial: response.trial });
     maybeShowTrialEnded(response.license);
     const initialView = new URLSearchParams(location.search).get("view");
-    if (initialView && VIEW_META[initialView]) {
-      switchView(initialView);
-    } else if (response.license && (
-      response.license.mode === "unlicensed"
-      || (response.license.edition === "trial" && TRIAL_END_CODES.includes(response.license.code || ""))
-    )) {
-      switchView("trial");
-    }
+    const landingView =
+      initialView && VIEW_META[initialView]
+        ? initialView
+        : response.license && (
+            response.license.mode === "unlicensed"
+            || (response.license.edition === "trial" && TRIAL_END_CODES.includes(response.license.code || ""))
+          )
+          ? "trial"
+          : "";
     applyDefaultsToForm();
     applyEditionLimits(state.license);
     fillAbout();
@@ -1459,11 +1525,16 @@
 
     syncSummary();
     await inspectNow();
+    if (landingView) switchView(landingView);
+
+    const panel = new URLSearchParams(location.search).get("panel");
+    if (state.preview && panel === "python") await openPythonModal();
   }
 
   // ---------------------------------------------------------------- preview
 
   const previewState = { percent: 0, logs: [], timer: null };
+  const previewRuntime = { percent: 0, status: "idle" };
 
   function previewSummary() {
     return {
@@ -1488,7 +1559,7 @@
   function mockLicense() {
     const base = {
       machine: "9f3c1a72b0d84e51c4a201e57d8b16a3",
-      license_path: "C:////Users////demo////AppData////Roaming////PyShield////tool-license.json",
+      license_path: "C:\\Users\\demo\\AppData\\Roaming\\PyShield\\tool-license.json",
       public_key_configured: true,
       license_id: "TRIAL-PS-7Q4M-2XK9-TL5B",
       customer: "试用用户",
@@ -1772,6 +1843,65 @@
     if (name === "browse_output") {
       return Promise.resolve({ ok: true, output: "E:\\projects\\erp-portal-shielded" });
     }
+    if (name === "python_runtimes") {
+      return Promise.resolve({
+        ok: true,
+        mirrors: [
+          { id: "tuna", label: "清华 TUNA", note: "国内直连" },
+          { id: "huawei", label: "华为云", note: "备用线路" },
+          { id: "official", label: "官方源", note: "python.org" },
+        ],
+        installed: [],
+        root: "C:\\Users\\demo\\AppData\\Roaming\\PyShield\\runtimes",
+        app_minor: "3.12",
+        job: { status: "idle" },
+      });
+    }
+    if (name === "python_detect_django") {
+      return Promise.resolve({ ok: true, spec: "Django==5.1.3" });
+    }
+    if (name === "python_versions") {
+      const mirror = args[0] || "tuna";
+      return Promise.resolve({
+        ok: true,
+        mirror,
+        app_minor: "3.12",
+        root: "C:\\Users\\demo\\AppData\\Roaming\\PyShield\\runtimes",
+        versions: [
+          { version: "3.14.10", minor: "3.14", compatible: false, size_text: "12.0 MB", installed: false, target: "C:\\Users\\demo\\AppData\\Roaming\\PyShield\\runtimes\\python-3.14.10" },
+          { version: "3.12.10", minor: "3.12", compatible: true, size_text: "10.6 MB", installed: false, target: "C:\\Users\\demo\\AppData\\Roaming\\PyShield\\runtimes\\python-3.12.10" },
+          { version: "3.11.9", minor: "3.11", compatible: false, size_text: "10.7 MB", installed: true, target: "C:\\Users\\demo\\AppData\\Roaming\\PyShield\\runtimes\\python-3.11.9" },
+          { version: "3.10.11", minor: "3.10", compatible: false, size_text: "8.2 MB", installed: false, target: "C:\\Users\\demo\\AppData\\Roaming\\PyShield\\runtimes\\python-3.10.11" },
+        ],
+      });
+    }
+    if (name === "python_install") {
+      previewRuntime.percent = 0;
+      previewRuntime.status = "running";
+      return Promise.resolve({ ok: true, job: { status: "running" } });
+    }
+    if (name === "python_install_status") {
+      if (previewRuntime.status === "running") {
+        previewRuntime.percent = Math.min(100, previewRuntime.percent + 17);
+        if (previewRuntime.percent >= 100) previewRuntime.status = "done";
+      }
+      const done = previewRuntime.status === "done";
+      return Promise.resolve({
+        ok: true,
+        job: {
+          status: previewRuntime.status,
+          percent: previewRuntime.percent,
+          stage: done ? "done" : "download",
+          message: done ? "Python 3.12.10 可用" : `下载 ${previewRuntime.percent}%`,
+          executable: done ? "C:\\Users\\demo\\AppData\\Roaming\\PyShield\\runtimes\\python-3.12.10\\python.exe" : "",
+          version: "3.12.10",
+        },
+      });
+    }
+    if (name === "python_install_cancel") {
+      previewRuntime.status = "cancelled";
+      return Promise.resolve({ ok: true, job: { status: "cancelled" } });
+    }
     if (name === "browse_python") {
       return Promise.resolve({
         ok: true,
@@ -1793,6 +1923,206 @@
     if (name === "cancel_build") return Promise.resolve({ ok: true });
     if (name === "clear_history") return Promise.resolve({ ok: true, history: [] });
     return Promise.resolve({ ok: false, error: `预览模式未实现 ${name}` });
+  }
+
+  // ---------------------------------------------------------------- python runtime
+
+  const PYTHON = { mirror: "tuna", versions: [], selected: "", running: false, timer: null };
+  const PYTHON_STAGE_LABELS = {
+    start: "准备中",
+    download: "下载运行时",
+    extract: "解压运行时",
+    unpack: "写入安装目录",
+    pip: "安装 pip",
+    django: "安装 Django",
+    verify: "校验运行时",
+    done: "完成",
+  };
+
+  function showPythonError(message) {
+    const box = $("#pythonError");
+    box.textContent = message || "下载失败，请更换下载源重试。";
+    box.hidden = false;
+  }
+
+  function resetPythonButtons() {
+    $("#pythonStart").disabled = false;
+    $("#pythonStart").querySelector("span").textContent = "开始下载";
+    $("#pythonCancel").textContent = "取消";
+  }
+
+  function closePythonModal(force = false) {
+    if (PYTHON.running && !force) {
+      toast("正在下载，请等待完成或先取消", "error");
+      return;
+    }
+    clearTimeout(PYTHON.timer);
+    $("#pythonModal").hidden = true;
+  }
+
+  async function openPythonModal() {
+    $("#pythonModal").hidden = false;
+    $("#pythonError").hidden = true;
+    $("#pythonProgress").hidden = true;
+    $("#pythonMessage").textContent = "";
+    $("#pythonCompatHint").textContent = "";
+    PYTHON.running = false;
+    resetPythonButtons();
+    setSegment("mirrorGroup", PYTHON.mirror || "tuna");
+    const info = await call("python_runtimes");
+    if (info.ok && info.root) $("#pythonTarget").textContent = info.root;
+    const detected = await call("python_detect_django", $("#projectPath").value.trim());
+    $("#pythonDjangoHint").textContent =
+      detected && detected.ok && detected.spec
+        ? `将安装 ${detected.spec}，用于 manage.py check`
+        : "用于执行 manage.py check";
+    await loadPythonVersions(getSegment("mirrorGroup") || "tuna");
+  }
+
+  async function loadPythonVersions(mirror) {
+    const box = $("#pythonVersions");
+    box.innerHTML = '<p class="version-placeholder">正在读取镜像目录…</p>';
+    $("#pythonError").hidden = true;
+    $("#pythonStart").disabled = true;
+    const response = await call("python_versions", mirror);
+    if (!response.ok) {
+      box.innerHTML = '<p class="version-placeholder">读取失败</p>';
+      showPythonError(response.error || "无法读取版本列表，请更换下载源重试。");
+      return;
+    }
+    PYTHON.mirror = mirror;
+    PYTHON.versions = response.versions || [];
+    renderPythonVersions();
+  }
+
+  function renderPythonVersions() {
+    const box = $("#pythonVersions");
+    box.textContent = "";
+    if (!PYTHON.versions.length) {
+      box.innerHTML = '<p class="version-placeholder">该镜像没有可用的 3.x 版本，请更换下载源。</p>';
+      return;
+    }
+    const preferred = PYTHON.versions.find((item) => item.compatible) || PYTHON.versions[0];
+    if (!PYTHON.versions.some((item) => item.version === PYTHON.selected)) {
+      PYTHON.selected = preferred.version;
+    }
+    PYTHON.versions.forEach((item) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "version-item";
+      button.dataset.version = item.version;
+      const name = document.createElement("strong");
+      name.textContent = `Python ${item.minor}`;
+      const meta = document.createElement("span");
+      meta.textContent = `${item.version} · ${item.size_text || "未知大小"}${item.installed ? " · 已安装" : ""}`;
+      const tag = document.createElement("em");
+      tag.className = `plan-tag${item.compatible ? "" : " soft"}`;
+      tag.textContent = item.compatible ? "推荐" : "版本不匹配";
+      button.append(name, meta, tag);
+      button.addEventListener("click", () => selectPythonVersion(item.version));
+      box.appendChild(button);
+    });
+    selectPythonVersion(PYTHON.selected);
+    $("#pythonStart").disabled = false;
+  }
+
+  function selectPythonVersion(version) {
+    PYTHON.selected = version;
+    const item = PYTHON.versions.find((entry) => entry.version === version);
+    $$("#pythonVersions .version-item").forEach((node) => {
+      node.classList.toggle("is-active", node.dataset.version === version);
+    });
+    if (!item) return;
+    $("#pythonTarget").textContent = item.target || "—";
+    const hint = $("#pythonCompatHint");
+    const embedded = (state.app && state.app.python_minor) || "";
+    if (item.compatible) {
+      hint.className = "field-hint";
+      hint.textContent = `与内置运行时 ${embedded} 一致，可直接用于 manage.py check。`;
+    } else {
+      hint.className = "field-hint is-warning";
+      hint.textContent = `内置运行时是 ${embedded}，该版本只能单独使用；构建时会跳过 manage.py check。`;
+    }
+  }
+
+  async function startPythonInstall() {
+    if (PYTHON.running) return;
+    if (!PYTHON.selected) {
+      showPythonError("请先选择要下载的版本。");
+      return;
+    }
+    PYTHON.running = true;
+    $("#pythonError").hidden = true;
+    $("#pythonProgress").hidden = false;
+    $("#pythonBar").style.width = "0%";
+    $("#pythonPercent").textContent = "0%";
+    $("#pythonStage").textContent = "准备中";
+    $("#pythonMessage").textContent = "正在连接下载源…";
+    $("#pythonStart").disabled = true;
+    $("#pythonStart").querySelector("span").textContent = "下载中…";
+    $("#pythonCancel").textContent = "取消下载";
+
+    const response = await call("python_install", {
+      version: PYTHON.selected,
+      mirror: getSegment("mirrorGroup") || "tuna",
+      with_django: $("#pythonWithDjango").checked,
+      project: $("#projectPath").value.trim(),
+    });
+    if (!response.ok) {
+      PYTHON.running = false;
+      resetPythonButtons();
+      showPythonError(response.error || "无法开始下载。");
+      return;
+    }
+    pollPythonInstall();
+  }
+
+  async function pollPythonInstall() {
+    clearTimeout(PYTHON.timer);
+    const response = await call("python_install_status");
+    const job = (response && response.job) || {};
+    const percent = Math.max(0, Math.min(100, Number(job.percent) || 0));
+    $("#pythonBar").style.width = `${percent}%`;
+    $("#pythonPercent").textContent = `${percent}%`;
+    $("#pythonStage").textContent = PYTHON_STAGE_LABELS[job.stage] || "下载中";
+    $("#pythonMessage").textContent = job.message || "";
+
+    if (job.status === "running") {
+      PYTHON.timer = setTimeout(pollPythonInstall, 600);
+      return;
+    }
+    PYTHON.running = false;
+    resetPythonButtons();
+
+    if (job.status === "done") {
+      $("#pythonCancel").textContent = "关闭";
+      const executable = job.executable || "";
+      if (executable) {
+        state.verifyAuto = false;
+        state.verifyWasAuto = false;
+        $("#verifyPython").value = executable;
+        await inspectNow();
+      }
+      toast(`Python ${job.version} 已就绪`, "success");
+      closePythonModal(true);
+      return;
+    }
+    if (job.status === "cancelled") {
+      $("#pythonCancel").textContent = "关闭";
+      $("#pythonMessage").textContent = "已取消，未写入任何文件。";
+      return;
+    }
+    $("#pythonCancel").textContent = "关闭";
+    showPythonError(job.error || "下载失败，请更换下载源重试。");
+  }
+
+  async function pythonCancelAction() {
+    if (PYTHON.running) {
+      await call("python_install_cancel");
+      $("#pythonMessage").textContent = "正在取消…";
+      return;
+    }
+    closePythonModal(true);
   }
 
   // ---------------------------------------------------------------- events
@@ -1911,6 +2241,17 @@
       toast("环境状态已刷新");
     });
 
+    $("#pythonDownload").addEventListener("click", openPythonModal);
+    $("#pythonClose").addEventListener("click", () => closePythonModal());
+    $("#pythonCancel").addEventListener("click", pythonCancelAction);
+    $("#pythonStart").addEventListener("click", startPythonInstall);
+    $("#buildBack").addEventListener("click", () => switchView("workspace"));
+    $("#backToWorkspace").addEventListener("click", () => switchView("workspace"));
+    onSegment("mirrorGroup", (value) => {
+      if (PYTHON.running) return;
+      loadPythonVersions(value);
+    });
+
     $("#saveSettings").addEventListener("click", saveSettings);
     $("#licensePill").addEventListener("click", () => switchView("settings"));
     $("#licenseInstall").addEventListener("click", licenseInstall);
@@ -1947,7 +2288,12 @@
       $("#trialEndedModal").hidden = true;
     });
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && state.busy) {
+      if (event.key !== "Escape") return;
+      if (!$("#pythonModal").hidden) {
+        closePythonModal();
+        return;
+      }
+      if (state.busy) {
         event.preventDefault();
         cancelBuild();
       }

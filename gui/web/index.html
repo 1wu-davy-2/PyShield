@@ -22,6 +22,7 @@
     <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
     <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></symbol>
     <symbol id="i-code" viewBox="0 0 24 24"><path d="M8.5 7L4 12l4.5 5"/><path d="M15.5 7L20 12l-4.5 5"/><path d="M13.2 5l-2.4 14"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v10"/><path d="M8.2 10.4L12 14.2l3.8-3.8"/><path d="M5 17.5v1.3a1.2 1.2 0 0 0 1.2 1.2h11.6a1.2 1.2 0 0 0 1.2-1.2v-1.3"/></symbol>
     <symbol id="i-box" viewBox="0 0 24 24"><path d="M4 8l8-4 8 4-8 4-8-4z"/><path d="M4 8v8l8 4 8-4V8"/><path d="M12 12v8"/></symbol>
     <symbol id="i-timer" viewBox="0 0 24 24"><circle cx="12" cy="13" r="7"/><path d="M12 10v3.5l2.4 1.6"/><path d="M9.5 3h5"/></symbol>
     <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8.5" cy="14.5" r="3.5"/><path d="M11 12l8-8"/><path d="M16 6l2 2"/><path d="M13.5 8.5l2 2"/></symbol>
@@ -211,6 +212,9 @@
                       <button class="btn secondary compact" id="browsePython">选择</button>
                     </div>
                     <p class="field-hint" id="verifyHint">用于运行 manage.py check，不参与输出运行时。</p>
+                    <button class="link-btn inline-link" id="pythonDownload">
+                      <svg class="icon"><use href="#i-download"/></svg>没有合适的 Python？从镜像下载一个
+                    </button>
                   </div>
                   <div class="field">
                     <div class="field-label-row">
@@ -437,55 +441,93 @@
                   <div><dt>许可证</dt><dd id="summaryLicense">永久</dd></div>
                 </dl>
 
-                <div class="progress-block" id="progressBlock" hidden>
-                  <div class="progress-head">
-                    <span id="progressStage">准备中</span>
-                    <strong id="progressPercent">0%</strong>
-                  </div>
-                  <div class="progress-track"><div class="progress-bar" id="progressBar"></div></div>
-                </div>
-
                 <div class="form-errors" id="formErrors" hidden>
                   <div class="form-errors-title"><svg class="icon"><use href="#i-alert"/></svg> 请先修正以下问题</div>
                   <ul id="formErrorsList"></ul>
-                </div>
-
-                <div class="result-banner" id="resultBanner" hidden>
-                  <div class="result-icon" id="resultIcon"><svg class="icon"><use href="#i-check"/></svg></div>
-                  <div>
-                    <strong id="resultTitle">构建完成</strong>
-                    <p id="resultText"></p>
-                  </div>
                 </div>
 
                 <button class="btn primary action" id="startBtn">
                   <svg class="icon"><use href="#i-play"/></svg>
                   <span>开始加密</span>
                 </button>
-                <button class="btn ghost danger-text" id="cancelBtn" hidden>取消构建</button>
-
-                <div class="result-actions" id="resultActions" hidden>
-                  <button class="btn secondary" id="openOutput"><svg class="icon"><use href="#i-folder"/></svg>打开输出目录</button>
-                  <button class="btn secondary" id="openSecret"><svg class="icon"><use href="#i-key"/></svg>查看构建密钥</button>
-                </div>
 
                 <p class="security-note">
                   <svg class="icon"><use href="#i-lock"/></svg>
                   <span>构建密钥只在本机生成。部署时只分发输出目录，切勿带上 <code>*.shield-secret.json</code>。</span>
                 </p>
               </section>
-
-              <section class="card terminal-card">
-                <header class="card-head">
-                  <div class="terminal-title">
-                    <span class="live-dot" id="liveDot"></span>
-                    <h2>构建日志</h2>
-                  </div>
-                  <button class="link-btn" id="clearLog">清空</button>
-                </header>
-                <pre class="terminal" id="terminal"><span class="terminal-placeholder">等待构建任务…</span></pre>
-              </section>
             </div>
+          </div>
+        </section>
+
+        <section class="view" id="view-build" hidden>
+          <div class="build-stage">
+            <section class="card build-head-card">
+              <header class="build-head">
+                <div class="build-head-main">
+                  <span class="status-badge warning" id="buildBadge">构建中</span>
+                  <div>
+                    <h2 id="buildTitle">正在加密构建</h2>
+                    <p id="buildSubtitle">请保持窗口打开，构建结束后会输出产物目录。</p>
+                  </div>
+                </div>
+                <div class="build-head-actions">
+                  <button class="btn ghost danger-text" id="cancelBtn" hidden>取消构建</button>
+                  <button class="btn secondary" id="buildBack">
+                    <svg class="icon"><use href="#i-chevron"/></svg>返回配置
+                  </button>
+                </div>
+              </header>
+
+              <div class="progress-block" id="progressBlock" hidden>
+                <div class="progress-head">
+                  <span id="progressStage">准备中</span>
+                  <strong id="progressPercent">0%</strong>
+                </div>
+                <div class="progress-track"><div class="progress-bar" id="progressBar"></div></div>
+              </div>
+
+              <dl class="build-meta">
+                <div><dt>项目</dt><dd id="buildProject">—</dd></div>
+                <div><dt>输出</dt><dd id="buildOutput">—</dd></div>
+                <div><dt>算法</dt><dd id="buildCipher">—</dd></div>
+                <div><dt>运行时</dt><dd id="buildRuntime">—</dd></div>
+              </dl>
+            </section>
+
+            <section class="card build-result" id="buildResultCard" hidden>
+              <div class="result-banner" id="resultBanner" hidden>
+                <div class="result-icon" id="resultIcon"><svg class="icon"><use href="#i-check"/></svg></div>
+                <div>
+                  <strong id="resultTitle">构建完成</strong>
+                  <p id="resultText"></p>
+                </div>
+              </div>
+              <div class="build-result-foot">
+                <p class="build-output-line">产物目录 <code id="buildResultPath">—</code></p>
+                <div class="build-result-actions">
+                  <div class="result-actions" id="resultActions" hidden>
+                    <button class="btn secondary" id="openOutput"><svg class="icon"><use href="#i-folder"/></svg>打开输出目录</button>
+                    <button class="btn secondary" id="openSecret"><svg class="icon"><use href="#i-key"/></svg>查看构建密钥</button>
+                  </div>
+                  <button class="btn primary" id="backToWorkspace">
+                    <svg class="icon"><use href="#i-play"/></svg>返回继续构建
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section class="card terminal-card build-console">
+              <header class="card-head">
+                <div class="terminal-title">
+                  <span class="live-dot" id="liveDot"></span>
+                  <h2>构建日志</h2>
+                </div>
+                <button class="link-btn" id="clearLog">清空</button>
+              </header>
+              <pre class="terminal" id="terminal"><span class="terminal-placeholder">等待构建任务…</span></pre>
+            </section>
+
           </div>
         </section>
 
@@ -771,6 +813,66 @@
   <div class="toast" id="toast" hidden>
     <span class="toast-dot"></span>
     <span id="toastText"></span>
+  </div>
+
+  <div class="modal-backdrop" id="pythonModal" hidden>
+    <div class="modal-card python-modal" role="dialog" aria-modal="true" aria-labelledby="pythonModalTitle">
+      <header class="python-head">
+        <div>
+          <h2 id="pythonModalTitle">下载 Python 运行时</h2>
+          <p>官方嵌入版，解压到用户目录，不修改系统环境与 PATH。</p>
+        </div>
+        <button class="icon-btn bordered" id="pythonClose" title="关闭">
+          <svg class="icon"><use href="#i-close"/></svg>
+        </button>
+      </header>
+
+      <div class="field">
+        <label>下载源</label>
+        <div class="segmented" id="mirrorGroup" role="radiogroup" aria-label="下载源">
+          <button class="segment" data-value="tuna" role="radio"><span>清华 TUNA</span><small>国内直连</small></button>
+          <button class="segment" data-value="huawei" role="radio"><span>华为云</span><small>备用线路</small></button>
+          <button class="segment" data-value="official" role="radio"><span>官方源</span><small>python.org</small></button>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-label-row">
+          <label>版本</label>
+          <span class="mini-tag" id="pythonVersionNote">仅列出 3.x 维护版本</span>
+        </div>
+        <div class="version-list" id="pythonVersions">
+          <p class="version-placeholder">正在读取镜像目录…</p>
+        </div>
+        <p class="field-hint" id="pythonCompatHint"></p>
+      </div>
+
+      <label class="toggle-row">
+        <span><strong>同时安装 Django</strong><small id="pythonDjangoHint">用于执行 manage.py check</small></span>
+        <input type="checkbox" class="switch" id="pythonWithDjango" checked>
+      </label>
+
+      <p class="field-hint">安装目录 <code id="pythonTarget">—</code></p>
+
+      <div class="progress-block" id="pythonProgress" hidden>
+        <div class="progress-head">
+          <span id="pythonStage">准备中</span>
+          <strong id="pythonPercent">0%</strong>
+        </div>
+        <div class="progress-track"><div class="progress-bar" id="pythonBar"></div></div>
+        <p class="field-hint" id="pythonMessage"></p>
+      </div>
+
+      <p class="form-error" id="pythonError" hidden></p>
+
+      <div class="modal-actions">
+        <button class="btn secondary" id="pythonCancel">取消</button>
+        <button class="btn primary" id="pythonStart">
+          <svg class="icon"><use href="#i-download"/></svg>
+          <span>开始下载</span>
+        </button>
+      </div>
+    </div>
   </div>
 
   <div class="modal-backdrop" id="trialEndedModal" hidden>

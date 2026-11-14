@@ -16,7 +16,14 @@ from datetime import datetime
 from pathlib import Path
 
 from pyshield import (
-    __version__, activation, builder, devsite, fingerprint, tool_license, trial_license,
+    __version__,
+    activation,
+    builder,
+    devsite,
+    fingerprint,
+    python_runtime,
+    tool_license,
+    trial_license,
 )
 
 from . import core, instance
@@ -313,6 +320,7 @@ class Api:
 
     def __init__(self) -> None:
         self.manager = BuildManager()
+        self._python_job = python_runtime.InstallJob()
         self._window = None
 
     def bind(self, window) -> None:
@@ -463,6 +471,74 @@ class Api:
         if target.name.startswith(name + suffix):
             return {"ok": True, "output": str(target)}
         return {"ok": True, "output": str(target / f"{name}{suffix}")}
+
+    # ------------------------------------------------------------ runtimes
+
+    def python_runtimes(self) -> dict:
+        """Mirrors and previously downloaded interpreters for the picker."""
+        return {
+            "ok": True,
+            "mirrors": python_runtime.mirrors(),
+            "installed": python_runtime.installed_interpreters(),
+            "root": str(python_runtime.runtime_root()),
+            "app_minor": python_runtime.app_minor(),
+            "job": self._python_job.snapshot(),
+        }
+
+    def python_versions(self, mirror: str = "tuna") -> dict:
+        try:
+            versions = python_runtime.available_versions(mirror or "tuna")
+        except python_runtime.InstallError as exc:
+            return {"ok": False, "error": str(exc), "mirrors": python_runtime.mirrors()}
+        return {
+            "ok": True,
+            "mirror": mirror or "tuna",
+            "versions": versions,
+            "app_minor": python_runtime.app_minor(),
+            "root": str(python_runtime.runtime_root()),
+        }
+
+    def python_install(self, payload: dict | None = None) -> dict:
+        data = payload or {}
+        if self._python_job.running:
+            return {"ok": False, "error": "已有下载任务在进行中。"}
+        version = str(data.get("version") or "").strip()
+        if not version:
+            return {"ok": False, "error": "请选择要下载的 Python 版本。"}
+        project = str(data.get("project") or "").strip()
+        spec = str(data.get("django_spec") or "").strip()
+        if not spec and project:
+            spec = python_runtime.detect_django_spec(project)
+        try:
+            self._python_job.start(
+                version=version,
+                mirror=str(data.get("mirror") or "tuna"),
+                with_django=bool(data.get("with_django", True)),
+                django_spec=spec,
+            )
+        except python_runtime.InstallError as exc:
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "job": self._python_job.snapshot(), "django_spec": spec}
+
+    def python_install_status(self) -> dict:
+        job = self._python_job.snapshot()
+        response = {"ok": True, "job": job}
+        if job["status"] == "done" and job.get("executable"):
+            try:
+                info = core.probe_python(job["executable"])
+            except RuntimeError as exc:
+                response["probe_error"] = str(exc)
+            else:
+                response["python"] = info.to_dict()
+                response["python"]["executable"] = job["executable"]
+        return response
+
+    def python_install_cancel(self) -> dict:
+        self._python_job.cancel()
+        return {"ok": True, "job": self._python_job.snapshot()}
+
+    def python_detect_django(self, project: str = "") -> dict:
+        return {"ok": True, "spec": python_runtime.detect_django_spec(project)}
 
     def browse_python(self) -> dict:
         try:
