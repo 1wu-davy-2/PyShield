@@ -25,7 +25,7 @@ class RuntimeBundleTests(unittest.TestCase):
         self.assertEqual(set(bundled), set(expected))
         for name, path in expected.items():
             self.assertEqual(
-                bundled[name], path.read_bytes(),
+                bundled[name], path.read_bytes().replace(b"\r\n", b"\n"),
                 f"{name} is stale; run python tools/embed_runtime.py",
             )
 

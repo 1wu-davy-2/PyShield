@@ -86,7 +86,9 @@ def build_archive() -> bytes:
             info.compress_type = zipfile.ZIP_DEFLATED
             info.create_system = 3
             info.external_attr = 0o644 << 16
-            archive.writestr(info, path.read_bytes())
+            # Normalize line endings so the generated bundle is identical on
+            # Windows and POSIX checkouts (git autocrlf must not make it stale).
+            archive.writestr(info, path.read_bytes().replace(b"\r\n", b"\n"))
     return buffer.getvalue()
 
 
