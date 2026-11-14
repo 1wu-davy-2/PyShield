@@ -118,12 +118,19 @@ python -m gui
 
 | 文件 | 职责 |
 | --- | --- |
-| `gui/main.py` | 创建无边框 pywebview 窗口，定位内嵌资源 |
-| `gui/backend.py` | JS 桥接 API、构建线程、进度/日志快照、历史记录 |
+| `gui/main.py` | 创建无边框 pywebview 窗口，定位内嵌资源，注册 `pyshield://` 深链 |
+| `gui/instance.py` | 单实例锁与深链转发（第二个进程把参数转给已运行实例后退出） |
+| `gui/backend.py` | JS 桥接 API、构建线程、进度/日志快照、历史记录、试用状态与 Python 运行时下载任务 |
 | `gui/core.py` | 表单校验、默认输出、解释器探测、设置与历史持久化 |
-| `gui/web/` | 界面与前端逻辑 |
+| `gui/web/` | 界面与前端逻辑（`index.html` / `app.js` / `styles.css`） |
+| `pyshield/python_runtime.py` | 校验解释器一键下载（镜像选择、版本探测、嵌入包解压、pip/Django 引导） |
+| `pyshield/devsite.py` | 无公钥构建自动在 127.0.0.1:8090 拉起本地模拟授权站 |
 
-构建在后台线程执行，前端每秒轮询快照；“取消”通过 `threading.Event` 协作式停止，已复制的临时目录由构建器清理。同一时间只允许一个构建任务。
+构建在后台线程执行，前端轮询快照；“取消”通过 `threading.Event` 协作式停止，已复制的临时目录由构建器清理。同一时间只允许一个构建任务。
+
+**页面结构**：工作区（表单 + 摘要 + 开始加密）与构建日志页（进度 + 日志 + 结果卡）是两个独立视图；点击「开始加密」校验通过后整页跳转，完成后展示产物目录并可返回继续构建。交互细节见 `docs/ui-flow.md`。
+
+**解释器下载**：客户机没有 Python 时，在「校验解释器」下点「从镜像下载一个」，从清华/华为镜像下载官方嵌入版 CPython 到 `%APPDATA%\PyShield\runtimes\python-<版本>`（`PYSHELD_RUNTIME_DIR` 可重定向），可选自动安装 pip 与 Django（版本取项目 requirements）。与 exe 内置 CPython 同一小版本的会标「推荐」；其它版本只能单独使用，构建时跳过 `manage.py check`。
 
 ## 5. 测试与验收
 
@@ -150,7 +157,9 @@ exe 冒烟测试建议：
 | Linux 提示缺少 WebKit2GTK | 安装 `gir1.2-webkit2-4.1` 与 `libwebkit2gtk-4.1-0`；官方产物在 Ubuntu 24.04 构建，需要 glibc 2.39 及以上 |
 | 提示找不到 `manage.py` | 选择 Django 项目根目录，而不是内层应用目录 |
 | 输出目录无效 | 输出目录不能位于项目内部，也不能是项目目录的父目录；非空目录必须是已有 PyShield 构建或勾选允许覆盖 |
-| 校验解释器不可用 | 选择项目虚拟环境中的解释器（Windows `Scripts\python.exe`，Linux `bin/python`）；或勾选“跳过 manage.py check” |
+| 校验解释器不可用 | 选择项目虚拟环境中的解释器（Windows `Scripts\python.exe`，Linux `bin/python`）；没有 Python 时点「从镜像下载一个」自动装好；或勾选“跳过 manage.py check” |
+| 首次运行被 SmartScreen 拦截 | exe 未签名所致：更多信息 → 仍要运行；或右键属性勾选「解除锁定」 |
+| 下载的 Python 装在哪 | `%APPDATA%\PyShield\runtimes\python-<版本>`，删除目录即卸载，不写注册表与 PATH |
 | 部署时报 Python 版本错误 | 部署机必须与内置 CPython 3.12 同一小版本 |
 | 部署时报缺少 cryptography | 改用纯 Python ChaCha20，或在部署机安装 `cryptography` |
 | 构建完成但无日志 | 检查右侧“构建日志”面板；构建结果会写入“构建记录” |

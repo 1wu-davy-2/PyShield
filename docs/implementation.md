@@ -29,8 +29,15 @@
 | `pyshield/licensing.py` | 许可证与构建密钥的读写、签名、签发日期、宽限期、到期与指纹字段 |
 | `pyshield/manifest.py` | 签名完整性清单：文件发现、分类、SHA-256、签名与校验 |
 | `pyshield/fingerprint.py` | 跨平台机器指纹 |
+| `pyshield/tool_license.py` | 构建器自身的工具授权：验签、配额、试用策略（`trial_policy`）与错误码 |
+| `pyshield/license_admin.py` | 离线根密钥管理、工具/产物授权签发（CLI：`python -m pyshield.license_admin`） |
+| `pyshield/trial_server.py` | 试用登记站点：SQLite 台账、申请页、签发与状态 API（可独立部署） |
+| `pyshield/trial_license.py` | 客户端序列号、官网跳转、深链与试用领取 |
+| `pyshield/devsite.py` | 无公钥构建自动拉起的本地模拟授权站（开发/演示用） |
+| `pyshield/python_runtime.py` | 校验解释器一键下载：镜像版本发现、嵌入包下载解压、pip/Django 引导 |
 | `pyshield/runtime_template/` | 随包运行库模板，含完整性校验、时钟状态、`python -m _shield_runtime` 诊断入口与 Cython 原生 ChaCha 源文件 |
-| `tests/` | 加密、签名、许可证、清单、构建器与现场行为测试 |
+| `gui/` | pywebview 桌面构建器（详见 `docs/desktop-builder.md`） |
+| `tests/` | 加密、签名、许可证、清单、构建器、试用链路与运行时下载测试 |
 
 ## 3. 构建流程
 

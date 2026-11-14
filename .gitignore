@@ -18,3 +18,7 @@ license-data/
 
 # local trial playground (tools/trial_demo.py)
 .pyshield-demo/
+
+# Grok UI prototype workspace (reference only, not part of the build)
+HA7HqyYHFsn4CepB-grok-workspace/.vercel/output/
+HA7HqyYHFsn4CepB-grok-workspace/.tanstack/
