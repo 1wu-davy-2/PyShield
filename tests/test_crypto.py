@@ -1,8 +1,21 @@
 from __future__ import annotations
 
+import struct
 import unittest
 
 from pyshield import crypto
+
+
+def _reference_chacha20_xor(key: bytes, nonce: bytes, data: bytes) -> bytes:
+    """Straightforward per-block XOR used to validate the chunked fast path."""
+    key_words = struct.unpack("<8I", key)
+    nonce_words = struct.unpack("<3I", nonce)
+    output = bytearray()
+    for index in range((len(data) + 63) // 64):
+        block = crypto._chacha20_block_words(key_words, 1 + index, nonce_words)
+        chunk = data[index * 64:(index + 1) * 64]
+        output.extend(bytes(left ^ right for left, right in zip(chunk, block)))
+    return bytes(output)
 
 
 class CryptoTests(unittest.TestCase):
@@ -39,6 +52,22 @@ class CryptoTests(unittest.TestCase):
     def test_base85_round_trip(self) -> None:
         data = bytes(range(256)) * 3
         self.assertEqual(crypto.b85decode(crypto.b85encode(data)), data)
+
+    def test_pure_chacha_chunking_matches_reference(self) -> None:
+        original = crypto._fast_chacha
+        crypto._fast_chacha = None
+        try:
+            key = bytes(range(32))
+            nonce = bytes.fromhex("000000090000004a00000000")
+            for size in (0, 1, 63, 64, 65, 65535, 65536, 65537, 200000):
+                data = bytes((index * 37 + 11) & 0xFF for index in range(size))
+                self.assertEqual(
+                    crypto.chacha20_xor(key, nonce, data),
+                    _reference_chacha20_xor(key, nonce, data),
+                    f"chunk boundary mismatch at size {size}",
+                )
+        finally:
+            crypto._fast_chacha = original
 
     def test_native_ciphers_round_trip(self) -> None:
         if not crypto.aesgcm_available():

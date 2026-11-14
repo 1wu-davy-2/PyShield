@@ -89,15 +89,15 @@ _pyshield_load_module(
 
 ### 3.3 安装 runtime 与许可证
 
-- 复制 runtime 模板，并注入 `crypto.py`、`fingerprint.py → _machine.py`、`ed25519.py → _ed25519.py` 三份源码；
+- runtime 源码（`_shield_runtime/*`、`crypto.py`、`fingerprint.py`、`ed25519.py`、`secure_store.py`）打包在构建器内的 `pyshield/_runtime_bundle.py` 压缩资源中，不再作为 PyInstaller 明文 `datas` 随 `PyShieldBuilder.exe` 发布；构建时解包并写出 `_crypto.py`、`_machine.py`、`_ed25519.py`、`_secure_store.py`；
 - 把占位符替换为构建 ID、主密钥、Ed25519 公钥、算法和 Python 小版本；
-- 可选 `--runtime-pyc`：把 runtime 编译为 `UNCHECKED_HASH` 的 `.pyc` 并删除 `.py`，减少随包明文；
+- 默认 `pyc`：把 runtime 编译为 `UNCHECKED_HASH` 的 `.pyc` 并删除 `.py`，不发布 runtime 源码；
 - 可选 `--runtime-native`：用 Cython 把 `_core`、`_crypto`、`_ed25519`、`_chacha_fast` 编译为 `.pyd`/`.so` 并删除对应 `.py`。构建机需要 Cython、setuptools 和 C 编译器；Windows 上会自动探测 MinGW-w64，也可用 `MINGW_PREFIX` 指定。原生扩展与操作系统、CPU 架构和 Python ABI 绑定，必须在与部署机一致的环境中构建；
-- `--runtime-native` 与 `--runtime-pyc` 互斥；`_machine.py` 和 `__init__.py` 保持明文，`_chacha_fast.pyx` 在安装结束后删除；
+- `--runtime-source` 仅用于调试：保留 `.py` 源码并明确警告会暴露解密逻辑；`--runtime-native` 与 `--runtime-pyc` / `--runtime-source` 互斥；`_chacha_fast.pyx` 在安装结束后删除；
 - 构建时生成 32 字节 Ed25519 签名私钥，公钥写入 runtime；私钥只保存于构建密钥；
-- 生成 32 字节 `build_key`，写入 `pyshield.lic`，载荷先签名再用 `master_key` 派生出的许可证密钥加密；
+- 由 `master_key` 和 `build_id` 通过 HKDF 派生 32 字节 `build_key`；模块用它加密，但 `build_key` 不再写入 `pyshield.lic`。许可证格式 v3 只承载授权字段，先签名再用 `master_key` 派生出的许可证密钥加密；
 - 生成并签名 `.pyshield-manifest.json`：默认登记 stub（`code`）与 `_shield_runtime/`（`runtime`），`full` 模式再登记模板与数据文件（`data`）；许可证、本地配置、数据库、日志、媒体、staticfiles 等可变文件不登记；
-- 构建密钥另行写入输出目录同级的 `*.shield-secret.json`，记录 `integrity`、`manifest` 路径与 `grace_days`，用于后续重新签发与复核；
+- 构建密钥另行写入输出目录同级的 `*.shield-secret.json`（格式 3），记录 `master_key`、派生出的 `build_key`、`signing_key`、`integrity`、`manifest` 路径与 `grace_days`，用于后续重新签发与复核；
 - 写入 `.pyshield-build.json` 标记（含 `runtime` 与 `integrity`），并默认在产物上运行 `manage.py check`。
 
 ## 4. 密钥体系与信封
@@ -107,23 +107,26 @@ _pyshield_load_module(
 ```text
 构建时生成：
   master_key（内嵌 runtime）
-     │ HKDF(salt="pyshield-license-v1", info=build_id)
-     ▼
-  license_key ──> pyshield.lic（内含 build_key，载荷由 signing_key 签名）
-                     │ HKDF(salt=SHA256("pyshield-module-v1" + module_id),
-                     │      info="pyshield-module-key")
-                     ▼
-                 module_key
-                     │ HKDF(salt="pyshield-envelope-v1",
-                     │      info="encryption", length=64)
-                     ├── 32 B 加密密钥
-                     └── 32 B MAC 密钥
+     ├─ HKDF(salt="pyshield-build-key-v1", info=build_id)
+     │    ▼
+     │  build_key（模块加密密钥，不写入许可证）
+     │    └─ HKDF(salt=SHA256("pyshield-module-v1" + module_id),
+     │            info="pyshield-module-key")
+     │         ▼
+     │      module_key
+     │         └─ HKDF(salt="pyshield-envelope-v1",
+     │                 info="encryption", length=64)
+     │              ├── 32 B 加密密钥
+     │              └── 32 B MAC 密钥
+     └─ HKDF(salt="pyshield-license-v3", info=build_id)
+          ▼
+       license_key ──> pyshield.lic（仅授权字段，载荷由 signing_key 签名）
 
   signing_key（只留在构建方）──签名──> pyshield.lic
   signing_public_key（内嵌 runtime）──验签──> 拒绝伪造或篡改的许可证
 ```
 
-每个模块使用独立密钥，互相不可替换；`build_key` 不直接出现在模块文件中。许可证是获取 `build_key` 的唯一入口，而许可证本身必须通过 Ed25519 验签才能被信任。
+每个模块使用独立密钥，互相不可替换；`build_key` 不直接出现在模块文件中，也**不再出现在许可证里**。格式 3 的许可证只承载到期、绑定、客户等授权信息；模块密钥由 runtime 从主密钥本地派生。旧格式 2 许可证仍可被构建侧读取，用于已有构建的续期，但新构建一律生成格式 3。
 
 ### 4.2 信封格式
 
@@ -182,16 +185,16 @@ runtime 在加载首个受保护模块前用内置公钥验签，再按模式校
 2. 读取 `.pyshield-manifest.json`，校验格式、`build_id`、算法、完整性模式与 Ed25519 签名；
 3. 按模式计算 `code`、`runtime`（以及 `full` 模式下的 `data`）文件的 SHA-256；
 4. 读取许可证：`PYSHELD_LICENSE` → `manage.py` 同目录 → runtime 包内；
-5. 用 `master_key` 派生许可证密钥并解封，校验 `format == 2`；再用内置的 Ed25519 公钥验证载荷签名，签名无效立即拒绝，之后的字段一律不信任；
-6. 校验 `build_id` 并取出 `build_key`；
-7. 读取 `~/.pyshield/<build_id>.state`（或 `PYSHELD_STATE_DIR`），用 `build_key` 派生的 HMAC 密钥验证 `last_seen`；今天早于 `last_seen` 超过 1 天即判定时钟回拨，否则在日期前进时更新状态；
-8. 校验 `not_before`（允许 1 天误差）、到期日与宽限期（`expires + grace_days` 之前放行，宽限期内标记 `in_grace`）以及机器指纹；
+5. 用 `master_key` 派生许可证密钥并解封，校验 `format == 3`；再用内置的 Ed25519 公钥验证载荷签名（域前缀 `pyshield-license-v3:`），签名无效立即拒绝，之后的字段一律不信任；
+6. 校验 `build_id`，从 `master_key` 和 `build_id` 派生 `build_key`（许可证里没有该字段）；
+7. 读取时钟状态：主文件 + 独立锚点（默认在 `~/.pyshield/` 与平台状态目录，可用 `PYSHELD_STATE_DIR` / `PYSHELD_STATE_ANCHOR_DIR` 覆盖）。Windows 用 DPAPI 封装，其它平台用 HMAC；两份记录必须一致，缺失一份会从另一份恢复。今天早于 `last_seen` 超过 1 天即判定时钟回拨；写入失败默认拒绝启动，只读部署需显式设置 `PYSHELD_ALLOW_VOLATILE_STATE=1`；
+8. 校验 `not_before`（允许 1 天误差）、到期日与宽限期（`expires + grace_days` 之前放行，宽限期内标记 `in_grace`）以及机器指纹；首次启动绑定同时检查主记录与位于 `_shield_runtime/` 的锚点，删除主记录不会重置绑定；
 9. 按模块 id 派生模块密钥，用绑定 `build_id + module_id` 的 AAD 解封模块信封；
-10. `zlib.decompress` → `marshal.loads`；
+10. `zlib.decompress` → `marshal.loads`；中间缓冲使用 `bytearray`，解包后立即覆写清零（降低 dump 窗口，但不能让 code object 消失）；
 11. 递归替换 code object 及其嵌套 code 的 `co_filename`，让 traceback 指向部署路径；
 12. 保留原模块对象上的 `__package__`、`__path__`、`__spec__`，把解出的代码 `exec` 到模块命名空间。
 
-即使攻击者从 runtime 中提取了对称主密钥，也只能解密许可证、无法生成新的有效签名；修改到期日、机器指纹或 `build_key` 都会导致验签失败。许可证、清单与时钟状态在首次校验后缓存，并用锁避免并发重复校验。`reload_license()` / `license_status(refresh=True)` 会清空缓存并重新校验，便于替换续期后的许可证；清单校验结果独立缓存，不随许可证刷新重新计算哈希。
+即使攻击者从 runtime 中提取了对称主密钥，也只能解密许可证、无法生成新的有效签名；修改到期日、机器指纹或绑定信息都会导致验签失败。许可证、清单与时钟状态在首次校验后缓存，并用锁避免并发重复校验；`load_module()` 每 5 分钟触发一次重新校验，避免长期运行的进程跨过到期日。`reload_license()` / `license_status(refresh=True)` 会清空缓存并重新校验，便于替换续期后的许可证；清单校验结果独立缓存，不随许可证刷新重新计算哈希。
 
 任何一步失败都会抛出 `ImportError` / `LicenseError`，模块不会以明文形式落地。`python -m _shield_runtime status|verify` 复用同一套校验逻辑，供现场部署检查。
 
@@ -201,33 +204,32 @@ runtime 在加载首个受保护模块前用内置公钥验签，再按模式校
 
 ```json
 {
-  "format": 2,
+  "format": 3,
   "build_id": "16 位十六进制",
-  "build_key": "Base85",
   "cipher": "chacha20poly1305",
   "python": "3.12",
   "created": "2026-11-12T...",
   "not_before": "2026-11-13",
   "expires": "2027-12-31 或 null",
   "grace_days": 14,
+  "bind_mode": "first-run",
   "fingerprints": ["..."],
   "customer": "客户名称",
   "signature": "Base85 Ed25519 签名"
 }
 ```
 
-签名对象是“去掉 `signature` 后的载荷按 key 排序、无空白的紧凑 JSON”，前面加上域前缀 `pyshield-license-v2:`；签名值本身再放入载荷，最后整体用 AEAD 加密。`signing_key` 只在构建方保存，runtime 仅嵌入 `signing_public_key`。
+签名对象是“去掉 `signature` 后的载荷按 key 排序、无空白的紧凑 JSON”，前面加上域前缀 `pyshield-license-v3:`；签名值本身再放入载荷，最后整体用 AEAD 加密。`signing_key` 只在构建方保存，runtime 仅嵌入 `signing_public_key`。格式 3 的载荷**没有 `build_key`**；构建方从构建密钥中的 `master_key + build_id` 派生，runtime 同样派生。旧格式 2 的许可证仍可读取（使用 `pyshield-license-v2:` 前缀与旧盐），用于已有构建的续期；新构建一律生成格式 3。
 
-构建密钥 `*.shield-secret.json`（格式 2）保存 `master_key`、`build_key`、`signing_key`、`signing_public_key`、构建 ID、算法、`integrity`、`manifest`、`grace_days`、Python 小版本、产物与许可证路径；`issue` 读取这些字段重新签名并重写许可证，不重新加密代码。旧格式（format 1）的许可证和构建密钥都会被拒绝，需要重新构建。
+构建密钥 `*.shield-secret.json`（格式 3）保存 `master_key`、派生出的 `build_key`、`signing_key`、`signing_public_key`、构建 ID、算法、`integrity`、`manifest`、`grace_days`、Python 小版本、产物与许可证路径；`issue` 读取这些字段重新签名并重写许可证，不重新加密代码。格式 3 的 `build_key` 必须与 `master_key + build_id` 派生值一致；旧格式（format 1）的许可证和构建密钥都会被拒绝。
 
-时钟状态文件包含 `build_id`、`last_seen` 和 `mac`：
+时钟状态包含 `format`、`build_id` 和 `last_seen`，用 `secure_store.seal_state` 封装：
 
-```text
-state_key = HKDF(build_key, salt="pyshield-state-v1", info=build_id, length=32)
-mac       = HMAC-SHA256(state_key, build_id + "|" + last_seen)
-```
+- Windows：DPAPI 保护，绑定当前用户/机器；
+- 其它平台：`PLAIN1` + HMAC-SHA256（基于机器指纹）；
+- 主文件与独立锚点各写一份，必须一致；删除其中一份会从另一份恢复。只读部署写入失败默认拒绝启动，`PYSHELD_ALLOW_VOLATILE_STATE=1` 可显式放弃持久化回拨检测。
 
-runtime 只信任 MAC 匹配的状态；日期前进时原子更新状态文件。状态目录优先取 `PYSHELD_STATE_DIR`，否则为 `~/.pyshield/`，不可写时回拨检测降级但不影响启动。
+首次启动绑定的主记录仍在输出目录 `.pyshield-binding.json`，锚点位于 `_shield_runtime/.pyshield-binding.json.anchor`；两者都带 `build_id`、机器指纹、绑定时间与 HMAC。删除主记录会从锚点恢复，删除锚点会从主记录重建；两者同时删除才会被视为首次运行。
 
 机器指纹来源：
 
@@ -269,17 +271,20 @@ Django 大量依赖导入、反射和代码内省，因此 PyShield 刻意避免
 - 构建阶段在产物上运行 `manage.py check`；
 - 篡改验证：修改受保护文件后加载失败，报“package integrity check failed”；`--integrity off` 时改为密文认证失败；
 - 清单验证：签名错误、清单缺失、登记文件大小/哈希变化、跨构建清单均被拒绝；可变文件与新增文件不破坏启动；
-- 时钟验证：伪造 `last_seen` 会因 HMAC 不符被拒；时钟早于 `last_seen` 超过 1 天被拒；宽限期边界与 `not_before` 有单元测试；
-- 许可证验证：过期拒绝、宽限期放行、换绑生效、重新签发无需重新构建、热重载生效；
+- 时钟验证：伪造/损坏 `last_seen` 会因 DPAPI/HMAC 不匹配被拒；时钟早于 `last_seen` 超过 1 天被拒；删除单份状态会从另一份恢复；宽限期边界与 `not_before` 有单元测试；
+- 许可证验证：格式 3 载荷不含 `build_key`；旧格式 2 仍可读取；过期拒绝、宽限期放行、换绑生效、重新签发无需重新构建、热重载生效；
+- 安全回归：runtime 压缩资源与源码逐字节一致；PyInstaller spec 不再包含 `runtime_template` 或 `crypto.py` / `fingerprint.py` / `ed25519.py` 明文 datas；默认产物不含 `_core.py`；纯 Python ChaCha 在分块边界与参考实现一致；
 - 现场验证：`python -m _shield_runtime verify` 与 `python shield.py verify` 覆盖清单、文件与许可证；
 - Django 集成验证：模板、静态文件、迁移、ORM 与路由在加密产物中正常工作。
 
 ## 9. 已知边界与演进方向
 
 - 服务端代码最终要在内存中解密，runtime 中的 `master_key` 也可能被提取；Ed25519 签名能阻止伪造许可证，但无法阻止攻击者绕过校验逻辑或 dump 已解密的代码。安全强度依赖攻击成本与配套授权手段。
+- **离线分发不存在绝对机密性**：格式 3 移除了许可证中的 `build_key`，默认 runtime 也不再发布 `.py`，但主密钥仍在客户机内存/扩展中。需要真正机密性时，应引入服务端解锁（许可证 + 机器指纹 + 短期密钥）、TPM/加密狗，或把密钥拆到独立的原生模块。
 - 构建与部署必须使用相同的 Python 小版本；原生 runtime 还要求相同操作系统、CPU 架构和 Python ABI。
 - AES-GCM 与 ChaCha20-Poly1305 依赖 `cryptography`；纯 Python ChaCha 零依赖但速度低，`--runtime-native` 会编译 `_chacha_fast` 作为快速回退。
 - `--runtime-native` 显著提高静态提取门槛，但 `.pyd`/`.so` 仍可被逆向；它适合提高攻击成本，不适合当作绝对防护。
 - 迁移与测试默认不加密；模板与静态资源不加密，前端代码对用户可见。
-- 完整性清单由 runtime 自身执行，不能防御“整体替换 runtime”的攻击；时钟状态可被删除以重置历史。两者用于抬高成本与发现误改，不是绝对 DRM。
-- 可继续演进：更强的二进制混淆、模板按需加密、可选的在线激活、自动化发布流水线。
+- 完整性清单由 runtime 自身执行，不能防御“整体替换 runtime”的攻击；时钟与绑定记录可被同时删除以重置历史。两者用于抬高成本与发现误改，不是绝对 DRM。
+- 发布卫生仍未闭环：`PyShieldBuilder.exe` 需要 Authenticode 证书才能消除“未签名”提示；PyInstaller 内置二进制仍可能带 PDB 路径。详见 [security-hardening.md](security-hardening.md)。
+- 可继续演进：服务端首绑登记/解锁、硬件密钥、更强的二进制混淆、模板按需加密、自动化发布暴露审计。

@@ -12,7 +12,7 @@ import unittest
 from datetime import date, timedelta
 from pathlib import Path
 
-from pyshield import builder, crypto, fingerprint, licensing
+from pyshield import builder, crypto, fingerprint, licensing, secure_store
 
 MANAGE = """\
 import sys
@@ -107,6 +107,8 @@ class BuilderTests(unittest.TestCase):
         secret = licensing.read_secret(self.secret_path)
         self.assertIn("signing_key", secret)
         self.assertIn("signing_public_key", secret)
+        self.assertEqual(secret["format"], licensing.FORMAT)
+        self.assertEqual(secret["license_format"], licensing.FORMAT)
         self.assertEqual(secret["integrity"], "protected")
         self.assertEqual(secret["grace_days"], 0)
         manifest_path = self.output / builder.MANIFEST_FILE
@@ -114,7 +116,10 @@ class BuilderTests(unittest.TestCase):
         payload = json.loads(manifest_path.read_text(encoding="utf-8"))
         files = payload["files"]
         self.assertEqual(files["mypkg/tools.py"]["category"], "code")
-        self.assertEqual(files["_shield_runtime/_core.py"]["category"], "runtime")
+        self.assertEqual(files["_shield_runtime/_core.pyc"]["category"], "runtime")
+        self.assertNotIn("_shield_runtime/_core.py", files)
+        self.assertFalse((self.output / "_shield_runtime" / "_core.py").exists())
+        self.assertFalse((self.output / "_shield_runtime" / "_chacha_fast.pyx").exists())
         self.assertEqual(files["mypkg/templates/page.html"]["category"], "data")
         self.assertNotIn("mypkg/local_settings.py", files)
         self.assertNotIn("pyshield.lic", files)
@@ -164,6 +169,20 @@ class BuilderTests(unittest.TestCase):
         record = json.loads(binding_path.read_text(encoding="utf-8"))
         self.assertEqual(record["build_id"], secret["build_id"])
         self.assertEqual(record["fingerprint"], fingerprint.machine_fingerprint())
+        anchor_path = self.output / "_shield_runtime" / (licensing.BINDING_FILE_NAME + ".anchor")
+        self.assertTrue(anchor_path.is_file())
+        anchor = json.loads(anchor_path.read_text(encoding="utf-8"))
+        self.assertEqual(anchor["bound_at"], record["bound_at"])
+
+        # Deleting only the visible record must restore it from the anchor
+        # instead of treating the deployment as a first run.
+        binding_path.unlink()
+        completed = self.run_project("check")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(
+            json.loads(binding_path.read_text(encoding="utf-8"))["bound_at"],
+            record["bound_at"],
+        )
 
         completed = self.run_project("check")
         self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -227,6 +246,9 @@ class BuilderTests(unittest.TestCase):
             else:
                 os.environ["PYSHELD_STATE_DIR"] = previous
         self.assertFalse((self.output / licensing.BINDING_FILE_NAME).exists())
+        self.assertFalse(
+            (self.output / "_shield_runtime" / (licensing.BINDING_FILE_NAME + ".anchor")).exists()
+        )
         completed = self.run_project("check")
         self.assertEqual(completed.returncode, 0, completed.stderr)
 
@@ -381,18 +403,16 @@ class BuilderTests(unittest.TestCase):
         result = self.build(expire="2035-01-01")
         secret = licensing.read_secret(result.secret)
         build_id = secret["build_id"]
-        build_key = crypto.b85decode(secret["build_key"])
         last_seen = (date.today() + timedelta(days=5)).isoformat()
-        key = crypto.hkdf_sha256(
-            build_key, salt=b"pyshield-state-v1", info=build_id.encode("utf-8"), length=32
+        payload = {
+            "format": 2,
+            "build_id": build_id,
+            "last_seen": last_seen,
+        }
+        sealed = secure_store.seal_state(
+            payload, fingerprint.machine_fingerprint(), "pyshield-clock"
         )
-        mac = hmac.new(
-            key, (build_id + "|" + last_seen).encode("utf-8"), hashlib.sha256
-        ).hexdigest()
-        (self.state_dir / (build_id + ".state")).write_text(
-            json.dumps({"build_id": build_id, "last_seen": last_seen, "mac": mac}),
-            encoding="utf-8",
-        )
+        secure_store.write_private(self.state_dir / (build_id + ".state"), sealed)
         completed = self.run_project("check")
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("clock rollback", completed.stderr)
@@ -472,6 +492,31 @@ class BuilderTests(unittest.TestCase):
         report = json.loads(completed.stdout)
         self.assertTrue(report["ok"])
         self.assertEqual(report["checked"], len(runtime_files) + len(code_files))
+
+    def test_runtime_source_is_opt_in(self) -> None:
+        self.build(runtime_source=True)
+        runtime = self.output / "_shield_runtime"
+        self.assertTrue((runtime / "_core.py").exists())
+        self.assertFalse((runtime / "_core.pyc").exists())
+        self.assertFalse((runtime / "_chacha_fast.pyx").exists())
+        completed = self.run_project("check")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_license_does_not_carry_build_key(self) -> None:
+        result = self.build()
+        secret = licensing.read_secret(result.secret)
+        payload = licensing.open_license(
+            crypto.b85decode(secret["master_key"]), secret["build_id"],
+            result.license.read_bytes(), licensing.secret_public_key(secret),
+        )
+        self.assertEqual(payload["format"], licensing.FORMAT)
+        self.assertNotIn("build_key", payload)
+        # The module key is derivable by the vendor-side secret and by the
+        # runtime from the embedded master key, but is not in the license.
+        self.assertEqual(
+            crypto.b85decode(secret["build_key"]),
+            licensing.build_key_for(crypto.b85decode(secret["master_key"]), secret["build_id"]),
+        )
 
     def test_runtime_native(self) -> None:
         try:

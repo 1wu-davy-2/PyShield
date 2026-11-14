@@ -10,14 +10,14 @@ from pyshield import crypto, ed25519, licensing
 class LicensingTests(unittest.TestCase):
     def setUp(self) -> None:
         self.master = crypto.random_bytes(32)
-        self.build_key = crypto.random_bytes(32)
+        self.build_id = "0123456789abcdef"
+        self.build_key = licensing.build_key_for(self.master, self.build_id)
         self.signing = crypto.random_bytes(32)
         self.public = ed25519.public_key(self.signing)
-        self.build_id = "0123456789abcdef"
 
     def make(self, **kwargs) -> bytes:
         return licensing.create_license(
-            self.master, self.build_id, self.build_key, "chacha", "3.12", self.signing, **kwargs
+            self.master, self.build_id, "chacha", "3.12", self.signing, **kwargs
         )
 
     def test_round_trip(self) -> None:
@@ -29,7 +29,10 @@ class LicensingTests(unittest.TestCase):
         self.assertEqual(payload["bind_mode"], licensing.BIND_FIXED)
         self.assertEqual(payload["fingerprints"], ["abc123"])
         self.assertEqual(payload["customer"], "ACME")
-        self.assertEqual(crypto.b85decode(payload["build_key"]), self.build_key)
+        self.assertNotIn("build_key", payload)
+        self.assertEqual(
+            licensing.build_key_for(self.master, self.build_id), self.build_key
+        )
         self.assertTrue(licensing.verify_payload(payload, self.public))
 
     def test_wrong_master_key(self) -> None:
@@ -66,7 +69,7 @@ class LicensingTests(unittest.TestCase):
 
     def test_legacy_license_rejected(self) -> None:
         payload = licensing.build_payload(
-            self.build_id, self.build_key, "chacha", "3.12", None, [], None
+            self.build_id, "chacha", "3.12", None, [], None
         )
         payload["format"] = 1
         message_key = licensing.license_key(self.master, self.build_id)
@@ -78,6 +81,15 @@ class LicensingTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(licensing.LicenseError, "unsupported license format"):
             licensing.open_license(self.master, self.build_id, sealed, self.public)
+
+    def test_legacy_format_two_license_still_opens(self) -> None:
+        sealed = licensing.create_license(
+            self.master, self.build_id, "chacha", "3.12", self.signing,
+            license_format=licensing.LEGACY_FORMAT, build_key=self.build_key,
+        )
+        payload = licensing.open_license(self.master, self.build_id, sealed, self.public)
+        self.assertEqual(payload["format"], licensing.LEGACY_FORMAT)
+        self.assertEqual(crypto.b85decode(payload["build_key"]), self.build_key)
 
     def test_parse_expire(self) -> None:
         today = date(2026, 1, 1)

@@ -9,10 +9,10 @@ IS_WINDOWS = sys.platform == "win32"
 datas = [
     (str(ROOT / "gui" / "web"), "gui/web"),
     (str(ROOT / "gui" / "assets" / "icon.png"), "gui/assets"),
-    (str(ROOT / "pyshield" / "runtime_template"), "pyshield/runtime_template"),
-    (str(ROOT / "pyshield" / "crypto.py"), "pyshield"),
-    (str(ROOT / "pyshield" / "fingerprint.py"), "pyshield"),
-    (str(ROOT / "pyshield" / "ed25519.py"), "pyshield"),
+    # Runtime sources are embedded in pyshield/_runtime_bundle.py and compiled
+    # into the PYZ. Do not add runtime_template or crypto/fingerprint/ed25519
+    # as datas: that would put the decryption runtime back into the exe as
+    # plaintext files.
 ]
 
 if IS_WINDOWS:

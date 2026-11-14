@@ -168,6 +168,7 @@ class BuildManager:
             cipher=request.cipher,
             customer=request.customer or None,
             integrity=request.integrity,
+            runtime_source=request.runtime == "source",
             runtime_pyc=request.runtime == "pyc",
             no_verify=request.no_verify or verify_python is None,
             force=request.force,

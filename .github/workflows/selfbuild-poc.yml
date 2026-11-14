@@ -1,0 +1,87 @@
+name: selfbuild-poc
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [develop]
+
+concurrency:
+  group: selfbuild-poc-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  windows:
+    name: Self-protected builder (Windows PoC)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pywebview==6.2.1 pythonnet==3.2.1 pyinstaller==6.22.3 cryptography
+
+      - name: Build self-protected PyShieldBuilder
+        run: python tools/selfbuild.py --outdir dist-selfbuild
+
+      - name: Verify artifact
+        shell: pwsh
+        run: |
+          $exe = Get-Item .\dist-selfbuild\PyShieldBuilder-selfbuild.exe
+          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
+          $size = [math]::Round($exe.Length / 1MB, 1)
+          Write-Host "file=$($exe.Name) size=${size}MB sha256=$hash"
+          if (Get-ChildItem .\dist-selfbuild -Filter "*.shield-secret.json") {
+            throw "build secret leaked into dist-selfbuild"
+          }
+
+          $env:PYSHELD_GUI_CONFIG_DIR = Join-Path $env:RUNNER_TEMP "selfbuild-gui"
+          $env:PYSHELD_SKIP_PROTOCOL = "1"
+          $process = Start-Process -FilePath $exe.FullName -PassThru
+          Start-Sleep -Seconds 20
+          $process.Refresh()
+          if ($process.HasExited) {
+            throw "self-protected builder exited early with code $($process.ExitCode)"
+          }
+          $windows = @(Get-Process | Where-Object {
+            $_.ProcessName -like "PyShieldBuilder-selfbuild*" -and $_.MainWindowTitle
+          })
+          if ($windows.Count -eq 0) {
+            throw "self-protected builder has no visible window"
+          }
+          Write-Host "window: $($windows[0].MainWindowTitle)"
+          Get-Process | Where-Object {
+            $_.ProcessName -like "PyShieldBuilder-selfbuild*"
+          } | Stop-Process -Force -ErrorAction SilentlyContinue
+          Write-Host "self-protected builder stayed running for 20s"
+
+          @(
+            "### Self-protected builder (PoC)",
+            "",
+            "- file: $($exe.Name)",
+            "- size: $size MB",
+            "- sha256: ``$hash``",
+            "- smoke: process stayed alive for 20s"
+          ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          "$hash  $($exe.Name)" | Out-File -FilePath .\dist-selfbuild\SHA256SUMS-windows.txt -Encoding utf8
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: PyShieldBuilder-selfbuild-windows-x64
+          path: |
+            dist-selfbuild/PyShieldBuilder-selfbuild.exe
+            dist-selfbuild/SHA256SUMS-windows.txt
+          if-no-files-found: error
+          retention-days: 14

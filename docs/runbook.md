@@ -15,7 +15,7 @@ PyShield 是一套自研的 Python / Django 源码保护工具：构建期把 Py
 | `pyshield/licensing.py` | 许可证与构建密钥读写、签发日期、宽限期与校验 |
 | `pyshield/manifest.py` | 签名完整性清单：文件发现、分类、SHA-256、签名与校验 |
 | `pyshield/fingerprint.py` | 跨平台机器指纹 |
-| `pyshield/runtime_template/` | 随包运行库模板，含完整性校验、时钟状态、诊断入口与 Cython 原生 ChaCha 源文件 |
+| `pyshield/runtime_template/` | 运行库模板源码（完整性校验、时钟状态、诊断入口与 Cython 原生 ChaCha）；构建器通过 `pyshield/_runtime_bundle.py` 的压缩资源使用，exe 中不再以明文 `.py` 发布 |
 | `gui/` | 桌面构建器：pywebview 窗口、JS 桥接、表单校验与内嵌 Web UI |
 | `PyShieldBuilder.spec` | PyInstaller 单文件打包配置 |
 | `tests/` | 加密、签名、许可证、构建流程与桌面构建器后端测试 |
@@ -73,8 +73,9 @@ python shield.py build -p ../demo -o ../dist-pyshield
 | `--exclude` | 额外排除模式（fnmatch），可重复 |
 | `--encrypt-migrations` | 迁移文件也加密（默认保留明文） |
 | `--encrypt-tests` | 测试文件也加密（默认保留明文） |
-| `--runtime-pyc` | runtime 只发布 sourceless `.pyc` |
-| `--runtime-native` | 用 Cython 把 runtime 编译为原生扩展（与 `--runtime-pyc` 互斥） |
+| `--runtime-pyc` | runtime 只发布 sourceless `.pyc`（默认；可显式指定） |
+| `--runtime-native` | 用 Cython 把 runtime 编译为原生扩展（与 `--runtime-pyc` / `--runtime-source` 互斥） |
+| `--runtime-source` | runtime 保留 `.py` 源码，仅用于调试；会暴露解密逻辑 |
 | `--no-verify` | 跳过产物上的 `manage.py check` |
 | `--force` | 覆盖不是 PyShield 构建的输出目录 |
 | `--dry-run` | 只打印计划，不写文件 |
@@ -93,7 +94,7 @@ python shield.py build -p ../demo -o ../dist-pyshield
 1. 复制目标项目的数据文件，忽略 `.git`、虚拟环境、`__pycache__`、数据库、日志等；
 2. 发现 `manage.py` 与带 `__init__.py` 的包，默认排除 `migrations` 和 `tests`；
 3. 逐模块 `compile → marshal → zlib → AEAD → Base85`，写入 stub；
-4. 安装 runtime，写入构建 ID、主密钥、Ed25519 公钥、算法、完整性模式与 Python 小版本；
+4. 从内嵌压缩资源解出 runtime，写入构建 ID、主密钥、Ed25519 公钥、算法、完整性模式与 Python 小版本；默认编译为 `.pyc`；
 5. 生成并签名 `pyshield.lic`（含签发日期、到期日、宽限期与绑定模式）；
 6. 生成并签名 `.pyshield-manifest.json`（完整性模式非 `off` 时）；
 7. 在产物上执行 `manage.py check`；
@@ -102,7 +103,7 @@ python shield.py build -p ../demo -o ../dist-pyshield
 产物：
 
 - `<output>/`：可部署目录，包含 stub、`_shield_runtime/`、`pyshield.lic` 和所有数据文件；
-- `<output>.shield-secret.json`：构建密钥（含 `master_key`、`build_key`、`signing_key`），只保存在构建方。
+- `<output>.shield-secret.json`：构建密钥（格式 3，含 `master_key`、派生出的 `build_key`、`signing_key`），只保存在构建方。
 
 查看构建信息：
 
@@ -187,8 +188,8 @@ python manage.py runserver 0.0.0.0:8000
 ### 4.3 可写目录与时间同步
 
 - 续期时通常直接把新 `pyshield.lic` 写到原位置，运行用户需要该目录的写权限；也可用 `PYSHELD_LICENSE` 指向外部可写路径。
-- 首次启动绑定会在输出目录写入 `.pyshield-binding.json`，因此该目录必须可写；只读部署用 `PYSHELD_BINDING_FILE` 指向可写位置（绑定记录放在包外会削弱复制防护）。写入失败时启动会被拒绝，避免绑定被静默跳过。
-- 时钟状态写入 `~/.pyshield/<build_id>.state`；可用 `PYSHELD_STATE_DIR` 指定目录。只读部署可指向可写目录，写入失败时回拨检测降级但启动不受影响。
+- 首次启动绑定会在输出目录写入 `.pyshield-binding.json`，并在 `_shield_runtime/` 写入独立锚点，因此该目录必须可写；只读部署用 `PYSHELD_BINDING_FILE` 指向可写位置（绑定记录放在包外会削弱复制防护）。写入失败时启动会被拒绝，避免绑定被静默跳过；删除主记录会从锚点恢复。
+- 时钟状态写入 `~/.pyshield/<build_id>.state` 和独立锚点（默认在平台用户状态目录）；可用 `PYSHELD_STATE_DIR` / `PYSHELD_STATE_ANCHOR_DIR` 指定。Windows 使用 DPAPI，其它平台使用 HMAC；删除单份会从另一份恢复。只读部署默认会因无法持久化而拒绝启动；确认接受回拨检测失效时设置 `PYSHELD_ALLOW_VOLATILE_STATE=1`。
 - 部署机应启用 NTP/时间同步。容器重建、快照恢复或虚拟机迁移后如果时钟明显回拨，runtime 会拒绝启动，先校正时间再启动。
 - 许可证带签发日期，现场时钟早于签发日期超过 1 天同样会拒绝。
 
@@ -216,11 +217,11 @@ python manage.py runserver 0.0.0.0:8000
 python shield.py build -p <project> -o <output> --bind-first-run -e 2027-12-31
 ```
 
-- 首次启动写入 `<output>/.pyshield-binding.json`，包含 `build_id`、机器指纹、绑定时间和 `build_key` 派生的 HMAC；后续启动要求同一台机器；
+- 首次启动写入 `<output>/.pyshield-binding.json` 与 `_shield_runtime/.pyshield-binding.json.anchor`，包含 `build_id`、机器指纹、绑定时间和 `build_key` 派生的 HMAC；后续启动要求同一台机器；
 - 记录被修改、整包复制到另一台机器、或替换成其他机器的记录都会拒绝加载；
 - 首次启动绑定在第一次启动应用、或运行 `python -m _shield_runtime status` 时生效；不要在非目标机器上执行 `status`；
 - 构建期的 `manage.py check` 使用临时绑定文件，不会占用客户机的首次绑定；
-- 只读部署用 `PYSHELD_BINDING_FILE` 指向可写文件；绑定放在包外会削弱复制防护；
+- 只读部署用 `PYSHELD_BINDING_FILE` 指向可写文件；该变量是调试/特殊部署入口，绑定放在包外会削弱复制防护；
 - 硬件更换需删除旧绑定记录后重新绑定，或改用 `-b` 固定指纹许可证。离线方案无法阻止有本地写权限的人重新绑定。
 
 取指纹：
@@ -253,7 +254,7 @@ python shield.py issue --secret <output>.shield-secret.json --out /secure/pyshie
 - 许可证包含 `not_before`（本次签发日期）；现场时钟早于它超过 1 天会拒绝加载；
 - 默认写回构建时记录的许可证路径，可用 `--out` 指定其他位置；替换现场许可证后无需重启进程即可通过 `reload_license()` 生效；
 - `--no-restrictions` 明确签发无限制许可证（无到期、不绑定设备）；
-- 许可证格式为 v2，载荷由构建时生成的 Ed25519 私钥签名；runtime 只内置公钥，即使攻击者提取对称主密钥也无法伪造许可证。
+- 许可证格式为 v3，载荷只包含授权字段，不含模块解密密钥；载荷由构建时生成的 Ed25519 私钥签名，runtime 只内置公钥，即使攻击者提取对称主密钥也无法伪造许可证。
 
 runtime 按以下顺序查找许可证：
 
@@ -263,8 +264,8 @@ runtime 按以下顺序查找许可证：
 
 ### 5.3 时钟回拨与热重载
 
-- runtime 在许可证校验通过后，把 `last_seen`（日期）和 `build_id` 用 `build_key` 派生的 HMAC 密钥签名，写入 `~/.pyshield/<build_id>.state` 或 `PYSHELD_STATE_DIR`；
-- 如果今天比 `last_seen` 早超过 1 天，判定为时钟回拨并拒绝加载；状态文件被修改（MAC 不匹配）同样拒绝；
+- runtime 在许可证校验通过后，把 `last_seen`（日期）和 `build_id` 用 DPAPI（Windows）或 HMAC（其它平台）封装，写入 `~/.pyshield/<build_id>.state` 及其独立锚点，可用 `PYSHELD_STATE_DIR` / `PYSHELD_STATE_ANCHOR_DIR` 覆盖；
+- 如果今天比 `last_seen` 早超过 1 天，判定为时钟回拨并拒绝加载；状态被修改、损坏或两份记录不一致同样拒绝；删除单份会从另一份恢复；
 - 删除状态文件会重置历史，这是离线方案的固有边界；请同时使用 NTP 和授权流程；
 - 热重载示例：
 
@@ -275,7 +276,7 @@ license_status(refresh=True)   # 重新读取许可证并返回状态
 reload_license()               # 等价入口，返回同样的状态字典
 ```
 
-已导入的模块继续使用旧进程内的 code object；刷新后新导入的模块会按新许可证的到期日、宽限期与指纹状态放行。许可证中的 `build_key` 不随续期改变，跨构建替换许可证仍需重新构建。
+已导入的模块继续使用旧进程内的 code object；刷新后新导入的模块会按新许可证的到期日、宽限期与指纹状态放行。格式 3 许可证不含 `build_key`，模块密钥由构建 ID 与主密钥派生，续期不会改变它；跨构建替换许可证仍需重新构建。
 
 ### 5.4 构建方复核交付包
 
@@ -323,9 +324,10 @@ PYSHELD_LICENSE=/secure/pyshield.lic python manage.py check
 | `this deployment is bound to machine ...` | 首次启动绑定已锁定另一台机器，通常是整包被复制 | 恢复到原机器；确需换机时由构建方删除绑定记录或改用 `-b` 重新签发 |
 | `binding file ... was modified` | `.pyshield-binding.json` 被编辑、损坏或替换 | 从备份恢复；确认换机后再删除并重新绑定 |
 | `cannot record the first-run binding` | 输出目录只读，首次启动无法写入绑定记录 | 赋予目录写权限，或把 `PYSHELD_BINDING_FILE` 指向可写路径 |
+| `cannot record clock state` | 时钟状态目录只读，且未显式允许易失状态 | 赋予用户状态目录写权限，或确认接受回拨检测失效后设置 `PYSHELD_ALLOW_VOLATILE_STATE=1` |
 | `license is not valid before ...` | 现场时钟早于签发日期超过 1 天 | 校正系统时间或重新签发 |
 | `system clock rollback` | 时钟早于上次运行日期超过 1 天 | 校正 NTP/系统时间；不要删除状态文件来绕过 |
-| 时钟状态文件损坏 | 状态文件被修改或写入中断 | 恢复文件或校正时间；确认 `PYSHELD_STATE_DIR` 可写 |
+| 时钟状态文件损坏 | 状态文件被修改、DPAPI 不匹配或写入中断 | 恢复主记录与锚点，或校正时间；确认 `PYSHELD_STATE_DIR` / `PYSHELD_STATE_ANCHOR_DIR` 可写 |
 | 指纹不匹配 | 许可证绑定的是其他机器 | 在目标机器取指纹后用 `issue -b` 重新签发 |
 | 找不到许可证 | 许可证路径不正确或未随包发布 | 放入输出根目录，或设置 `PYSHELD_LICENSE` |
 | `ModuleNotFoundError: cryptography` | 使用 AES-GCM / ChaCha20-Poly1305 但部署机未安装依赖 | 安装 `cryptography`，或改用 `--cipher chacha-pure` 重新构建 |
@@ -357,9 +359,10 @@ python -m unittest discover -s tests -v
 ## 9. 安全事项
 
 - `*.shield-secret.json` 同时包含 `master_key`、`build_key` 和 `signing_key`，是构建方最高权限密钥，**绝不能随包发布**；泄露后应重新构建并作废旧包。
-- 许可证格式 v2 使用 Ed25519 签名，修改到期日、机器指纹等字段会导致验签失败；旧格式许可证不被新 runtime 接受。
+- 许可证格式 v3 使用 Ed25519 签名，修改到期日、机器指纹等字段会导致验签失败；格式 3 不含 `build_key`；旧格式 2 可由构建侧读取用于续期，但新 runtime 只接受格式 3。
 - 完整性清单由 runtime 自身校验；如果攻击者能整体替换 `_shield_runtime/`，清单也会失效。它用于发现现场误改、局部篡改和跨构建移植，不是二进制级防篡改。
-- 时钟状态与回拨检测是尽力而为：删除状态文件会重置历史。请结合 NTP、合同和授权流程。
+- 时钟状态与回拨检测是尽力而为：同时删除主记录与锚点仍会重置历史。请结合 NTP、服务端时间、合同和授权流程。
 - 原生 runtime 把主密钥、验签逻辑和快速 ChaCha 编译进 `.pyd`/`.so`，显著提高静态提取门槛，但无法阻止有能力的攻击者在运行时内存中提取。
+- 发布卫生（Authenticode、PDB 路径、发布暴露审计）见 [security-hardening.md](security-hardening.md)。
 - 迁移与测试默认保持明文；如包含敏感逻辑，使用 `--encrypt-migrations` / `--encrypt-tests`。
 - 加密提高的是逆向与源码泄露门槛，不是绝对不可破解的 DRM；服务端代码最终会在内存中还原，请配合合同、授权、SaaS 化等手段。

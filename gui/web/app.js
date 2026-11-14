@@ -10,7 +10,7 @@
     aesgcm: "AES-256-GCM",
   };
   const INTEGRITY_LABELS = { protected: "保护核心", full: "完整校验", off: "关闭" };
-  const RUNTIME_LABELS = { source: "源码运行时", pyc: "字节码运行时" };
+  const RUNTIME_LABELS = { source: "源码运行时（调试）", pyc: "字节码运行时" };
   const BINDING_LABELS = {
     any: "不绑定设备",
     "first-run": "首次启动自动绑定",

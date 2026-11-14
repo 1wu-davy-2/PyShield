@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from . import __version__, crypto, ed25519, fingerprint, licensing, manifest
+from . import __version__, _runtime_bundle, crypto, ed25519, fingerprint, licensing, manifest
 
 RUNTIME_PACKAGE = "_shield_runtime"
 MARKER_FILE = ".pyshield-build.json"
@@ -104,7 +104,9 @@ class BuildOptions:
     cipher: str = "auto"
     customer: str | None = None
     integrity: str = "protected"
+    # Bytecode is the secure default. Source is opt-in for debugging only.
     runtime_pyc: bool = False
+    runtime_source: bool = False
     runtime_native: bool = False
     no_verify: bool = False
     force: bool = False
@@ -303,16 +305,19 @@ def install_runtime(
     signing_public_key: bytes,
     cipher: str,
     integrity: str,
-    runtime_pyc: bool,
-    runtime_native: bool,
+    runtime_mode: str,
 ) -> None:
-    source_dir = Path(__file__).resolve().parent
-    template = source_dir / "runtime_template" / RUNTIME_PACKAGE
+    if runtime_mode not in ("source", "pyc", "native"):
+        raise BuildError(f"unknown runtime mode {runtime_mode!r}")
     runtime = output / RUNTIME_PACKAGE
-    shutil.copytree(template, runtime)
-    shutil.copy2(source_dir / "crypto.py", runtime / "_crypto.py")
-    shutil.copy2(source_dir / "fingerprint.py", runtime / "_machine.py")
-    shutil.copy2(source_dir / "ed25519.py", runtime / "_ed25519.py")
+    runtime.mkdir(parents=True, exist_ok=True)
+    # Runtime sources are embedded in a generated blob inside the builder so
+    # PyInstaller does not ship them as plaintext ``datas`` files. The blob is
+    # an opaque resource, not a confidentiality boundary.
+    for name, data in _runtime_bundle.load_files().items():
+        target = runtime / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
 
     core = runtime / "_core.py"
     text = core.read_text(encoding="utf-8")
@@ -332,9 +337,9 @@ def install_runtime(
         raise BuildError("runtime template contains unresolved placeholders")
     core.write_text(text, encoding="utf-8", newline="\n")
 
-    if runtime_native:
+    if runtime_mode == "native":
         compile_runtime_native(runtime)
-    elif runtime_pyc:
+    elif runtime_mode == "pyc":
         compile_runtime(runtime)
     (runtime / "_chacha_fast.pyx").unlink(missing_ok=True)
 
@@ -512,6 +517,7 @@ def verify_build(
     temp_binding: Path | None = None
     if bind_mode == licensing.BIND_FIRST_RUN:
         # Never consume the customer's first-run binding on the build machine.
+        # The runtime keeps a second binding anchor beside the primary file.
         handle = tempfile.NamedTemporaryFile(
             prefix="pyshield-verify-", suffix=".binding", delete=False,
         )
@@ -529,6 +535,7 @@ def verify_build(
     finally:
         if temp_binding is not None:
             temp_binding.unlink(missing_ok=True)
+            Path(str(temp_binding) + ".anchor").unlink(missing_ok=True)
     if result.returncode != 0:
         details = (result.stdout + result.stderr).strip()
         raise BuildError("protected project failed manage.py check:\n" + details)
@@ -558,15 +565,19 @@ def build(options: BuildOptions) -> BuildResult:
     report_stage(options, "init", "validating build options", 2)
     if not (project / "manage.py").is_file():
         raise BuildError(f"manage.py not found in {project}")
-    if options.runtime_native and options.runtime_pyc:
-        raise BuildError("--runtime-native and --runtime-pyc are mutually exclusive")
+    if options.runtime_native and (options.runtime_pyc or options.runtime_source):
+        raise BuildError("--runtime-native cannot be combined with --runtime-pyc or --runtime-source")
+    if options.runtime_pyc and options.runtime_source:
+        raise BuildError("--runtime-pyc and --runtime-source are mutually exclusive")
     if options.integrity not in INTEGRITY_MODES:
         raise BuildError(f"integrity must be one of: {', '.join(INTEGRITY_MODES)}")
     try:
         grace_days = licensing.parse_grace_days(options.grace_days)
     except licensing.LicenseError as exc:
         raise BuildError(str(exc)) from exc
-    runtime_mode = "native" if options.runtime_native else "pyc" if options.runtime_pyc else "source"
+    # Bytecode is the default. Source mode is retained for debugging and is
+    # explicitly logged as weaker because it publishes the decryption runtime.
+    runtime_mode = "native" if options.runtime_native else "source" if options.runtime_source else "pyc"
     if output == project or path_is_within(project, output):
         raise BuildError("output directory must not be the project directory or one of its parents")
     if path_is_within(output, project):
@@ -602,6 +613,8 @@ def build(options: BuildOptions) -> BuildResult:
     report_log(options, f"output:   {output}")
     report_log(options, f"cipher:   {cipher}")
     report_log(options, f"runtime:  {runtime_mode}")
+    if runtime_mode == "source":
+        report_log(options, "warning: source runtime publishes decryption logic as plaintext; use --runtime-pyc or --runtime-native for delivery")
     report_log(options, f"integrity: {options.integrity}")
     if options.integrity == "full":
         report_log(options, "note: full integrity verifies templates and static data on every start")
@@ -632,8 +645,10 @@ def build(options: BuildOptions) -> BuildResult:
         )
 
     build_id = os.urandom(8).hex()
-    build_key = crypto.random_bytes(32)
     master_key = crypto.random_bytes(32)
+    # The module key is derived from the master key and build id. It is never
+    # copied into the published license.
+    build_key = licensing.build_key_for(master_key, build_id)
     signing_key = crypto.random_bytes(32)
     signing_public_key = ed25519.public_key(signing_key)
     temp = output.parent / f".{output.name}.tmp"
@@ -663,16 +678,17 @@ def build(options: BuildOptions) -> BuildResult:
         report_stage(options, "runtime", "installing runtime", 66)
         install_runtime(
             temp, build_id, master_key, signing_public_key, cipher,
-            options.integrity, options.runtime_pyc, options.runtime_native,
+            options.integrity, runtime_mode,
         )
 
         python_version = f"{sys.version_info[0]}.{sys.version_info[1]}"
         report_stage(options, "license", "writing license", 72)
         try:
             sealed = licensing.create_license(
-                master_key, build_id, build_key, cipher, python_version, signing_key,
+                master_key, build_id, cipher, python_version, signing_key,
                 expires=expire_date, fingerprints=fingerprints, customer=options.customer,
                 grace_days=grace_days, bind_mode=bind_mode,
+                license_format=licensing.FORMAT,
             )
         except licensing.LicenseError as exc:
             raise BuildError(str(exc)) from exc
@@ -713,6 +729,7 @@ def build(options: BuildOptions) -> BuildResult:
         "build_id": build_id,
         "master_key": crypto.b85encode(master_key),
         "build_key": crypto.b85encode(build_key),
+        "license_format": licensing.FORMAT,
         "signing_key": crypto.b85encode(signing_key),
         "signing_public_key": crypto.b85encode(signing_public_key),
         "cipher": cipher,
@@ -775,6 +792,9 @@ def issue(options: IssueOptions) -> tuple[Path, dict]:
     build_id = secret["build_id"]
     cipher = secret.get("cipher", "chacha")
     python_version = secret.get("python", f"{sys.version_info[0]}.{sys.version_info[1]}")
+    license_format = int(secret.get("license_format") or secret.get("format") or licensing.FORMAT)
+    if license_format not in (licensing.FORMAT, licensing.LEGACY_FORMAT):
+        raise BuildError(f"build secret uses an unsupported license format {license_format!r}")
 
     if options.out:
         target = Path(options.out).resolve()
@@ -839,9 +859,11 @@ def issue(options: IssueOptions) -> tuple[Path, dict]:
 
     try:
         sealed = licensing.create_license(
-            master_key, build_id, build_key, cipher, python_version, signing_key,
+            master_key, build_id, cipher, python_version, signing_key,
             expires=expire_date, fingerprints=fingerprints, customer=customer,
             grace_days=grace_days, bind_mode=bind_mode,
+            license_format=license_format,
+            build_key=build_key if license_format == licensing.LEGACY_FORMAT else None,
         )
     except licensing.LicenseError as exc:
         raise BuildError(str(exc)) from exc

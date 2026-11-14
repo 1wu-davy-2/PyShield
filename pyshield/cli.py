@@ -59,7 +59,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_license_arguments(build)
     runtime = build.add_mutually_exclusive_group()
-    runtime.add_argument("--runtime-pyc", action="store_true", help="ship the runtime as sourceless bytecode")
+    runtime.add_argument(
+        "--runtime-source", action="store_true",
+        help="ship the runtime as plaintext sources (debugging only; exposes decryption logic)",
+    )
+    runtime.add_argument(
+        "--runtime-pyc", action="store_true",
+        help="ship the runtime as sourceless bytecode (default)",
+    )
     runtime.add_argument(
         "--runtime-native", action="store_true",
         help="compile the runtime with Cython (requires Cython, setuptools and a C compiler)",
@@ -246,6 +253,7 @@ def main(argv: list[str] | None = None) -> int:
                 cipher=cipher,
                 customer=args.customer,
                 integrity=args.integrity,
+                runtime_source=args.runtime_source,
                 runtime_pyc=args.runtime_pyc,
                 runtime_native=args.runtime_native,
                 no_verify=args.no_verify,

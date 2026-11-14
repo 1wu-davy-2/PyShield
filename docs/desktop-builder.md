@@ -25,13 +25,15 @@ Windows 双击 `dist/PyShieldBuilder.exe`，Linux 执行 `dist/PyShieldBuilder`�
 | 设备绑定 | 不绑定 | 可改为首次启动绑定或指定指纹 |
 | 校验解释器 | 自动检测 | 仅用于 `manage.py check`，可跳过 |
 
+运行时形态还提供“源码运行时”，只用于排查问题；它会把 `_core.py`、`_crypto.py` 等解密逻辑以明文写进产物，交付客户时应保持默认的“字节码运行时”，或使用 CLI 的 `--runtime-native`。
+
 设备绑定：
 
 - **不绑定**：任意兼容机器运行；
-- **首次启动绑定**：交付时拿不到客户机指纹时使用。程序第一次启动会在输出目录写入 `.pyshield-binding.json` 并锁定该机器，此后整包复制到其他机器也无法启动；构建时的 `manage.py check` 使用临时绑定文件，不会占用客户机的首次绑定；
+- **首次启动绑定**：交付时拿不到客户机指纹时使用。程序第一次启动会在输出目录写入 `.pyshield-binding.json` 与 `_shield_runtime/` 下的独立锚点，并锁定该机器；删除单个记录不会重置绑定，此后整包复制到其他机器也无法启动。构建时的 `manage.py check` 使用临时绑定文件，不会占用客户机的首次绑定；
 - **指定指纹**：已知客户机指纹时使用，可填写多个；客户可运行 `python -m _shield_runtime fingerprint` 获取。
 
-构建密钥写入 `<输出目录>.shield-secret.json`，位置与输出目录同级。它包含 `master_key`、`build_key`、`signing_key`，只应保存在构建方；发布时只交付输出目录本身。
+构建密钥写入 `<输出目录>.shield-secret.json`，位置与输出目录同级。格式 3 包含 `master_key`、派生出的 `build_key`、`signing_key`，只应保存在构建方；发布时只交付输出目录本身，且发布包中的 `pyshield.lic` 已不再携带 `build_key`。
 
 用户设置与构建记录保存在 `%APPDATA%\PyShieldBuilder`（Linux 为 `~/.pyshieldbuilder`）：
 
@@ -50,8 +52,7 @@ $env:PYSHELD_GUI_CONFIG_DIR = "D:\pyshield-config"
 桌面版把 PyShield 构建引擎运行在 exe 进程内，不调用外部 `shield.py`。所有构建资源均已内嵌：
 
 - `gui/web/`：HTML / CSS / JavaScript 界面；
-- `pyshield/runtime_template/`：随包 runtime 模板；
-- `pyshield/crypto.py`、`fingerprint.py`、`ed25519.py`：构建时复制进产物的 runtime 源文件；
+- `pyshield/_runtime_bundle.py`：由 `tools/embed_runtime.py` 生成的压缩资源，内含 runtime 模板与 `crypto.py`、`fingerprint.py`、`ed25519.py`、`secure_store.py`；构建器不再把 `runtime_template/` 或这些 `.py` 作为 PyInstaller 明文 `datas` 发布；
 - `cryptography`：启用 AES-256-GCM / ChaCha20-Poly1305 构建；
 - pywebview、pythonnet、clr-loader：桌面窗口与 WebView2 宿主。
 
@@ -97,7 +98,7 @@ python3 -m venv --system-site-packages .venv
 
 产物为 `dist/PyShieldBuilder.exe`（Windows）或 `dist/PyShieldBuilder`（Linux），均为单文件、无控制台。规格文件 `PyShieldBuilder.spec` 根据平台切换配置：
 
-- 数据文件：`gui/web`、`gui/assets/icon.png`、`pyshield/runtime_template`、`pyshield/crypto.py`、`pyshield/fingerprint.py`、`pyshield/ed25519.py`；
+- 数据文件：`gui/web`、`gui/assets/icon.png`；runtime 模板与加密实现打包在 `pyshield/_runtime_bundle.py` 中，随 PYZ 编译，不作为明文 `.py` datas；
 - 隐藏导入：Windows 为 `webview.platforms.edgechromium`、`webview.platforms.winforms`，Linux 为 `webview.platforms.gtk`；
 - 排除项：tkinter、Qt、Cython、Django 等非必需组件；Windows 额外排除 `gi`；
 - 图标与版本资源：仅 Windows 使用 `gui/assets/icon.ico`、`gui/assets/version_info.txt`；
@@ -131,6 +132,8 @@ python -m gui
 **页面结构**：工作区（全宽配置表单 + 底部固定操作条）与构建日志页（进度 + 日志 + 结果卡）是两个独立视图。工作区不再常驻摘要侧栏；点击「开始加密」先用 `check_build` 做无副作用校验，通过后弹出构建摘要确认框（输出目录、许可证文件、算法、绑定方式、剩余额度），确认时 `start_build` 立即消耗 1 次构建额度并整页跳转。构建完成后展示产物目录，可返回工作区继续构建。交互细节见 `docs/ui-flow.md`。
 
 **窗口行为（Windows）**：任务栏按钮可正常最小化/还原；点击标题栏关闭（✕）或 Alt+F4 默认隐藏到右下角托盘，不会退出。双击托盘图标、或右键「打开 PyShield」可恢复窗口；右键「退出 PyShield」才真正退出，构建进行中会拒绝退出并提示。再次双击 exe 会唤醒已隐藏的实例，不会启动第二个窗口。Linux 无托盘，关闭按钮仍直接退出。
+
+**自保护构建（实验）**：`tools/selfbuild.py` 会先用 PyShield 保护构建器自身的 `pyshield/` 与 `gui/` 源码，再用 `PyShieldBuilder.selfbuild.spec` 打成 exe，提高解包后的静态分析成本。它不替换默认发布链路，边界与用法见 `docs/selfbuild-poc.md`。
 
 **安装包**：目前只发布免安装单文件 exe；带安装路径选择、桌面快捷方式与卸载程序的安装版规划见 `docs/installer-plan.md`（尚未实现）。
 
@@ -170,8 +173,8 @@ exe 冒烟测试建议：
 | 点了关闭窗口不见了 | 默认隐藏到右下角托盘，不是退出。双击托盘图标恢复，右键「退出 PyShield」才结束进程 |
 | 右下角看不到托盘图标 | Windows 11 可能把新图标放进「^」溢出区；点开溢出区找到 PyShield 图标即可，也可拖到任务栏常驻 |
 | 任务栏按钮点了没反应 | 已修复（补回 `WS_MINIMIZEBOX`）；请使用最新构建的 exe |
-| 客户机提示绑定到其他机器 | 部署包已被复制。恢复到首次启动的机器；确需换机时删除 `.pyshield-binding.json` 重新绑定，或改用指定指纹模式 |
-| 首次启动提示无法写入绑定 | 输出目录对运行用户只读。赋予写权限，或用 `PYSHELD_BINDING_FILE` 指向可写路径 |
+| 客户机提示绑定到其他机器 | 部署包已被复制。恢复到首次启动的机器；确需换机时由构建方删除主记录与 `_shield_runtime/.pyshield-binding.json.anchor` 后重新绑定，或改用指定指纹模式 |
+| 首次启动提示无法写入绑定 | 输出目录对运行用户只读。赋予写权限，或用 `PYSHELD_BINDING_FILE` 指向可写路径（会削弱复制防护） |
 | 许可证到期后怎么办 | 无需重新构建整包：用构建密钥执行 `python shield.py issue ...` 重新签发，只替换 `pyshield.lic` |
 
 ## 7. 安全边界
@@ -180,6 +183,7 @@ exe 冒烟测试建议：
 
 - 构建密钥只在构建机生成，不上传、不写入产物目录；
 - 发布时只交付输出目录，绝不能附带 `*.shield-secret.json`；
-- 许可证由 Ed25519 签名，runtime 只内置公钥；提取对称主密钥不能伪造许可证；
-- 源码保护提高逆向成本，不构成绝对 DRM；具备逆向能力的攻击者仍可能提取内存中的代码或主密钥；
-- 完整性清单用于发现现场误改或局部篡改，不能阻止整体替换 runtime。
+- 许可证格式 v3 由 Ed25519 签名，只含授权字段，不含模块解密密钥；runtime 只内置公钥，提取对称主密钥不能伪造许可证；
+- 源码保护提高逆向成本，不构成绝对 DRM；离线分发下主密钥最终会进入客户环境，具备逆向能力的攻击者仍可能提取内存中的代码或主密钥；
+- 字节码是默认 runtime；`--runtime-source` 仅用于调试，会以明文发布解密逻辑；
+- 完整性清单用于发现现场误改或局部篡改，不能阻止整体替换 runtime；发布卫生详见 [security-hardening.md](security-hardening.md)。

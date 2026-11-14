@@ -34,6 +34,10 @@ CIPHER_CHACHA_POLY = 3
 
 _TAG_LEN = {CIPHER_AESGCM: 16, CIPHER_CHACHA: 32, CIPHER_CHACHA_POLY: 16}
 _NONCE_LEN = 12
+# Bound the temporary integers used by the pure-Python ChaCha20 fallback.
+# Whole-file XOR creates integers as large as the payload, which is both slow
+# and leaves a long, highly visible window for memory dumps.
+_CHACHA_XOR_CHUNK = 64 * 1024
 
 
 class CryptoError(Exception):
@@ -137,14 +141,21 @@ def chacha20_xor(key: bytes, nonce: bytes, data: bytes, counter: int = 1) -> byt
         return b""
     key_words = struct.unpack("<8I", key)
     nonce_words = struct.unpack("<3I", nonce)
-    blocks = (len(data) + 63) // 64
-    keystream = bytearray(blocks * 64)
-    for index in range(blocks):
-        keystream[index * 64:(index + 1) * 64] = _chacha20_block_words(
-            key_words, (counter + index) & 0xFFFFFFFF, nonce_words
-        )
-    stream = bytes(keystream[:len(data)])
-    return (int.from_bytes(data, "little") ^ int.from_bytes(stream, "little")).to_bytes(len(data), "little")
+    output = bytearray(len(data))
+    for offset in range(0, len(data), _CHACHA_XOR_CHUNK):
+        chunk = data[offset:offset + _CHACHA_XOR_CHUNK]
+        blocks = (len(chunk) + 63) // 64
+        keystream = bytearray(blocks * 64)
+        first_block = counter + offset // 64
+        for index in range(blocks):
+            keystream[index * 64:(index + 1) * 64] = _chacha20_block_words(
+                key_words, (first_block + index) & 0xFFFFFFFF, nonce_words
+            )
+        stream = bytes(keystream[:len(chunk)])
+        output[offset:offset + len(chunk)] = (
+            int.from_bytes(chunk, "little") ^ int.from_bytes(stream, "little")
+        ).to_bytes(len(chunk), "little")
+    return bytes(output)
 
 
 # ---------------------------------------------------------------------------
@@ -301,7 +312,8 @@ def module_aad(build_id: str, module_id: str) -> bytes:
     )
 
 
-LICENSE_SIGNATURE_PREFIX = b"pyshield-license-v2:"
+LICENSE_SIGNATURE_PREFIX = b"pyshield-license-v3:"
+LEGACY_LICENSE_SIGNATURE_PREFIX = b"pyshield-license-v2:"
 MANIFEST_SIGNATURE_PREFIX = b"pyshield-manifest-v1:"
 
 
@@ -316,8 +328,10 @@ def signed_message(prefix: bytes, payload: dict) -> bytes:
     return _signing_message(prefix, payload)
 
 
-def license_signing_message(payload: dict) -> bytes:
-    return _signing_message(LICENSE_SIGNATURE_PREFIX, payload)
+def license_signing_message(
+    payload: dict, prefix: bytes = LICENSE_SIGNATURE_PREFIX
+) -> bytes:
+    return _signing_message(prefix, payload)
 
 
 def manifest_signing_message(payload: dict) -> bytes:

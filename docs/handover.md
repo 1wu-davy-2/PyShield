@@ -6,11 +6,11 @@
 
 ## 1. 一句话与现状
 
-PyShield 把 Django 项目的 Python 源码加密成不可读的 stub，带许可证、设备绑定与签名清单，通过桌面构建器（pywebview）一键产出可部署副本。
+PyShield 把 Django 项目的 Python 源码加密成 stub，带许可证、设备绑定与签名清单，通过桌面构建器（pywebview）一键产出可部署副本。它提高的是源码逆向与泄露成本，不是离线不可破解的 DRM；边界见 `docs/security-hardening.md`。
 
 当前状态：
 
-- 引擎（加密/清单/许可证/运行时）稳定，151 个单测全绿；
+- 引擎（加密/清单/许可证/运行时）稳定，159 个单测全绿（1 个按环境跳过）；
 - 试用链路完整：exe 首启生成序列号 → 官网申请 → 14 天/3 次授权回传 → 自动激活；
 - 桌面端与官网页面已按 Grok 原型（`HA7HqyYHFsn4CepB-grok-workspace/`，UI 参考，不参与构建）统一视觉；
 - CI（GitHub Actions，`.github/workflows/build-develop.yml`）产出 `ci-develop-latest` 快照 release。
