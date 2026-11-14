@@ -3000,6 +3000,19 @@ textarea {
   line-height: 1.35;
 }
 
+/* 标题同样允许换行：窄窗口下不再出现「纯 Pyth…」「保护…」 */
+.segment span {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.35;
+}
+
+/* 加密选项：运行时形态与完整性清单各占整行，三项分段不再挤在半宽列里 */
+.field-grid.option-fields {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .segment {
   justify-content: flex-start;
 }
