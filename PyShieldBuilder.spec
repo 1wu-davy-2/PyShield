@@ -16,6 +16,7 @@ datas = [
 ]
 
 if IS_WINDOWS:
+    datas.append((str(ROOT / "gui" / "assets" / "icon.ico"), "gui/assets"))
     hiddenimports = [
         "webview.platforms.edgechromium",
         "webview.platforms.winforms",

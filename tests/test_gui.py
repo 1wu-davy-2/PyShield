@@ -9,10 +9,70 @@ from datetime import date, timedelta
 from pathlib import Path
 from unittest import mock
 
-from gui import core
+from gui import core, main as gui_main, tray
 from gui.backend import Api, BuildManager
 from pyshield import crypto, devsite, license_admin, licensing, tool_license
 from tests.test_builder import make_project
+
+
+class _FakeEvent:
+    def __init__(self) -> None:
+        self.handlers = []
+
+    def __iadd__(self, handler):
+        self.handlers.append(handler)
+        return self
+
+
+class _FakeWindow:
+    def __init__(self) -> None:
+        self.events = type("Events", (), {})()
+        self.events.shown = _FakeEvent()
+
+
+class TrayTests(unittest.TestCase):
+    def test_install_is_noop_off_windows(self) -> None:
+        window = _FakeWindow()
+        with mock.patch.object(tray, "sys", mock.Mock(platform="linux")):
+            self.assertIsNone(tray.install(window, None))
+        self.assertEqual(window.events.shown.handlers, [])
+
+    def test_install_registers_window_events_on_windows(self) -> None:
+        window = _FakeWindow()
+        with mock.patch.object(tray, "sys", mock.Mock(platform="win32")):
+            controller = tray.install(window, None, lambda: True)
+        self.assertIsInstance(controller, tray.TrayController)
+        self.assertEqual(len(window.events.shown.handlers), 1)
+
+    def test_close_hides_until_explicit_quit(self) -> None:
+        controller = tray.TrayController(_FakeWindow(), None, lambda: True)
+        controller.hide_to_tray = mock.Mock(return_value=True)
+        args = type("Args", (), {"Cancel": False, "CloseReason": None})()
+        controller._on_form_closing(None, args)
+        self.assertTrue(args.Cancel)
+
+        controller._quitting = True
+        args.Cancel = False
+        controller._on_form_closing(None, args)
+        self.assertFalse(args.Cancel)
+
+
+class LaunchDispatchTests(unittest.TestCase):
+    def test_show_message_raises_hidden_window(self) -> None:
+        api = mock.Mock()
+        window = mock.Mock()
+        gui_main._dispatch_message(api, window, {"show": True, "link": ""})
+        api._raise_window.assert_called_once_with()
+        api.trial_handle_link.assert_not_called()
+        window.evaluate_js.assert_not_called()
+
+    def test_link_message_is_forwarded(self) -> None:
+        api = mock.Mock()
+        window = mock.Mock()
+        gui_main._dispatch_message(api, window, {"show": True, "link": "pyshield://activate?serial=x"})
+        api._raise_window.assert_called_once_with()
+        api.trial_handle_link.assert_called_once_with("pyshield://activate?serial=x")
+        window.evaluate_js.assert_called_once()
 
 
 class CoreHelperTests(unittest.TestCase):

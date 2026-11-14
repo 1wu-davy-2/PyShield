@@ -790,7 +790,9 @@ class Api:
                 import ctypes
 
                 native = getattr(window, "native", None)
-                handle = int(getattr(native, "Handle", 0) or 0)
+                handle = getattr(native, "Handle", None)
+                if handle is not None:
+                    handle = int(handle.ToInt64()) if hasattr(handle, "ToInt64") else int(handle)
                 if handle:
                     user32 = ctypes.windll.user32
                     user32.ShowWindow(handle, 9)  # SW_RESTORE

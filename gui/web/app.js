@@ -1588,6 +1588,13 @@
       return;
     }
     state.app = response.app;
+    if (state.app && state.app.platform === "win32") {
+      const closeButton = document.querySelector(".win-btn.danger");
+      if (closeButton) {
+        closeButton.title = "关闭到托盘";
+        closeButton.setAttribute("aria-label", "关闭到托盘");
+      }
+    }
     state.settings = response.settings;
     state.machine = response.machine || "";
     $("#machineFingerprint").value = state.machine;

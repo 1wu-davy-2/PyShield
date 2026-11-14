@@ -10,7 +10,7 @@ PyShield 把 Django 项目的 Python 源码加密成不可读的 stub，带许�
 
 当前状态：
 
-- 引擎（加密/清单/许可证/运行时）稳定，146 个单测全绿；
+- 引擎（加密/清单/许可证/运行时）稳定，151 个单测全绿；
 - 试用链路完整：exe 首启生成序列号 → 官网申请 → 14 天/3 次授权回传 → 自动激活；
 - 桌面端与官网页面已按 Grok 原型（`HA7HqyYHFsn4CepB-grok-workspace/`，UI 参考，不参与构建）统一视觉；
 - CI（GitHub Actions，`.github/workflows/build-develop.yml`）产出 `ci-develop-latest` 快照 release。
@@ -56,9 +56,10 @@ python -m http.server 8130 --directory gui/web
 | `pyshield/devsite.py` | 无公钥构建自动起本地模拟站 | keyless 构建 = 开发构建 |
 | `pyshield/python_runtime.py` | 校验解释器一键下载 | 镜像版本探测 + 嵌入包 + pip/Django |
 | `gui/` | 桌面端（backend 桥接 + web 界面） | 见 `docs/desktop-builder.md` |
+| `gui/tray.py` | Windows 托盘与任务栏行为 | NotifyIcon、关闭隐藏、`WS_MINIMIZEBOX` |
 | `gui/web/` | 前端契约：224 个 `#id`、`.segment`、`.nav-item`、`.view` | 改视觉别改契约 |
 | `tools/` | build_commercial、trial_demo、make_icon | |
-| `tests/` | 146 个测试 | 新功能必须带测试 |
+| `tests/` | 151 个测试 | 新功能必须带测试 |
 
 ## 4. 关键设计决定（别踩）
 
@@ -69,10 +70,11 @@ python -m http.server 8130 --directory gui/web
 5. **构建页是两个视图**：工作区（全宽配置 + 底部操作条）→ 确认弹窗（摘要 + 额度提示）→ 构建日志页（进度+日志+结果卡）。`app.js` 的 `startBuild()` 只调 `check_build` 做无副作用校验并弹窗；`confirmStartBuild()` 才调 `start_build`，由后端在 `BuildManager.start()` 里记录配额。起始额度在确认时扣除，失败/取消不退还。元素 id（`#progressBlock`、`#terminal` 等）原样沿用，交互契约没变。
 6. **深链被浏览器拦是常态**：`pyshield://` 跳转需要用户手势；授权到账后 `Api._raise_window()` 自动置顶 + 轮询兜底（2.5s 一次）。
 7. **解释器下载只装到用户目录**：`%APPDATA%\PyShield\runtimes\`，`PYSHELD_RUNTIME_DIR` 可重定向；镜像只显示真正带 Windows 嵌入包的补丁版本（仅源码发布的安全补丁会被 HEAD 探测跳过）。
+8. **关闭是隐藏到托盘，不是退出**：`gui/tray.py` 给 frameless 窗口补回缺失的 `WS_MINIMIZEBOX`（否则点任务栏按钮不会最小化/还原），并用 WinForms `NotifyIcon` 接管 `FormClosing`：✕ / Alt+F4 隐藏窗口，托盘双击还原，右键「退出 PyShield」才真正结束；构建中拒绝退出。Linux 无托盘，关闭仍直接退出。第二次启动会通过 LinkServer 的 `show` 消息唤起已隐藏实例，不新开窗口。
 
 ## 5. 测试与 CI
 
-- 本地：`python -m unittest discover -s tests`（146 个，Windows 下 1 个 skip）；
+- 本地：`python -m unittest discover -s tests`（151 个，Windows 下 1 个 skip）；
 - CI 七个 job：Unit ×2（ubuntu/windows）、Trial registration flow（真起进程）、Protected Django demo（`PYSHELD_DEV=1`，新门禁会拦自检构建，别删这个 env）、Windows/Linux builder、Publish CI snapshot；
 - 产物：release tag `ci-develop-latest`（exe 约 16MB）。
 
@@ -91,6 +93,7 @@ python -m http.server 8130 --directory gui/web
 | 支付/发卡 | **暂缓** | owner 是个人开发者暂无收款能力；接入后给 `/trial/apply?edition=pro` 加订单表+回调，签发 `edition=pro` |
 | 版本号升级 | 等 owner 通知 | 试用流程验收后统一升 |
 | 代码签名 | 未做 | OV/EV 证书需营业执照；短期靠“解除锁定”+哈希说明 |
+| 安装包 | **已规划，未实现** | 选择安装路径、桌面快捷方式、安装目录内卸载程序；方案见 `docs/installer-plan.md` |
 | `docs/java-shield-research.md`、`spike/` | 未入库 | 另一条产品线（Java 版调研），owner 尚未决定是否提交 |
 | Grok 原型工程 | 已入库（仅参考） | `HA7HqyYHFsn4CepB-grok-workspace/`，React+Tailwind 演示；`.vercel/output` 构建产物已 gitignore |
 

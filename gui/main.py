@@ -12,6 +12,7 @@ if __package__ in (None, ""):
 
 from gui import core  # noqa: E402
 from gui import instance  # noqa: E402
+from gui import tray  # noqa: E402
 from gui.backend import Api  # noqa: E402
 
 
@@ -37,12 +38,22 @@ def _handle_link(api: Api, window, link: str) -> None:
         pass
 
 
+def _dispatch_message(api: Api, window, payload: dict) -> None:
+    """Handle a message forwarded by a second launch or a deep link."""
+    if payload.get("show"):
+        api._raise_window()
+    link = str(payload.get("link") or "")
+    if link:
+        _handle_link(api, window, link)
+
+
 def main() -> int:
     import webview
 
     link = instance.deep_link_from_argv(sys.argv)
-    if link and instance.send_to_primary({"link": link}):
-        # Another window is already running; it takes over from here.
+    if instance.send_to_primary({"link": link, "show": True}):
+        # Another window is already running (possibly hidden in the tray); it
+        # takes over from here.
         return 0
 
     index = resource_root() / "gui" / "web" / "index.html"
@@ -63,9 +74,14 @@ def main() -> int:
         text_select=True,
     )
     api.bind(window)
+    tray.install(
+        window,
+        resource_root() / "gui" / "assets" / "icon.ico",
+        can_quit=lambda: not api.manager.running(),
+    )
 
     listener = instance.LinkServer(
-        lambda payload: _handle_link(api, window, str(payload.get("link") or ""))
+        lambda payload: _dispatch_message(api, window, payload)
     )
     listener.start()
     instance.register_protocol()
