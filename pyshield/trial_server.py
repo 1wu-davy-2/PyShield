@@ -425,43 +425,107 @@ class TrialHandler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 
 _STYLE = """
-:root { color-scheme: light; }
+:root {
+  --ink: #18202e; --ink2: #475467; --ink3: #7b8494; --ink4: #98a2b3;
+  --canvas: #f5f6f8; --card: #ffffff; --line: #e6e8ee;
+  --primary: #4b63e8; --primary-deep: #3c52d4; --primary-soft: #eef1fd;
+  --ok: #039855; --ok-soft: #e7f6ef; --ok-ink: #067647;
+  --warn-soft: #fef4e6; --warn-ink: #b54708;
+  --violet: #7a5af8; --violet-soft: #f4f0fe;
+  --radius: 14px; --ctrl: 8px;
+  --shadow: 0 0 0 1px rgba(16, 24, 40, .06), 0 1px 2px rgba(16, 24, 40, .04);
+}
 * { box-sizing: border-box; }
-body { margin: 0; font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-  background: #f5f6f8; color: #1c2330; line-height: 1.6; }
-.wrap { max-width: 760px; margin: 0 auto; padding: 48px 24px 64px; }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; margin-bottom: 28px; }
-.brand span.dot { width: 26px; height: 26px; border-radius: 8px; background: #185fa5; display: inline-block; }
-h1 { font-size: 26px; margin: 0 0 8px; font-weight: 600; letter-spacing: .2px; }
-p.lead { margin: 0 0 24px; color: #5b6472; font-size: 14px; }
-.card { background: #fff; border: 1px solid #e3e6ec; border-radius: 14px; padding: 24px; margin-bottom: 18px; }
-dl { display: flex; flex-direction: column; gap: 10px; margin: 0; font-size: 14px; }
-dl > div { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 4px 18px; align-items: baseline; }
-dt { color: #7a8496; }
-dd { margin: 0; font-variant-numeric: tabular-nums; }
-.mono { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; letter-spacing: .5px; }
-.plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 8px 0 22px; }
-.plan { background: #fff; border: 1px solid #e3e6ec; border-radius: 14px; padding: 18px; display: flex;
-  flex-direction: column; gap: 8px; }
-.plan.is-active { border-color: #185fa5; box-shadow: 0 0 0 3px rgba(24,95,165,.1); }
-.plan h3 { margin: 0; font-size: 15px; }
-.plan .price { font-size: 13px; color: #5b6472; }
-.plan ul { margin: 0; padding-left: 18px; font-size: 13px; color: #4a5364; flex: 1; }
-button, .btn { appearance: none; border: 0; border-radius: 10px; padding: 10px 16px; font-size: 14px;
-  font-weight: 500; cursor: pointer; background: #185fa5; color: #fff; text-decoration: none;
-  display: inline-block; text-align: center; }
-button.ghost, .btn.ghost { background: #eef1f5; color: #1c2330; }
-button:disabled { opacity: .55; cursor: default; }
-.note { font-size: 12.5px; color: #7a8496; margin-top: 12px; }
-.badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px;
-  background: #e8f0fa; color: #185fa5; }
-.ok { color: #0f6e56; }
-.warn { color: #854f0b; }
-.input { width: 100%; padding: 10px 12px; border: 1px solid #d6dae2; border-radius: 10px; font-size: 14px;
-  font-family: inherit; }
-.footer { color: #98a1b0; font-size: 12px; margin-top: 28px; text-align: center; }
-@media (max-width: 640px) { .plans { grid-template-columns: 1fr; } }
+body {
+  margin: 0; background: var(--canvas); color: var(--ink); line-height: 1.6;
+  font-family: "Noto Sans SC", "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  font-size: 14px; -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 820px; margin: 0 auto; padding: 52px 24px 64px; }
+.brand { display: flex; align-items: center; gap: 10px; margin-bottom: 34px; }
+.brand .mark {
+  width: 36px; height: 36px; border-radius: 8px; background: var(--primary);
+  display: grid; place-items: center; color: #fff; flex: none;
+}
+.brand .mark svg { width: 20px; height: 20px; }
+.brand strong { font-size: 15px; font-weight: 600; }
+h1 { margin: 0 0 8px; font-size: 26px; font-weight: 600; letter-spacing: -.01em; }
+h2 { margin: 28px 0 12px; font-size: 16px; font-weight: 600; }
+p.lead { margin: 0 0 24px; color: var(--ink3); font-size: 13.5px; }
+.card {
+  background: var(--card); border-radius: var(--radius); padding: 20px;
+  box-shadow: var(--shadow); margin-bottom: 16px;
+}
+.meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.meta > div { background: #f4f6fa; border-radius: 10px; padding: 12px 14px; }
+.meta dt { font-size: 11.5px; color: var(--ink3); margin-bottom: 4px; }
+.meta dd { margin: 0; font-size: 13.5px; }
+.mono { font-family: Consolas, "Cascadia Mono", ui-monospace, monospace; letter-spacing: .4px; }
+.pill {
+  display: inline-flex; align-items: center; height: 24px; padding: 0 10px;
+  border-radius: 999px; font-size: 11.5px; font-weight: 500;
+  background: var(--canvas); color: var(--ink2);
+}
+.pill.ok { background: var(--ok-soft); color: var(--ok-ink); }
+.pill.warn { background: var(--warn-soft); color: var(--warn-ink); }
+.plans { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 0 0 20px; }
+.plan {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 20px; display: flex; flex-direction: column; gap: 12px; box-shadow: var(--shadow);
+}
+.plan.is-current { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.plan header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.plan h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.tag { padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 500;
+  background: var(--primary-soft); color: var(--primary-deep); white-space: nowrap; }
+.tag.ok { background: var(--ok-soft); color: var(--ok-ink); }
+.tag.violet { background: var(--violet-soft); color: var(--violet); }
+.price { margin: 0; font-size: 12.5px; color: var(--ink3); }
+.plan ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column;
+  gap: 8px; font-size: 12.5px; color: var(--ink2); }
+.plan li { position: relative; padding-left: 18px; }
+.plan li::before { content: "✓"; position: absolute; left: 0; color: var(--primary);
+  font-size: 12px; font-weight: 600; }
+.plan .note { margin: auto 0 0; padding-top: 12px; border-top: 1px dashed var(--line);
+  font-size: 11.5px; color: var(--ink4); }
+.plan form { margin: 0; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; height: 40px;
+  padding: 0 16px; border: 0; border-radius: var(--ctrl); font-size: 13.5px;
+  font-weight: 500; background: var(--primary); color: #fff; text-decoration: none;
+  cursor: pointer; font-family: inherit; transition: background .15s ease;
+}
+.btn:hover { background: var(--primary-deep); }
+.btn.ghost { background: var(--canvas); color: var(--ink2); }
+.btn.ghost:hover { background: var(--line); }
+.btn.block { width: 100%; }
+.btn.lg { height: 46px; font-size: 14.5px; padding: 0 24px; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.field { display: flex; gap: 10px; margin-top: 8px; }
+.input {
+  flex: 1; min-width: 0; height: 40px; padding: 0 12px; border: 1px solid var(--line);
+  border-radius: var(--ctrl); font-size: 13.5px; font-family: inherit; outline: none;
+  background: var(--card); color: var(--ink);
+}
+.input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(75, 99, 232, .12); }
+.note { font-size: 12px; color: var(--ink4); margin-top: 14px; }
+.footer { margin-top: 34px; text-align: center; font-size: 12px; color: var(--ink4); }
+@media (max-width: 720px) {
+  .wrap { padding: 32px 18px 48px; }
+  .meta, .plans { grid-template-columns: 1fr; }
+  h1 { font-size: 22px; }
+}
 """
+
+_MARK = (
+    '<svg viewBox="0 0 24 24" aria-hidden="true">'
+    '<path d="M12 2.9l7.1 2.7v5.6c0 4.4-2.9 7.8-7.1 9.1C7.9 19 5 15.6 5 11.2V5.6L12 2.9z" '
+    'fill="currentColor" opacity=".18"/>'
+    '<path d="M12 2.9l7.1 2.7v5.6c0 4.4-2.9 7.8-7.1 9.1C7.9 19 5 15.6 5 11.2V5.6L12 2.9z" '
+    'fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>'
+    '<path d="M10.7 9l-2.4 2.6 2.4 2.6M13.3 9l2.4 2.6-2.4 2.6" fill="none" stroke="currentColor" '
+    'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+)
 
 
 def _page(title: str, body: str) -> str:
@@ -471,7 +535,7 @@ def _page(title: str, body: str) -> str:
 <title>{html.escape(title)} · PyShield</title>
 <style>{_STYLE}</style>
 </head><body><div class="wrap">
-<div class="brand"><span class="dot"></span>PyShield</div>
+<div class="brand"><span class="mark">{_MARK}</span><strong>PyShield</strong></div>
 {body}
 <div class="footer">PyShield {html.escape(__version__)} · 序列号仅绑定本机，更换设备需重新申请</div>
 </div></body></html>"""
@@ -483,10 +547,10 @@ def _landing_page() -> str:
 <p class="lead">请从 PyShield 加密构建器的「版本与试用」页面点击对应版本，系统会自动携带本机序列号打开本页。</p>
 <div class="card">
   <form method="get" action="/activate">
-    <label for="serial" style="font-size:14px;color:#5b6472">已有序列号？</label>
-    <div style="display:flex;gap:10px;margin-top:8px">
-      <input class="input" id="serial" name="serial" placeholder="PS-XXXX-XXXX-XXXX" autocomplete="off">
-      <button type="submit">继续</button>
+    <label for="serial" style="font-size:12px;color:var(--ink3)">已有序列号？</label>
+    <div class="field">
+      <input class="input mono" id="serial" name="serial" placeholder="PS-XXXX-XXXX-XXXX" autocomplete="off">
+      <button class="btn" type="submit">继续</button>
     </div>
   </form>
   <p class="note">序列号由构建器在首次启动时生成，显示在「版本与试用」页面。</p>
@@ -499,53 +563,69 @@ def _activate_page(serial: str, machine: str, edition: str, record: dict) -> str
     granted = record.get("status") == "granted"
     short_machine = machine[:16] + "…" if len(machine) > 16 else (machine or "未提供")
     status = (
-        f'<span class="badge ok">已开通</span> 到期 {html.escape(str(record.get("expires") or ""))}'
-        if granted else '<span class="badge">待申请</span>'
+        f'<span class="pill ok">已开通 · 到期 {html.escape(str(record.get("expires") or ""))}</span>'
+        if granted else '<span class="pill warn">待申请</span>'
     )
     body = f"""
 <h1>PyShield 版本与试用</h1>
 <p class="lead">本页已绑定你的本机序列号，申请后授权会自动回传到桌面应用。</p>
+
 <div class="card">
-  <dl>
+  <dl class="meta">
     <div><dt>序列号</dt><dd class="mono">{html.escape(serial)}</dd></div>
     <div><dt>机器码</dt><dd class="mono">{html.escape(short_machine)}</dd></div>
     <div><dt>状态</dt><dd>{status}</dd></div>
   </dl>
 </div>
 
-<h2 style="font-size:16px;margin:24px 0 10px">选择版本</h2>
+<h2>选择版本</h2>
 <div class="plans">
-  <div class="plan {'is-active' if edition == 'trial' else ''}">
-    <h3>免费版</h3>
-    <div class="price">14 天 · 3 次加密</div>
-    <ul><li>完整加密与完整性清单</li><li>ChaCha20 纯 Python 运行时</li><li>不含原生运行时与产物签发</li></ul>
+  <div class="plan {'is-current' if edition == 'trial' else ''}">
+    <header><h3>免费版</h3><span class="tag ok">立即可用</span></header>
+    <p class="price">14 天 · 3 次加密</p>
+    <ul>
+      <li>完整加密与签名清单</li>
+      <li>ChaCha20 纯 Python 运行时</li>
+      <li>绑定本机，到期自动失效</li>
+    </ul>
+    <p class="note">不含原生运行时、产物签发与 CI</p>
     <form method="post" action="/trial/apply">
       <input type="hidden" name="serial" value="{html.escape(serial)}">
       <input type="hidden" name="machine" value="{html.escape(machine)}">
       <input type="hidden" name="edition" value="trial">
-      <button type="submit">{'查看已开通授权' if granted else '申请 14 天免费试用'}</button>
+      <button class="btn block" type="submit">{'查看已开通授权' if granted else '申请 14 天免费试用'}</button>
     </form>
   </div>
-  <div class="plan {'is-active' if edition == 'pro' else ''}">
-    <h3>专业版</h3>
-    <div class="price">按席位年订阅</div>
-    <ul><li>原生运行时与产物签发</li><li>每月构建配额</li><li>邮件支持</li></ul>
+  <div class="plan {'is-current' if edition == 'pro' else ''}">
+    <header><h3>专业版</h3><span class="tag violet">按席位</span></header>
+    <p class="price">年订阅 · 月度构建配额</p>
+    <ul>
+      <li>原生运行时（Cython 编译）</li>
+      <li>产物许可证签发与续期</li>
+      <li>多项目交付与团队协作</li>
+    </ul>
+    <p class="note">需要商务开通，官网申请报价</p>
     <form method="post" action="/trial/apply">
       <input type="hidden" name="serial" value="{html.escape(serial)}">
       <input type="hidden" name="machine" value="{html.escape(machine)}">
       <input type="hidden" name="edition" value="pro">
-      <button class="ghost" type="submit">了解专业版</button>
+      <button class="btn ghost block" type="submit">了解专业版</button>
     </form>
   </div>
-  <div class="plan {'is-active' if edition == 'enterprise' else ''}">
-    <h3>企业版</h3>
-    <div class="price">多席位 · 可私有部署</div>
-    <ul><li>离线激活与 CI 令牌</li><li>撤销列表与审计</li><li>优先支持</li></ul>
+  <div class="plan {'is-current' if edition == 'enterprise' else ''}">
+    <header><h3>企业版</h3><span class="tag violet">多席位</span></header>
+    <p class="price">私有部署 · 离线激活</p>
+    <ul>
+      <li>离线激活与 CI 构建令牌</li>
+      <li>撤销列表、审计与配额管理</li>
+      <li>可对接内部签发服务</li>
+    </ul>
+    <p class="note">支持私有化部署与定制交付</p>
     <form method="post" action="/trial/apply">
       <input type="hidden" name="serial" value="{html.escape(serial)}">
       <input type="hidden" name="machine" value="{html.escape(machine)}">
       <input type="hidden" name="edition" value="enterprise">
-      <button class="ghost" type="submit">联系企业版</button>
+      <button class="btn ghost block" type="submit">联系企业版</button>
     </form>
   </div>
 </div>
@@ -562,18 +642,21 @@ def _granted_page(serial: str, machine: str, document: dict, link: str) -> str:
     body = f"""
 <h1>试用已开通</h1>
 <p class="lead">授权已经写入服务端，正在尝试唤起桌面应用完成激活。</p>
+
 <div class="card">
-  <dl>
+  <dl class="meta">
     <div><dt>序列号</dt><dd class="mono">{html.escape(serial)}</dd></div>
     <div><dt>到期时间</dt><dd>{html.escape(str(expires))}</dd></div>
-    <div><dt>可用时长</dt><dd>{days} 天</dd></div>
-    <div><dt>构建配额</dt><dd>{builds} 次</dd></div>
-    <div><dt>机器码</dt><dd class="mono">{html.escape(machine[:16])}…</dd></div>
+    <div><dt>可用时长</dt><dd>{days} 天 · {builds} 次构建</dd></div>
   </dl>
 </div>
+
 <div class="card">
-  <p style="margin:0 0 12px"><strong>点击下面的按钮回到 PyShield。</strong>浏览器如果弹出「是否打开 PyShield」，请选择允许。</p>
-  <a class="btn" id="openApp" href="{html.escape(link)}" style="font-size:15px;padding:12px 22px">打开 PyShield 并激活</a>
+  <p style="margin:0 0 14px;font-size:13.5px">
+    <strong>点击下面的按钮回到 PyShield。</strong>
+    浏览器如果弹出「是否打开 PyShield」，请选择允许。
+  </p>
+  <a class="btn lg" id="openApp" href="{html.escape(link)}">打开 PyShield 并激活</a>
   <p class="note">应用也会自动轮询授权状态；即使浏览器拦截了跳转，桌面应用也会在几秒内自己切到前台并显示「试用版」。</p>
 </div>
 <script>
@@ -594,9 +677,10 @@ def _contact_page(serial: str, edition: str) -> str:
 <h1>{html.escape(title)}</h1>
 <p class="lead">该版本需要商务确认，请通过官方渠道联系我们，并附上下面的序列号。</p>
 <div class="card">
-  <dl>
+  <dl class="meta">
     <div><dt>序列号</dt><dd class="mono">{html.escape(serial)}</dd></div>
     <div><dt>意向版本</dt><dd>{html.escape(title)}</dd></div>
+    <div><dt>后续</dt><dd>商务会与你确认席位与部署方式</dd></div>
   </dl>
   <p class="note">免费版可以直接在上一页申请，14 天内可完成 3 次加密构建。</p>
 </div>
@@ -612,11 +696,6 @@ def _message_page(title: str, message: str) -> str:
 <p><a class="btn ghost" href="/">返回首页</a></p>
 """
     return _page(title, body)
-
-
-# ---------------------------------------------------------------------------
-# entry point
-# ---------------------------------------------------------------------------
 
 
 def create_server(host: str, port: int, root_key: bytes, data_dir: str | Path) -> TrialServer:
