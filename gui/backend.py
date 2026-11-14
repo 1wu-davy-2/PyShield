@@ -26,7 +26,7 @@ from pyshield import (
     trial_license,
 )
 
-from . import core, instance
+from . import core, instance, state as state_db
 
 STAGE_LABELS = {
     "init": "校验配置",
@@ -87,6 +87,17 @@ class BuildManager:
         with self._lock:
             if self._state["status"] == "running":
                 return None, {"ok": False, "error": "已有构建任务正在运行。"}
+
+        integrity = core.state_status()
+        if integrity.get("tampered"):
+            return None, {
+                "ok": False,
+                "errors": [
+                    "本机状态数据库的两个副本不一致，可能被篡改。"
+                    "请先在界面顶部的提示中选择要保留的副本进行修复，然后再构建。"
+                ],
+                "integrity": integrity,
+            }
 
         verify_python, verify_note = self._pick_verify_python(request, settings)
         if not request.output.strip() and request.project.strip():
@@ -262,7 +273,7 @@ class BuildManager:
         history.insert(0, entry)
         try:
             core.save_history(history)
-        except OSError:
+        except (OSError, state_db.StateError):
             pass
 
         with self._lock:
@@ -395,6 +406,7 @@ class Api:
             "license": self._license_status(),
             "trial": self._trial_state(),
             "state": self.manager.snapshot(),
+            "integrity": core.state_status(),
         }
 
     def inspect(self, payload: dict | None = None) -> dict:
@@ -876,14 +888,33 @@ class Api:
         self._mark_missing(history)
         return {"ok": True, "history": history}
 
+    def state_integrity(self) -> dict:
+        return {"ok": True, "integrity": core.state_status()}
+
+    def state_repair(self, source: str = "") -> dict:
+        try:
+            integrity = core.state_repair(source)
+        except (state_db.StateError, OSError) as exc:
+            return {
+                "ok": False,
+                "error": str(exc),
+                "integrity": core.state_status(),
+            }
+        return {
+            "ok": True,
+            "integrity": integrity,
+            "settings": core.load_settings(),
+            "history": core.load_history(),
+        }
+
     def cancel_build(self) -> dict:
         return self.manager.cancel()
 
     def save_settings(self, payload: dict | None = None) -> dict:
         try:
             settings = core.save_settings(payload or {})
-        except OSError as exc:
-            return {"ok": False, "error": f"无法保存设置：{exc}"}
+        except (OSError, state_db.StateError) as exc:
+            return {"ok": False, "error": f"无法保存设置：{exc}", "integrity": core.state_status()}
         return {"ok": True, "settings": settings}
 
     def reveal(self, path: str = "") -> dict:
@@ -896,8 +927,8 @@ class Api:
     def clear_history(self) -> dict:
         try:
             core.save_history([])
-        except OSError as exc:
-            return {"ok": False, "error": f"无法清空记录：{exc}"}
+        except (OSError, state_db.StateError) as exc:
+            return {"ok": False, "error": f"无法清空记录：{exc}", "integrity": core.state_status()}
         return {"ok": True, "history": []}
 
     def window_action(self, action: str = "", maximized: bool = False) -> dict:

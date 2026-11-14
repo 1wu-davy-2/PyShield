@@ -123,7 +123,7 @@ python shield.py selftest
 3. 选择算法、运行时、完整性、许可证与设备绑定；
 4. 点击“开始加密”，在确认弹窗中核对输出与许可证；确认后消耗 1 次构建额度并进入构建日志页，查看阶段、进度与日志。
 
-桌面版内置 CPython 3.12，产物必须部署在 3.12.x；`manage.py check` 使用项目自己的 Python，仅要求同小版本且安装了 Django，找不到时自动跳过。设置与最近 100 次构建记录保存在 `%APPDATA%\PyShieldBuilder`，可用 `PYSHELD_GUI_CONFIG_DIR` 覆盖。
+桌面版内置 CPython 3.12，产物必须部署在 3.12.x；`manage.py check` 使用项目自己的 Python，仅要求同小版本且安装了 Django，找不到时自动跳过。设置与最近 100 次构建记录保存在 `%APPDATA%\PyShieldBuilder\state.sqlite3`（`PYSHELD_GUI_CONFIG_DIR` 可覆盖），程序目录另存一份校验副本；两份不一致时程序会阻止保存与构建，并在界面顶部要求选择副本修复，证据保留在 `state-incidents/`。该机制只检测单侧修改/误损坏，不是防本机攻击者的安全边界。
 
 打包与完整说明见[桌面构建器文档](desktop-builder.md)。
 

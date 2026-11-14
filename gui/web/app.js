@@ -77,6 +77,7 @@
     lastForm: null,
     license: null,
     trial: null,
+    integrity: null,
     trialTimer: null,
     trialTries: 0,
   };
@@ -728,6 +729,7 @@
       setBusy(false);
       state.lastStatus = "idle";
       $("#progressBlock").hidden = true;
+      if (response.integrity) renderIntegrity(response.integrity);
       showErrors(response.errors || (response.error ? [response.error] : ["构建无法启动。"]));
       if (!maybeShowTrialEnded(response.license)) {
         if (response.license && response.license.code === "not_activated") {
@@ -958,6 +960,7 @@
     if (!window.confirm("确定清空所有本地构建记录？此操作不影响已生成的输出目录。")) return;
     const response = await call("clear_history");
     if (!response.ok) {
+      if (response.integrity) renderIntegrity(response.integrity);
       toast(response.error || "清空失败", "error");
       return;
     }
@@ -984,6 +987,43 @@
     $("#licenseServer").value = settings.activation_server || "";
   }
 
+  // ---------------------------------------------------------------- integrity
+
+  function renderIntegrity(data) {
+    const info = data || {};
+    state.integrity = info;
+    const banner = $("#integrityBanner");
+    if (!banner) return;
+    const needsAttention = info.tampered || info.mode === "error";
+    banner.hidden = !needsAttention;
+    if (!needsAttention) return;
+
+    $("#integrityText").textContent =
+      info.message || "用户目录与安装目录的状态副本不一致，可能被篡改。";
+    const incident = info.incident_dir ? `诊断副本：${info.incident_dir}` : "";
+    const incidentNode = $("#integrityIncident");
+    incidentNode.textContent = incident;
+    incidentNode.hidden = !incident;
+
+    const sources = Array.isArray(info.repair_sources) ? info.repair_sources : [];
+    $("#integrityUseUser").hidden = !sources.includes("user");
+    $("#integrityUseInstall").hidden = !sources.includes("install") || !info.install_path;
+  }
+
+  async function repairIntegrity(source) {
+    const response = await call("state_repair", source);
+    if (!response.ok) {
+      if (response.integrity) renderIntegrity(response.integrity);
+      toast(response.error || "状态修复失败", "error");
+      return;
+    }
+    renderIntegrity(response.integrity);
+    if (response.settings) state.settings = response.settings;
+    if (Array.isArray(response.history)) renderHistory(response.history);
+    toast("状态副本已修复", "success");
+    await boot();
+  }
+
   async function saveSettings() {
     const payload = {
       cipher: $("#settingCipher").value,
@@ -996,6 +1036,7 @@
     };
     const response = await call("save_settings", payload);
     if (!response.ok) {
+      if (response.integrity) renderIntegrity(response.integrity);
       toast(response.error || "保存失败", "error");
       return;
     }
@@ -1598,6 +1639,7 @@
     state.settings = response.settings;
     state.machine = response.machine || "";
     $("#machineFingerprint").value = state.machine;
+    renderIntegrity(response.integrity);
     renderLicense(response.license || null);
     renderTrial({ trial: response.trial });
     maybeShowTrialEnded(response.license);
@@ -1835,6 +1877,12 @@
         trial: mockTrial(),
         license: mockLicense(),
         state: { status: "idle", percent: 0, logs: [] },
+        integrity: {
+          mode: "single-copy",
+          tampered: false,
+          message: "预览模式",
+          repair_sources: [],
+        },
       });
     }
     if (name === "license_status") {
@@ -2388,6 +2436,8 @@
       await inspectNow();
       await refreshHistory();
       await refreshLicense();
+      const integrity = await call("state_integrity");
+      if (integrity && integrity.integrity) renderIntegrity(integrity.integrity);
       setTimeout(() => $("#refreshBtn").classList.remove("is-spinning"), 300);
       toast("环境状态已刷新");
     });
@@ -2404,6 +2454,8 @@
     });
 
     $("#saveSettings").addEventListener("click", saveSettings);
+    $("#integrityUseUser").addEventListener("click", () => repairIntegrity("user"));
+    $("#integrityUseInstall").addEventListener("click", () => repairIntegrity("install"));
     $("#licensePill").addEventListener("click", () => switchView("settings"));
     $("#licenseInstall").addEventListener("click", licenseInstall);
     $("#licenseActivate").addEventListener("click", licenseActivate);

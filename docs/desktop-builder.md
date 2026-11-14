@@ -37,8 +37,11 @@ Windows 双击 `dist/PyShieldBuilder.exe`，Linux 执行 `dist/PyShieldBuilder`�
 
 用户设置与构建记录保存在 `%APPDATA%\PyShieldBuilder`（Linux 为 `~/.pyshieldbuilder`）：
 
-- `settings.json`：默认算法、运行时、完整性、输出后缀、解释器检测策略；
-- `history.json`：最近 100 次构建记录，只保留本机路径与结果摘要。
+- `state.sqlite3`：SQLite 主副本，含默认算法、运行时、完整性、输出后缀、解释器策略、最近 100 次构建记录与本地审计日志；
+- `settings.json` / `history.json`：兼容用的导出文件，首次启动会从旧文件迁移；不再作为读取来源；
+- `state-incidents/`：检测到双副本不一致时保存的证据（两份副本与 `report.json`）。
+
+程序目录（免安装版即 exe 所在目录）会保留第二份 `state.sqlite3`。每次保存都会同时更新两份并比较内容摘要与代数；只有一份缺失或写入中断时自动恢复，两份同时存在但不一致时判定为篡改，禁止继续保存设置和开始构建，并在界面顶部提供「使用用户目录副本修复 / 使用安装目录副本修复」。安装目录不可写时退化为单副本模式。注意这是对单侧修改和误损坏的检测，不是防本机攻击者的安全边界——能同时改写两份副本的攻击者仍可保持一致；状态库中的设置与构建记录为明文，不存放密钥。详见[安装包规划](installer-plan.md#3-本机状态存储已实现)。
 
 可通过环境变量覆盖配置目录：
 
@@ -123,6 +126,7 @@ python -m gui
 | `gui/instance.py` | 单实例锁与深链转发（第二个进程把参数转给已运行实例后退出） |
 | `gui/backend.py` | JS 桥接 API、构建线程、进度/日志快照、历史记录、试用状态与 Python 运行时下载任务 |
 | `gui/core.py` | 表单校验、默认输出、解释器探测、设置与历史持久化 |
+| `gui/state.py` | SQLite 双副本状态库、摘要/代数校验、中断写入恢复、篡改隔离与修复 |
 | `gui/web/` | 界面与前端逻辑（`index.html` / `app.js` / `styles.css`） |
 | `pyshield/python_runtime.py` | 校验解释器一键下载（镜像选择、版本探测、嵌入包解压、pip/Django 引导） |
 | `pyshield/devsite.py` | 无公钥构建自动在 127.0.0.1:8090 拉起本地模拟授权站 |
@@ -167,6 +171,8 @@ exe 冒烟测试建议：
 | 校验解释器不可用 | 选择项目虚拟环境中的解释器（Windows `Scripts\python.exe`，Linux `bin/python`）；没有 Python 时点「从镜像下载一个」自动装好；或勾选“跳过 manage.py check” |
 | 首次运行被 SmartScreen 拦截 | exe 未签名所致：更多信息 → 仍要运行；或右键属性勾选「解除锁定」 |
 | 下载的 Python 装在哪 | `%APPDATA%\PyShield\runtimes\python-<版本>`，删除目录即卸载，不写注册表与 PATH |
+| 顶部提示“本机状态校验失败”、无法保存或构建 | 用户目录与程序目录的 `state.sqlite3` 不一致或损坏。先看 `%APPDATA%\PyShieldBuilder\state-incidents\` 中的证据，再在横幅中选择要保留的副本修复；修复会覆盖两份并清除篡改状态 |
+| 状态库存在哪、能否删除 | 用户副本 `%APPDATA%\PyShieldBuilder\state.sqlite3`，程序目录另有一份校验副本。删除任一份会在下次启动自动重建；两份都删除会丢失设置与构建历史。开发模式默认只有用户副本，可设 `PYSHELD_GUI_INSTALL_DIR` 启用第二副本 |
 | 部署时报 Python 版本错误 | 部署机必须与内置 CPython 3.12 同一小版本 |
 | 部署时报缺少 cryptography | 改用纯 Python ChaCha20，或在部署机安装 `cryptography` |
 | 构建完成但无日志 | 检查构建日志页的日志面板；构建结果会写入“构建记录” |

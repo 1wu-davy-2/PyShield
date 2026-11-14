@@ -119,6 +119,18 @@
       </header>
 
       <div class="content">
+        <div class="integrity-banner" id="integrityBanner" hidden>
+          <svg class="icon integrity-icon"><use href="#i-alert"/></svg>
+          <div class="integrity-copy">
+            <strong>本机状态校验失败</strong>
+            <p id="integrityText">用户目录与安装目录的状态副本不一致，可能被篡改。</p>
+            <p class="integrity-path" id="integrityIncident" hidden></p>
+          </div>
+          <div class="integrity-actions">
+            <button class="btn ghost small" id="integrityUseUser">使用用户目录副本修复</button>
+            <button class="btn ghost small" id="integrityUseInstall">使用安装目录副本修复</button>
+          </div>
+        </div>
         <section class="view" id="view-workspace">
           <div class="trial-banner" id="trialBanner" hidden>
             <div class="trial-banner-copy">

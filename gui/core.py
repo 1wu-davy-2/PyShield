@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
+from . import state as state_db
+
 APP_TITLE = "PyShield 加密构建器"
 APP_DIR_NAME = "PyShieldBuilder"
 DEFAULT_OUTPUT_SUFFIX = "-shielded"
@@ -433,12 +435,7 @@ def history_path() -> Path:
     return config_dir() / HISTORY_FILENAME
 
 
-def load_settings() -> dict:
-    path = settings_path()
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        payload = {}
+def _normalized_settings(payload: dict | None) -> dict:
     settings = dict(DEFAULT_SETTINGS)
     if isinstance(payload, dict):
         for key in DEFAULT_SETTINGS:
@@ -459,42 +456,53 @@ def load_settings() -> dict:
     return settings
 
 
+def state_store() -> state_db.StateStore:
+    """Return the dual SQLite store used for settings and build history."""
+    user_path, install_path = state_db.default_paths(config_dir())
+    return state_db.get_store(
+        user_path,
+        install_path,
+        legacy_settings_path=settings_path(),
+        legacy_history_path=history_path(),
+    )
+
+
+def state_status() -> dict:
+    return state_store().status()
+
+
+def state_repair(source: str) -> dict:
+    return state_store().repair(source)
+
+
+def load_settings() -> dict:
+    return _normalized_settings(state_store().load_settings())
+
+
 def save_settings(payload: dict) -> dict:
-    settings = dict(DEFAULT_SETTINGS)
-    if isinstance(payload, dict):
-        for key in DEFAULT_SETTINGS:
-            if key in payload:
-                settings[key] = payload[key]
-    settings["cipher"] = settings["cipher"] if settings["cipher"] in CIPHERS else DEFAULT_CIPHER
-    settings["integrity"] = (
-        settings["integrity"] if settings["integrity"] in INTEGRITY_MODES else DEFAULT_INTEGRITY
-    )
-    settings["runtime"] = (
-        settings["runtime"] if settings["runtime"] in RUNTIME_MODES else DEFAULT_RUNTIME
-    )
-    suffix = str(settings.get("output_suffix") or "").strip()
-    settings["output_suffix"] = suffix or DEFAULT_OUTPUT_SUFFIX
-    settings["auto_detect_python"] = bool(settings.get("auto_detect_python"))
-    settings["no_verify"] = bool(settings.get("no_verify"))
-    settings["activation_server"] = str(settings.get("activation_server") or "").strip().rstrip("/")
-    settings["trial_server"] = str(settings.get("trial_server") or "").strip().rstrip("/")
-    _write_json(settings_path(), settings)
+    settings = _normalized_settings(payload)
+    state_store().save_settings(settings)
+    # Keep the legacy JSON export for users who inspect or back it up manually;
+    # SQLite remains the source of truth.
+    try:
+        _write_json(settings_path(), settings)
+    except OSError:
+        pass
     return settings
 
 
 def load_history() -> list[dict]:
-    path = history_path()
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return []
-    if not isinstance(payload, list):
-        return []
-    return [entry for entry in payload if isinstance(entry, dict)][:HISTORY_LIMIT]
+    entries = state_store().load_history()
+    return [entry for entry in entries if isinstance(entry, dict)][:HISTORY_LIMIT]
 
 
 def save_history(entries: list[dict]) -> None:
-    _write_json(history_path(), entries[:HISTORY_LIMIT])
+    trimmed = [entry for entry in entries if isinstance(entry, dict)][:HISTORY_LIMIT]
+    state_store().save_history(trimmed)
+    try:
+        _write_json(history_path(), trimmed)
+    except OSError:
+        pass
 
 
 def _write_json(path: Path, payload) -> None:
