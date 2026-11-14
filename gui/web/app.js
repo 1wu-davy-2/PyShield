@@ -885,7 +885,13 @@
     const data = license || { mode: "invalid", valid: false, reason: "尚未读取授权状态" };
     state.license = data;
     const mode = data.mode || "invalid";
-    const tone = !data.valid ? (mode === "unlicensed" ? "warning" : "danger") : mode === "licensed" ? "success" : "warning";
+    const tone = !data.valid
+      ? (mode === "unlicensed" ? "warning" : "danger")
+      : data.edition === "trial"
+        ? "warning"
+        : mode === "licensed"
+          ? "success"
+          : "warning";
     const pill = $("#licensePill");
     const pillText = $("#licensePillText");
     pill.classList.remove("is-success", "is-warning", "is-danger");
@@ -905,8 +911,10 @@
     pill.title = data.reason || "查看工具授权状态";
 
     const badge = $("#licenseBadge");
-    badge.className = `status-badge ${data.valid ? (mode === "licensed" ? "success" : "warning") : "danger"}`;
-    badge.textContent = LICENSE_MODE_LABELS[mode] || "未知状态";
+    badge.className = `status-badge ${data.valid ? (mode === "licensed" ? (data.edition === "trial" ? "warning" : "success") : "warning") : "danger"}`;
+    badge.textContent = mode === "licensed"
+      ? EDITION_LABELS[data.edition] || "正式授权"
+      : LICENSE_MODE_LABELS[mode] || "未知状态";
 
     $("#licenseReason").textContent = data.reason || "—";
     $("#licenseEdition").textContent = editionLabel;
@@ -1413,7 +1421,10 @@
     const initialView = new URLSearchParams(location.search).get("view");
     if (initialView && VIEW_META[initialView]) {
       switchView(initialView);
-    } else if (response.license && response.license.mode === "unlicensed") {
+    } else if (response.license && (
+      response.license.mode === "unlicensed"
+      || (response.license.edition === "trial" && TRIAL_END_CODES.includes(response.license.code || ""))
+    )) {
       switchView("trial");
     }
     applyDefaultsToForm();
@@ -1523,6 +1534,43 @@
     };
   }
 
+  function mockHistory() {
+    return [
+            {
+              id: "1",
+              created: new Date().toISOString(),
+              status: "success",
+              project: "E:\\projects\\erp-portal",
+              project_name: "erp-portal",
+              output: "E:\\projects\\erp-portal-shielded",
+              secret: "E:\\projects\\erp-portal-shielded.shield-secret.json",
+              cipher: "chacha",
+              integrity: "protected",
+              runtime: "pyc",
+              modules: 48,
+              elapsed: 12.6,
+              size_text: "2.0 MB",
+              expires: "永久",
+            },
+            {
+              id: "2",
+              created: new Date(Date.now() - 86400000).toISOString(),
+              status: "success",
+              project: "E:\\projects\\crm-suite",
+              project_name: "crm-suite",
+              output: "E:\\projects\\crm-suite-shielded",
+              secret: "E:\\projects\\crm-suite-shielded.shield-secret.json",
+              cipher: "chacha-pure",
+              integrity: "full",
+              runtime: "pyc",
+              modules: 71,
+              elapsed: 18.2,
+              size_text: "3.4 MB",
+              expires: "2027-06-30",
+            },
+          ];
+  }
+
   function mockTrial() {
     const trial = {
       ok: true,
@@ -1563,40 +1611,7 @@
 
   function mockApi(name, args) {
     if (name === "bootstrap") {
-      const history = [
-        {
-          id: "1",
-          created: new Date().toISOString(),
-          status: "success",
-          project: "E:\\projects\\erp-portal",
-          project_name: "erp-portal",
-          output: "E:\\projects\\erp-portal-shielded",
-          secret: "E:\\projects\\erp-portal-shielded.shield-secret.json",
-          cipher: "chacha",
-          integrity: "protected",
-          runtime: "pyc",
-          modules: 48,
-          elapsed: 12.6,
-          size_text: "2.0 MB",
-          expires: "永久",
-        },
-        {
-          id: "2",
-          created: new Date(Date.now() - 86400000).toISOString(),
-          status: "success",
-          project: "E:\\projects\\crm-suite",
-          project_name: "crm-suite",
-          output: "E:\\projects\\crm-suite-shielded",
-          secret: "E:\\projects\\crm-suite-shielded.shield-secret.json",
-          cipher: "chacha-pure",
-          integrity: "full",
-          runtime: "pyc",
-          modules: 71,
-          elapsed: 18.2,
-          size_text: "3.4 MB",
-          expires: "2027-06-30",
-        },
-      ];
+      const history = mockHistory();
       return Promise.resolve({
         ok: true,
         app: {
@@ -1745,7 +1760,7 @@
       });
     }
     if (name === "get_history") {
-      return Promise.resolve({ ok: true, history: [] });
+      return Promise.resolve({ ok: true, history: mockHistory() });
     }
     if (name === "browse_project") {
       return Promise.resolve({
