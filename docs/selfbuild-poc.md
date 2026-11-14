@@ -70,13 +70,15 @@ PyInstaller onefile 把模块放进 PYZ，运行时解压到 `_MEIPASS`，与 Py
 
 这层保护的收益是**提高静态逆向成本**，不是解决离线分发问题：
 
-- `_shield_runtime` 的主密钥仍在 exe 内；
+- `_shield_runtime` 的主密钥仍在 exe 内（以拆分/掩码的 `_keyring` 形式存在，不再是单个 Base85 常量）；
 - 自用 `pyshield.lic` 也随 exe 分发；
 - 攻击者提取这两样后，仍可复现 HKDF 与模块解密；
 - 运行时内存 dump、调试器附加不受影响；
-- 关闭完整性清单后，exe 被替换或局部修改不会被 runtime 发现，需要代码签名补足。
+- 关闭完整性清单后，exe 被替换或局部修改不会被 runtime 发现，需要代码签名补足；
+- `_runtime_bundle.py` 只是 base64+zlib+zip，解包成本约为一次解压，不是机密容器；
+- 自保护 exe 不把 `runtime_source=True` 的中间树作为发布物；该中间树含明文 runtime 与主密钥，只用于 PyInstaller 静态分析，必须丢弃。
 
-需要更强边界时，应改用 `--runtime-native` 编译 runtime，并配合 Authenticode、服务端解锁或硬件密钥。详见 [security-hardening.md](security-hardening.md)。
+需要更强边界时，应改用 `--runtime-native` 编译 runtime，并配合 Authenticode、服务端解锁或硬件密钥。注意：自保护 spec 仍排除了 Cython/setuptools，因此自保护 exe 的 GUI 不提供原生 runtime 编译能力；正式桌面构建器已打包这些依赖。详见 [security-hardening.md](security-hardening.md)。
 
 ## 5. 验证
 

@@ -430,6 +430,41 @@ class BuilderTests(unittest.TestCase):
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("clock rollback", completed.stderr)
 
+    def test_clock_mismatch_self_heals_to_newer_value(self) -> None:
+        result = self.build(expire="2035-01-01")
+        secret = licensing.read_secret(result.secret)
+        build_id = secret["build_id"]
+        build_key = crypto.b85decode(secret["build_key"])
+        machine = fingerprint.machine_fingerprint()
+        paths = (
+            self.state_dir / (build_id + ".state"),
+            self.state_dir / (build_id + ".state.anchor"),
+        )
+        today = date.today()
+        for path, seen in zip(paths, (today, today - timedelta(days=1))):
+            payload = {
+                "format": 2,
+                "build_id": build_id,
+                "last_seen": seen.isoformat(),
+            }
+            secure_store.write_private(
+                path,
+                secure_store.seal_state(
+                    payload, machine, "pyshield-clock", build_key,
+                ),
+            )
+
+        completed = self.run_runtime("status", "--json")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        status = json.loads(completed.stdout)
+        self.assertEqual(status["last_seen"], today.isoformat())
+        for path in paths:
+            raw = secure_store.read_private(path)
+            record = secure_store.open_state(
+                raw, machine, "pyshield-clock", build_key,
+            )
+            self.assertEqual(record["last_seen"], today.isoformat())
+
     def test_hot_reload_after_renewal(self) -> None:
         result = self.build(expire="2000-01-01")
         renewed = Path(self.temp.name) / "renewed.lic"
@@ -628,6 +663,24 @@ class P0HardeningTests(unittest.TestCase):
             )
             with self.assertRaises(builder.BuildError):
                 builder.assert_no_master_key(root, master)
+
+    def test_state_secret_changes_mac(self) -> None:
+        payload = {"format": 2, "build_id": "abc", "last_seen": "2026-01-01"}
+        sealed = secure_store.seal_state(
+            payload, "machine", "pyshield-clock", b"a" * 32,
+        )
+        self.assertEqual(
+            secure_store.open_state(
+                sealed, "machine", "pyshield-clock", b"a" * 32,
+            ),
+            payload,
+        )
+        with self.assertRaises(secure_store.SecureStoreError):
+            secure_store.open_state(
+                sealed, "machine", "pyshield-clock", b"b" * 32,
+            )
+        with self.assertRaises(secure_store.SecureStoreError):
+            secure_store.open_state(sealed, "machine", "pyshield-clock")
 
     def test_pe_debug_directory_is_cleared(self) -> None:
         data = bytearray(0x400)

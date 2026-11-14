@@ -9,12 +9,12 @@
 
 | 编号 | 原问题 | 本轮处理 | 仍然存在的边界 |
 | --- | --- | --- | --- |
-| V1 | `master_key` 在发布目录的 `_core.py`，许可证携带 `build_key`，发布目录自包含 | 许可证升级为格式 3，**不再携带 `build_key`**；`build_key` 由 `master_key + build_id` 通过 HKDF 派生；默认 runtime 改为 sourceless `.pyc`，构建器不再以明文 `.py` 发布 runtime 模板 | 主密钥仍在客户端（`.pyc` 或原生扩展中）；有能力的攻击者仍可提取并自行派生。真正修复需要服务端解锁或硬件密钥 |
-| V2 | 运行期 `marshal.loads` + `exec`，内存中必然出现明文 code object | `load_module` 使用 `bytearray` 解包并在 `finally` 中覆写中间缓冲；默认不再发布 runtime 源码；保留 `--runtime-native` 选项 | code object 和运行时字符串仍在进程内存中，可被调试器/dump 获取。本轮只是缩短窗口，不是内存加密 |
-| V3 | 首次启动绑定只写 `.pyshield-binding.json`，删除即可重置 | 增加 `_shield_runtime/.pyshield-binding.json.anchor`；主记录与锚点都做 HMAC 校验，删除单份会从另一份恢复；两份不一致或损坏均拒绝启动 | 同时删除主记录和锚点仍可重新绑定；彻底修复需要服务端首绑登记或硬件绑定 |
-| V4 | 删除 `~/.pyshield/<build_id>.state` 即视为首次运行；只读部署静默跳过写入 | 时钟状态改用 `secure_store`：Windows DPAPI、其它平台 HMAC；写入主文件 + 独立锚点；删除单份会恢复；写入失败默认拒绝启动，只读部署需显式 `PYSHELD_ALLOW_VOLATILE_STATE=1` | 同时删除两份状态仍可重置；本地时钟始终可被改。可靠方案是服务端签名时间或硬件单调计数器 |
-| V5 | 到期/宽限/绑定全部由客户端本地判断 | 每次加载受保护模块时，若许可证缓存超过 5 分钟会重新校验；长期运行的进程不会无限期沿用启动时的授权状态；所有状态校验集中到 `_load_state` | 客户端仍可修改 runtime 或绕过校验。离线方案无法把授权判断变成可信执行；没有受保护模块加载时不会触发刷新 |
-| V6 | exe 未签名、明文 runtime 源码、PDB 路径 | 构建器不再把 `runtime_template`、`crypto.py`、`fingerprint.py`、`ed25519.py` 作为 PyInstaller 明文 `datas`；改为 `pyshield/_runtime_bundle.py` 压缩资源；CI 可加 Authenticode 签名 | Authenticode 需要证书；PyInstaller 内置 CPython 扩展的 PDB 路径仍可能存在；`.pyc`/PYZ 仍可反编译 |
+| V1 | `master_key` 在发布目录的 `_core.py`，许可证携带 `build_key`，发布目录自包含 | 许可证升级为格式 3，**不再携带 `build_key`**；`build_key` 由 `master_key + build_id` 通过 HKDF 派生；主密钥改为拆分/XOR 掩码的 `_keyring`，不再以单个 Base85 常量出现；Pro/Enterprise 在工具链可用时默认原生 runtime | 主密钥仍在客户端（`_keyring` 模块或原生扩展中）；攻击者可调用 `_keyring.master_key()` 或 dump 内存后自行派生。真正修复需要服务端解锁或硬件密钥 |
+| V2 | 运行期 `marshal.loads` + `exec`，内存中必然出现明文 code object | `load_module` 使用 `bytearray` 解包并在 `finally` 中覆写中间缓冲；默认不再发布 runtime 源码；Pro/Enterprise 默认使用原生 runtime | code object 和运行时字符串仍在进程内存中，可被调试器/dump 获取。本轮只是缩短窗口，不是内存加密 |
+| V3 | 首次启动绑定只写 `.pyshield-binding.json`，删除即可重置 | 增加 `_shield_runtime/.pyshield-binding.json.anchor`；主记录与锚点都用 `build_key` 派生 MAC 校验，删除单份会从另一份恢复；两份不一致或损坏均拒绝启动；检测到 PyInstaller onefile 临时目录时明确拒绝首次绑定 | 同时删除主记录和锚点仍可重新绑定；能提取 master key 的攻击者可伪造 MAC。彻底修复需要服务端首绑登记或硬件绑定 |
+| V4 | 删除 `~/.pyshield/<build_id>.state` 即视为首次运行；只读部署静默跳过写入 | 时钟状态改用 `secure_store`：Windows DPAPI、其它平台 HMAC；MAC 密钥改为由 `build_key` 派生；写入主文件 + 独立锚点；单份写入失败不再砖化，下一次启动取较新日期并对齐两份；删除单份会恢复；旧公开-MAC 状态首次读取后自动迁移 | 同时删除两份状态仍可重置；本地时钟始终可被改；MAC 密钥仍可从 master 派生；状态目录按 OS 用户隔离（可用 `PYSHELD_STATE_ANCHOR_DIR` 指向机器级 ACL 目录） |
+| V5 | 到期/宽限/绑定全部由客户端本地判断 | 每次加载受保护模块时，若许可证缓存超过 5 分钟会重新校验；长期运行的进程不会无限期沿用启动时的授权状态；所有状态校验集中到 `_load_state` | 客户端仍可修改 runtime 或绕过校验；**5 分钟重验只覆盖许可证/绑定/时钟，完整性清单仍只在进程首次加载时扫描一次** |
+| V6 | exe 未签名、明文 runtime 源码、PDB 路径 | 构建器不再把 `runtime_template`、`crypto.py`、`fingerprint.py`、`ed25519.py` 作为 PyInstaller 明文 `datas`；改为 `pyshield/_runtime_bundle.py` 压缩资源；原生 runtime 构建后执行 strip、删除 `.pdb`、清 PE CodeView 目录；PyInstaller 关闭 UPX | Authenticode 需要证书；PyInstaller 内置 CPython 扩展的 PDB 路径仍可能存在；`.pyc`/PYZ 仍可反编译 |
 | V7 | 纯 Python ChaCha 对整块数据做大整数 XOR | 改为 64 KiB 分块 XOR，限制临时整数大小；新增跨块边界的参考实现测试 | 纯 Python 仍然慢；需要性能时使用 `cryptography` 或 `--runtime-native` |
 
 ## 2. 关键设计变化
@@ -46,11 +46,14 @@
 - 构建侧仍能读取格式 2 许可证，用于旧构建续期；新 runtime 只接受格式 3。
 - 旧构建若要获得本轮加固，需要重新构建。`issue` 仍可为格式 2 构建密钥签发格式 2 许可证。
 
-### 2.2 默认 runtime 为 `.pyc`
+### 2.2 runtime 形态与主密钥
 
-- 默认（不传 runtime 参数）、`--runtime-pyc`：runtime 全部编译为 `UNCHECKED_HASH` 的 `.pyc`，删除 `.py`。
-- `--runtime-native`：Cython 编译 `_core`、`_crypto`、`_ed25519`、`_chacha_fast`。
+- Trial：默认 `--runtime-pyc`，runtime 全部编译为 `UNCHECKED_HASH` 的 `.pyc`，删除 `.py`。
+- Pro / Enterprise：没有显式传 `--runtime-*` 且本机具备 Cython、C 编译器、strip/llvm-strip 时，默认 `--runtime-native`；GUI 中同样默认选择原生运行时，工具链缺失时锁定并回退字节码。
+- `--runtime-native`：Cython 编译 `_core`、`_crypto`、`_ed25519`、`_chacha_fast`、`_keyring`；构建后使用 `strip --strip-unneeded`、删除 `.pdb/.ilk/.exp/.lib`，并清空 PE CodeView/debug directory。strip 失败时构建失败，不静默发布未清理产物。
 - `--runtime-source`：仅用于调试，保留 `.py` 并输出醒目警告。
+- 主密钥不再写入 `_core.py` 的 `MASTER_KEY_B85`。构建时生成 `_keyring.py`：把 32 字节主密钥拆成 8 段，与随机掩码 XOR 后以十六进制保存；运行时由 `_keyring.master_key()` 重建。`strings` 不会得到完整 Base85 主密钥，但可以调用函数或从内存获取，因此这仍是成本项，不是机密性边界。
+- `builder.assert_no_master_key()` 在发布前扫描 runtime 目录，若仍出现完整 Base85/原始/hex 主密钥则构建失败。
 
 ### 2.3 构建器自身不再携带明文 runtime
 
@@ -61,7 +64,7 @@
 - `pyshield/fingerprint.py`
 - `pyshield/ed25519.py`
 
-运行时模板与上述模块由 `tools/embed_runtime.py` 压缩打包进 `pyshield/_runtime_bundle.py`，作为 PYZ 的一部分编译。它不能被当作机密容器，但去掉了“解包 exe 后直接阅读解密 runtime 源码”的最低成本路径。
+运行时模板与上述模块由 `tools/embed_runtime.py` 压缩打包进 `pyshield/_runtime_bundle.py`，作为 PYZ 的一部分编译。它只是 base64+zlib+zip，解包成本约为一次解压，**不是机密容器**；它的作用是避免 runtime 以明文 `datas` 直接出现在安装目录，而不是阻止有能力的分析者阅读。
 
 修改 runtime、`crypto.py`、`fingerprint.py`、`ed25519.py` 或 `secure_store.py` 后必须执行：
 
@@ -71,27 +74,49 @@ python tools/embed_runtime.py
 
 单元测试 `tests/test_security_hardening.py` 会逐字节检查 bundle 是否与源码一致；`python tools/embed_runtime.py --check` 可用于 CI。
 
-### 2.4 状态锚点与失败关闭
+### 2.4 状态锚点、自动修复与边界
 
 时钟状态：
 
 - 主文件：`~/.pyshield/<build_id>.state`
 - 锚点：平台状态目录（Windows `%LOCALAPPDATA%\PyShield\state`，Linux `$XDG_STATE_HOME/pyshield` 或 `~/.local/state/pyshield`）
 - 覆盖：`PYSHELD_STATE_DIR` / `PYSHELD_STATE_ANCHOR_DIR`
-- Windows 用 DPAPI 封装；其它平台用 HMAC。
-- 删除一份会从另一份恢复；两份不一致、损坏或无法解密都会拒绝启动。
-- 只读部署默认拒绝启动；`PYSHELD_ALLOW_VOLATILE_STATE=1` 是明确的风险接受开关。
+- Windows 用 DPAPI 封装；其它平台用 HMAC；MAC 密钥由 `build_key` 派生，而不是公开的机器指纹。
+- 删除一份会从另一份恢复；两份不一致时取较新日期并重写两份，避免“主文件写成功、锚点写失败”导致永久拒绝启动。
+- 旧版本用公开 MAC 写入的状态会先尝试新密钥，失败后兼容读取一次，并立即用新密钥重写；攻击者仍可写两份旧格式状态，但这与“同时删除两份”属于同一残余风险。
+- 两份都损坏/无法解密仍会拒绝启动；只读部署默认拒绝启动，`PYSHELD_ALLOW_VOLATILE_STATE=1` 是明确的风险接受开关。
+- 主状态与锚点默认按 OS 用户隔离。同一台机器新建 OS 用户会得到全新时钟；多用户场景应把 `PYSHELD_STATE_ANCHOR_DIR` 指向带 ACL 的机器级目录，或改用服务端时间。设置 `PYSHELD_STATE_DIR` 会让锚点退化为同目录 `.anchor`，分离度降低。
+- 状态 HMAC 防误损坏和单点修改，不防能提取 `build_key` 的攻击者；它不是“不可伪造”的安全边界。
 
 首次启动绑定：
 
 - 主记录：`<dist>/.pyshield-binding.json`
 - 锚点：`<dist>/_shield_runtime/.pyshield-binding.json.anchor`
 - 删除单份会恢复；同时删除两份仍视为首次运行。
+- 绑定 MAC 使用 `build_key` 派生，能防止仅修改单份记录；提取 master key 后仍可伪造。
+- PyInstaller onefile 的 `_MEIPASS` 是临时目录：首次绑定记录会随进程退出消失。runtime 现在会检测临时 `_MEI*` 目录并拒绝首次绑定；应改用固定指纹、onedir，或把 `PYSHELD_BINDING_FILE` 指到持久路径。
+
+### 2.5 已知残余风险（对外表述必须保留）
+
+| 残余项 | 现状 | 影响 |
+| --- | --- | --- |
+| 主密钥可提取 | `_keyring.master_key()` 可调用；`.pyc`/`.pyd`/内存都可被分析 | 能看到完整发布目录的攻击者仍可离线解密；keyring 只是去掉直接字符串常量 |
+| 状态 MAC 可伪造 | 时钟 MAC 由 `build_key` 派生，绑定 MAC 也是；提取 master 后可伪造 | “防篡改”不成立，正确表述是“防单点丢失/误损坏” |
+| 双删重置 | 删除主状态和锚点仍可重置时钟/绑定 | 纯离线方案无法彻底修复；需要服务端或硬件单调计数器 |
+| 每用户状态 | 默认状态目录按 OS 用户隔离 | 新 OS 用户可获得全新时钟；多用户场景需机器级锚点 |
+| TTL 不覆盖清单 | 300 秒重验只覆盖许可证/绑定/时钟 | 进程启动后替换、尚未导入的 stub 不会被重扫 |
+| 自保护 `integrity=off` | 自保护 exe 不做清单校验 | stub/runtime 被替换不会检测；只提高静态阅读成本 |
+| bundle 仅压缩 | `_runtime_bundle.py` 是 base64+zlib+zip | 解包成本约一次解压，不是机密容器 |
+| onefile 首次绑定 | 已增加 `_MEI*` 临时目录检测并拒绝 | 需用固定指纹、onedir 或持久 `PYSHELD_BINDING_FILE` |
+| DPAPI 失败降级 | Windows DPAPI 失败时写 `PLAIN1` 状态 | 本地状态仍受 HMAC 保护，但可被伪造；没有静默提权 |
+| 内存清理有限 | `_wipe` 只清 `bytearray` 中间缓冲 | code object、`open_envelope`/`zlib` 返回的 `bytes` 仍可能驻留 |
+| PyInstaller PDB/符号 | 原生 runtime 已清理；PyInstaller 内置二进制未逐一审计 | 仍可能暴露构建路径/符号 |
+| 未签名 | 无 Authenticode | SmartScreen 提示，exe 可被替换后二次打包 |
 
 ## 3. 如何验证
 
 ```bash
-# 全量测试（当前 159 个，1 个按环境跳过）
+# 全量测试（当前 170+ 个，原生 runtime 测试按工具链跳过）
 python -m unittest discover -s tests -v
 
 # 检查 runtime bundle 是否过期
@@ -121,11 +146,11 @@ python -m _shield_runtime verify --full
 python -m _shield_runtime status
 ```
 
-对旧审计 PoC 的预期：它按 `_core.py` 正则读取 `MASTER_KEY_B85`，在默认 `.pyc` 产物上会直接失败；即使反编译 `.pyc` 取得主密钥，许可证里也不再存在可提取的 `build_key`，必须自行复现 HKDF 派生。这不等于“无法解密”，只是把利用成本从 20 行脚本提高。
+对旧审计 PoC 的预期：旧脚本按 `_core.py` 正则读取 `MASTER_KEY_B85`，现在会直接失败，因为 `_core.py` 只调用 `_keyring.master_key()`，生成文件里没有完整主密钥常量。攻击者仍可读取 `_keyring.py`/`.pyc`/原生扩展中的掩码分段并重建，或调用 `master_key()`；许可证里也不再存在可提取的 `build_key`，必须自行复现 HKDF 派生。这不等于“无法解密”，只是把利用成本从 20 行脚本提高。
 
 ## 4. 构建器自保护 PoC
 
-`tools/selfbuild.py` 已实现一个实验性流程：先用 PyShield 保护 PyShieldBuilder 自身的 `pyshield/` 与 `gui/` 源码，再用 PyInstaller 打包。它能让解包后的业务模块变成 stub，提高静态分析成本；但 runtime 主密钥和自用许可证仍在 exe 内，仍然可以离线提取，不是 V1 的结构性修复。使用方式与边界见 [selfbuild-poc.md](selfbuild-poc.md)。
+`tools/selfbuild.py` 已实现一个实验性流程：先用 PyShield 保护 PyShieldBuilder 自身的 `pyshield/` 与 `gui/` 源码，再用 PyInstaller 打包。它能让解包后的业务模块变成 stub，提高静态分析成本；但 runtime 主密钥和自用许可证仍在 exe 内，仍然可以离线提取，不是 V1 的结构性修复。自保护构建显式使用 `runtime_source=True` 和 `integrity="off"`：前者用于让 PyInstaller 静态分析，后者是因为 onefile 的 `_MEIPASS` 布局与清单路径不一致；因此自保护 exe **不做清单完整性校验**，stub/runtime 被替换不会被发现。使用方式与边界见 [selfbuild-poc.md](selfbuild-poc.md)。
 
 ## 5. 仍建议完成的结构性工作
 
@@ -133,8 +158,10 @@ python -m _shield_runtime status
 2. **服务端首绑登记**：同一许可证只允许 N 次首次绑定，删除本地记录无法绕过。
 3. **硬件密钥**：TPM 密封、加密狗或独立原生密钥模块，主密钥不进入发布目录。
 4. **Authenticode 签名**：在 CI 中接入代码签名证书；未签名 exe 仍会触发 SmartScreen，并可被替换后二次打包。
-5. **PDB 路径与发布暴露审计**：对 PyInstaller 内置二进制做 strip/CodeView 清理，并在 CI 中运行 `rea audit-release-exposure` 一类检查。当前本轮未消除这部分。
+5. **发布暴露审计**：原生 runtime 已做 strip/PDB/CodeView 清理，构建时也会拒绝 runtime 目录中出现完整主密钥；仍需对 PyInstaller 内置二进制做 PDB 路径审计，并在 CI 中固定执行 `strings`/符号/密钥暴露检查。Authenticode 仍未接入。
 6. **反调试与内存加固**：检测调试器/注入、减少明文驻留时间。此类措施维护成本高，且不能替代服务端或硬件边界。
+7. **机器级状态锚点**：当前主状态/锚点默认按用户隔离；多用户共用机器时，应把锚点放到 `%PROGRAMDATA%` 等带 ACL 的机器级目录或服务端，避免新 OS 用户获得全新的时钟状态。
+8. **完整性 TTL**：当前 `_integrity` 只在进程首次加载时扫描并缓存；300 秒重验不覆盖清单。若长驻进程需要发现启动后替换的未导入 stub，应把清单缓存改为带 TTL 的实现，并评估大目录哈希开销。
 
 ## 6. 对外表述
 

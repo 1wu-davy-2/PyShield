@@ -105,14 +105,21 @@ def unprotect(data: bytes, entropy: bytes = b"pyshield-state-v1") -> bytes:
     return data
 
 
-def state_key(machine: str, purpose: str) -> bytes:
+def state_key(machine: str, purpose: str, secret: bytes | None = None) -> bytes:
     material = f"pyshield-state-key-v1|{purpose}|{machine}".encode("utf-8")
+    if secret is not None:
+        return hmac.new(secret, material, hashlib.sha256).digest()
     return hashlib.sha256(material).digest()
 
 
-def seal_state(payload: dict, machine: str, purpose: str) -> bytes:
+def seal_state(
+    payload: dict,
+    machine: str,
+    purpose: str,
+    secret: bytes | None = None,
+) -> bytes:
     body = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
-    tag = hmac.new(state_key(machine, purpose), body, hashlib.sha256).hexdigest()
+    tag = hmac.new(state_key(machine, purpose, secret), body, hashlib.sha256).hexdigest()
     document = json.dumps(
         {"payload": payload, "signature": tag},
         sort_keys=True, separators=(",", ":"), ensure_ascii=True,
@@ -120,7 +127,12 @@ def seal_state(payload: dict, machine: str, purpose: str) -> bytes:
     return protect(document, entropy=f"pyshield-{purpose}".encode("utf-8"))
 
 
-def open_state(data: bytes, machine: str, purpose: str) -> dict:
+def open_state(
+    data: bytes,
+    machine: str,
+    purpose: str,
+    secret: bytes | None = None,
+) -> dict:
     try:
         document = json.loads(unprotect(data, entropy=f"pyshield-{purpose}".encode("utf-8")).decode("utf-8"))
     except (OSError, ValueError, UnicodeDecodeError) as exc:
@@ -130,7 +142,7 @@ def open_state(data: bytes, machine: str, purpose: str) -> dict:
     body = json.dumps(
         document["payload"], sort_keys=True, separators=(",", ":"), ensure_ascii=True,
     ).encode("utf-8")
-    expected = hmac.new(state_key(machine, purpose), body, hashlib.sha256).hexdigest()
+    expected = hmac.new(state_key(machine, purpose, secret), body, hashlib.sha256).hexdigest()
     actual = str(document.get("signature") or "")
     if not hmac.compare_digest(expected, actual):
         raise SecureStoreError("local state signature mismatch")

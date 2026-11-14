@@ -25,12 +25,12 @@ Windows 双击 `dist/PyShieldBuilder.exe`，Linux 执行 `dist/PyShieldBuilder`�
 | 设备绑定 | 不绑定 | 可改为首次启动绑定或指定指纹 |
 | 校验解释器 | 自动检测 | 仅用于 `manage.py check`，可跳过 |
 
-运行时形态还提供“源码运行时”，只用于排查问题；它会把 `_core.py`、`_crypto.py` 等解密逻辑以明文写进产物，交付客户时应保持默认的“字节码运行时”，或使用 CLI 的 `--runtime-native`。
+运行时形态提供“源码运行时”（仅调试）、“字节码运行时”和“原生运行时”。Pro / Enterprise 且本机具备 Cython、C 编译器和 strip/llvm-strip 时，GUI 默认选择原生运行时；试用版锁定该选项并回退字节码。源码运行时会暴露解密逻辑，只用于排查问题。
 
 设备绑定：
 
 - **不绑定**：任意兼容机器运行；
-- **首次启动绑定**：交付时拿不到客户机指纹时使用。程序第一次启动会在输出目录写入 `.pyshield-binding.json` 与 `_shield_runtime/` 下的独立锚点，并锁定该机器；删除单个记录不会重置绑定，此后整包复制到其他机器也无法启动。构建时的 `manage.py check` 使用临时绑定文件，不会占用客户机的首次绑定；
+- **首次启动绑定**：交付时拿不到客户机指纹时使用。程序第一次启动会在输出目录写入 `.pyshield-binding.json` 与 `_shield_runtime/` 下的独立锚点，并锁定该机器；删除单个记录不会重置绑定，此后整包复制到其他机器也无法启动。构建时的 `manage.py check` 使用临时绑定文件，不会占用客户机的首次绑定。**不要把首次启动绑定的产物打成 PyInstaller onefile**：`_MEIPASS` 是临时目录，记录会随进程退出消失；runtime 会检测并拒绝这种组合，请改用固定指纹、onedir 或持久 `PYSHELD_BINDING_FILE`；
 - **指定指纹**：已知客户机指纹时使用，可填写多个；客户可运行 `python -m _shield_runtime fingerprint` 获取。
 
 构建密钥写入 `<输出目录>.shield-secret.json`，位置与输出目录同级。格式 3 包含 `master_key`、派生出的 `build_key`、`signing_key`，只应保存在构建方；发布时只交付输出目录本身，且发布包中的 `pyshield.lic` 已不再携带 `build_key`。
@@ -192,4 +192,4 @@ exe 冒烟测试建议：
 - 许可证格式 v3 由 Ed25519 签名，只含授权字段，不含模块解密密钥；runtime 只内置公钥，提取对称主密钥不能伪造许可证；
 - 源码保护提高逆向成本，不构成绝对 DRM；离线分发下主密钥最终会进入客户环境，具备逆向能力的攻击者仍可能提取内存中的代码或主密钥；
 - 字节码是默认 runtime；`--runtime-source` 仅用于调试，会以明文发布解密逻辑；
-- 完整性清单用于发现现场误改或局部篡改，不能阻止整体替换 runtime；发布卫生详见 [security-hardening.md](security-hardening.md)。
+- 完整性清单只在进程首次加载时扫描一次，5 分钟重验不覆盖清单；它用于发现现场误改或局部篡改，不能阻止整体替换 runtime。状态 HMAC 由 `build_key` 派生，但提取 master 后仍可伪造，正确表述是“防单点丢失/误损坏”，不是绝对防篡改。发布卫生详见 [security-hardening.md](security-hardening.md)。

@@ -188,8 +188,8 @@ python manage.py runserver 0.0.0.0:8000
 ### 4.3 可写目录与时间同步
 
 - 续期时通常直接把新 `pyshield.lic` 写到原位置，运行用户需要该目录的写权限；也可用 `PYSHELD_LICENSE` 指向外部可写路径。
-- 首次启动绑定会在输出目录写入 `.pyshield-binding.json`，并在 `_shield_runtime/` 写入独立锚点，因此该目录必须可写；只读部署用 `PYSHELD_BINDING_FILE` 指向可写位置（绑定记录放在包外会削弱复制防护）。写入失败时启动会被拒绝，避免绑定被静默跳过；删除主记录会从锚点恢复。
-- 时钟状态写入 `~/.pyshield/<build_id>.state` 和独立锚点（默认在平台用户状态目录）；可用 `PYSHELD_STATE_DIR` / `PYSHELD_STATE_ANCHOR_DIR` 指定。Windows 使用 DPAPI，其它平台使用 HMAC；删除单份会从另一份恢复。只读部署默认会因无法持久化而拒绝启动；确认接受回拨检测失效时设置 `PYSHELD_ALLOW_VOLATILE_STATE=1`。
+- 首次启动绑定会在输出目录写入 `.pyshield-binding.json`，并在 `_shield_runtime/` 写入独立锚点，因此该目录必须可写；只读部署用 `PYSHELD_BINDING_FILE` 指向可写位置（绑定记录放在包外会削弱复制防护）。写入失败时启动会被拒绝，避免绑定被静默跳过；删除主记录会从锚点恢复。PyInstaller onefile 的 `_MEIPASS` 是临时目录，runtime 会拒绝在其中做首次绑定；请改用固定指纹、onedir 或持久 `PYSHELD_BINDING_FILE`。
+- 时钟状态写入 `~/.pyshield/<build_id>.state` 和独立锚点（默认在平台用户状态目录）；可用 `PYSHELD_STATE_DIR` / `PYSHELD_STATE_ANCHOR_DIR` 指定。Windows 使用 DPAPI，其它平台使用 HMAC；MAC 密钥由 `build_key` 派生。删除单份会从另一份恢复；两份日期不一致时取较新值并重写两份。只读部署默认会因无法持久化而拒绝启动；确认接受回拨检测失效时设置 `PYSHELD_ALLOW_VOLATILE_STATE=1`。默认状态按 OS 用户隔离，多用户共用机器时应把 `PYSHELD_STATE_ANCHOR_DIR` 指向机器级 ACL 目录。
 - 部署机应启用 NTP/时间同步。容器重建、快照恢复或虚拟机迁移后如果时钟明显回拨，runtime 会拒绝启动，先校正时间再启动。
 - 许可证带签发日期，现场时钟早于签发日期超过 1 天同样会拒绝。
 
@@ -264,8 +264,8 @@ runtime 按以下顺序查找许可证：
 
 ### 5.3 时钟回拨与热重载
 
-- runtime 在许可证校验通过后，把 `last_seen`（日期）和 `build_id` 用 DPAPI（Windows）或 HMAC（其它平台）封装，写入 `~/.pyshield/<build_id>.state` 及其独立锚点，可用 `PYSHELD_STATE_DIR` / `PYSHELD_STATE_ANCHOR_DIR` 覆盖；
-- 如果今天比 `last_seen` 早超过 1 天，判定为时钟回拨并拒绝加载；状态被修改、损坏或两份记录不一致同样拒绝；删除单份会从另一份恢复；
+- runtime 在许可证校验通过后，把 `last_seen`（日期）和 `build_id` 用 DPAPI（Windows）或 HMAC（其它平台）封装，写入 `~/.pyshield/<build_id>.state` 及其独立锚点，可用 `PYSHELD_STATE_DIR` / `PYSHELD_STATE_ANCHOR_DIR` 覆盖；MAC 密钥由 `build_key` 派生；
+- 如果今天比 `last_seen` 早超过 1 天，判定为时钟回拨并拒绝加载；状态被修改、损坏或两份记录无法解密会拒绝；两份日期不一致时取较新值并重写两份，不再因一次部分写入失败而永久拒绝；删除单份会从另一份恢复；
 - 删除状态文件会重置历史，这是离线方案的固有边界；请同时使用 NTP 和授权流程；
 - 热重载示例：
 
@@ -327,7 +327,8 @@ PYSHELD_LICENSE=/secure/pyshield.lic python manage.py check
 | `cannot record clock state` | 时钟状态目录只读，且未显式允许易失状态 | 赋予用户状态目录写权限，或确认接受回拨检测失效后设置 `PYSHELD_ALLOW_VOLATILE_STATE=1` |
 | `license is not valid before ...` | 现场时钟早于签发日期超过 1 天 | 校正系统时间或重新签发 |
 | `system clock rollback` | 时钟早于上次运行日期超过 1 天 | 校正 NTP/系统时间；不要删除状态文件来绕过 |
-| 时钟状态文件损坏 | 状态文件被修改、DPAPI 不匹配或写入中断 | 恢复主记录与锚点，或校正时间；确认 `PYSHELD_STATE_DIR` / `PYSHELD_STATE_ANCHOR_DIR` 可写 |
+| 时钟状态文件损坏 | 状态文件被修改、DPAPI 不匹配或写入中断 | 恢复主记录与锚点，或校正时间；确认 `PYSHELD_STATE_DIR` / `PYSHELD_STATE_ANCHOR_DIR` 可写。两份日期不一致会自动取较新值，不需要手动删除 |
+| 原生运行时不可用 | 缺少 Cython、C 编译器或 strip/llvm-strip | 安装工具链，或切换为字节码运行时；桌面 GUI 会锁定该选项并显示原因 |
 | 指纹不匹配 | 许可证绑定的是其他机器 | 在目标机器取指纹后用 `issue -b` 重新签发 |
 | 找不到许可证 | 许可证路径不正确或未随包发布 | 放入输出根目录，或设置 `PYSHELD_LICENSE` |
 | `ModuleNotFoundError: cryptography` | 使用 AES-GCM / ChaCha20-Poly1305 但部署机未安装依赖 | 安装 `cryptography`，或改用 `--cipher chacha-pure` 重新构建 |
@@ -360,8 +361,8 @@ python -m unittest discover -s tests -v
 
 - `*.shield-secret.json` 同时包含 `master_key`、`build_key` 和 `signing_key`，是构建方最高权限密钥，**绝不能随包发布**；泄露后应重新构建并作废旧包。
 - 许可证格式 v3 使用 Ed25519 签名，修改到期日、机器指纹等字段会导致验签失败；格式 3 不含 `build_key`；旧格式 2 可由构建侧读取用于续期，但新 runtime 只接受格式 3。
-- 完整性清单由 runtime 自身校验；如果攻击者能整体替换 `_shield_runtime/`，清单也会失效。它用于发现现场误改、局部篡改和跨构建移植，不是二进制级防篡改。
-- 时钟状态与回拨检测是尽力而为：同时删除主记录与锚点仍会重置历史。请结合 NTP、服务端时间、合同和授权流程。
+- 完整性清单由 runtime 自身校验，且只在进程首次加载时扫描一次；5 分钟重验只覆盖许可证/绑定/时钟。如果攻击者能整体替换 `_shield_runtime/`，清单也会失效。它用于发现现场误改、局部篡改和跨构建移植，不是二进制级防篡改。
+- 时钟状态与回拨检测是尽力而为：MAC 密钥由 `build_key` 派生，提取 master 后仍可伪造；同时删除主记录与锚点仍会重置历史；默认状态按 OS 用户隔离。请结合 NTP、机器级锚点、服务端时间、合同和授权流程。
 - 原生 runtime 把主密钥、验签逻辑和快速 ChaCha 编译进 `.pyd`/`.so`，显著提高静态提取门槛，但无法阻止有能力的攻击者在运行时内存中提取。
 - 发布卫生（Authenticode、PDB 路径、发布暴露审计）见 [security-hardening.md](security-hardening.md)。
 - 迁移与测试默认保持明文；如包含敏感逻辑，使用 `--encrypt-migrations` / `--encrypt-tests`。
