@@ -1154,10 +1154,23 @@
     $("#navTrialBadge").hidden = !active;
     $("#planTrial").classList.toggle("is-current", active);
     const trialButton = $('[data-plan-open="trial"]');
-    if (trialButton) trialButton.textContent = active ? "重新打开官网" : "申请 14 天试用";
+    if (trialButton) {
+      trialButton.textContent = licensed
+        ? "已具备正式授权"
+        : active
+          ? "重新打开官网"
+          : ended
+            ? "试用已结束"
+            : "申请 14 天试用";
+    }
     $$("[data-plan-open]").forEach((button) => {
-      button.disabled = !server;
-      button.title = server ? "" : "授权服务未配置，暂时无法在线申请";
+      const isTrialPlan = button.dataset.planOpen === "trial";
+      const blocked = !server || (isTrialPlan && (ended || licensed));
+      button.disabled = blocked;
+      if (!blocked) button.title = "";
+      else if (!server) button.title = "授权服务未配置，暂时无法在线申请";
+      else if (licensed) button.title = "当前已是正式授权";
+      else button.title = "试用已结束，请升级专业版";
     });
 
     const needsActivation = data.mode === "unlicensed";
