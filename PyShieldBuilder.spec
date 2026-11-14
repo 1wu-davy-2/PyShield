@@ -3,6 +3,16 @@
 import sys
 from pathlib import Path
 
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+
+try:
+    import Cython  # noqa: F401
+except ImportError:
+    raise SystemExit(
+        "PyShieldBuilder.spec requires Cython>=3 so the packaged desktop "
+        "builder can compile native runtimes: pip install 'Cython>=3'"
+    )
+
 ROOT = Path(SPECPATH)
 IS_WINDOWS = sys.platform == "win32"
 
@@ -32,6 +42,25 @@ if (ROOT / "pyshield" / "_tool_key.py").is_file():
 if (ROOT / "pyshield" / "_site.py").is_file():
     hiddenimports.append("pyshield._site")
 
+# The desktop builder can compile a native runtime on the customer's build
+# machine. Cython and setuptools therefore have to travel with the exe; they
+# are still optional at build time for bytecode-only builds.
+hiddenimports += [
+    "Cython",
+    "setuptools",
+    "setuptools.command.build_ext",
+    "distutils",
+    "distutils.command.build_ext",
+]
+def _cython_module(name: str) -> bool:
+    segments = name.split(".")
+    return not any(part in {"Tests", "Debugger", "Coverage"} for part in segments)
+
+
+hiddenimports += collect_submodules("Cython", filter=_cython_module)
+datas += collect_data_files("Cython", excludes=["**/Tests/**", "**/Debugger/**"])
+datas += collect_data_files("setuptools")
+
 excludes = [
     "tkinter",
     "PyQt5",
@@ -39,8 +68,6 @@ excludes = [
     "PySide2",
     "PySide6",
     "cefpython3",
-    "Cython",
-    "setuptools",
     "pytest",
     "django",
 ]
@@ -77,8 +104,10 @@ exe = EXE(
     name="PyShieldBuilder",
     debug=False,
     bootloader_ignore_signals=False,
+    # UPX is not a security boundary and is commonly flagged by antivirus.
+    # Native runtime extensions are stripped by pyshield.builder instead.
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,

@@ -90,6 +90,16 @@ class BuilderTests(unittest.TestCase):
             cwd=self.output, env=env, capture_output=True, text=True,
         )
 
+    def assert_master_key_not_exposed(self, master_key: bytes) -> None:
+        encoded = crypto.b85encode(master_key).encode("ascii")
+        runtime = self.output / "_shield_runtime"
+        for path in runtime.rglob("*"):
+            if not path.is_file():
+                continue
+            data = path.read_bytes()
+            self.assertNotIn(encoded, data, f"base85 master key in {path}")
+            self.assertNotIn(master_key, data, f"raw master key in {path}")
+
     def run_runtime(self, *args: str, license_path: Path | None = None) -> subprocess.CompletedProcess:
         env = os.environ.copy()
         env["PYSHELD_LICENSE"] = str(license_path or self.output / "pyshield.lic")
@@ -117,9 +127,12 @@ class BuilderTests(unittest.TestCase):
         files = payload["files"]
         self.assertEqual(files["mypkg/tools.py"]["category"], "code")
         self.assertEqual(files["_shield_runtime/_core.pyc"]["category"], "runtime")
+        self.assertEqual(files["_shield_runtime/_keyring.pyc"]["category"], "runtime")
         self.assertNotIn("_shield_runtime/_core.py", files)
         self.assertFalse((self.output / "_shield_runtime" / "_core.py").exists())
+        self.assertFalse((self.output / "_shield_runtime" / "_keyring.py").exists())
         self.assertFalse((self.output / "_shield_runtime" / "_chacha_fast.pyx").exists())
+        self.assert_master_key_not_exposed(crypto.b85decode(secret["master_key"]))
         self.assertEqual(files["mypkg/templates/page.html"]["category"], "data")
         self.assertNotIn("mypkg/local_settings.py", files)
         self.assertNotIn("pyshield.lic", files)
@@ -475,6 +488,8 @@ class BuilderTests(unittest.TestCase):
         runtime = self.output / "_shield_runtime"
         self.assertFalse((runtime / "_core.py").exists())
         self.assertTrue((runtime / "_core.pyc").exists())
+        self.assertTrue((runtime / "_keyring.pyc").exists())
+        self.assertFalse((runtime / "_keyring.py").exists())
         self.assertFalse((runtime / "_chacha_fast.pyx").exists())
         payload = json.loads((self.output / builder.MANIFEST_FILE).read_text(encoding="utf-8"))
         runtime_files = [
@@ -497,8 +512,12 @@ class BuilderTests(unittest.TestCase):
         self.build(runtime_source=True)
         runtime = self.output / "_shield_runtime"
         self.assertTrue((runtime / "_core.py").exists())
+        self.assertTrue((runtime / "_keyring.py").exists())
         self.assertFalse((runtime / "_core.pyc").exists())
         self.assertFalse((runtime / "_chacha_fast.pyx").exists())
+        self.assert_master_key_not_exposed(
+            crypto.b85decode(licensing.read_secret(self.secret_path)["master_key"])
+        )
         completed = self.run_project("check")
         self.assertEqual(completed.returncode, 0, completed.stderr)
 
@@ -532,10 +551,19 @@ class BuilderTests(unittest.TestCase):
         self.assertFalse((runtime / "_core.py").exists())
         self.assertFalse((runtime / "_crypto.py").exists())
         self.assertFalse((runtime / "_ed25519.py").exists())
+        self.assertFalse((runtime / "_keyring.py").exists())
         self.assertFalse((runtime / "_chacha_fast.pyx").exists())
         self.assertTrue(
             any(runtime.glob("_core*.pyd")) or any(runtime.glob("_core*.so")),
             "native runtime extension was not produced",
+        )
+        self.assertTrue(
+            any(runtime.glob("_keyring*.pyd")) or any(runtime.glob("_keyring*.so")),
+            "native keyring extension was not produced",
+        )
+        self.assertFalse(list(runtime.glob("*.pdb")))
+        self.assert_master_key_not_exposed(
+            crypto.b85decode(licensing.read_secret(self.secret_path)["master_key"])
         )
         payload = json.loads((self.output / builder.MANIFEST_FILE).read_text(encoding="utf-8"))
         runtime_files = [
@@ -579,6 +607,58 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual(result.modules, 4)
         self.assertFalse(self.output.exists())
         self.assertFalse(self.secret_path.exists())
+
+
+class P0HardeningTests(unittest.TestCase):
+    def test_keyring_roundtrip_and_masking(self) -> None:
+        master = bytes(range(32))
+        source = builder.render_keyring(master)
+        self.assertNotIn(crypto.b85encode(master), source)
+        self.assertNotIn(master.hex(), source)
+        namespace: dict = {}
+        exec(compile(source, "<keyring>", "exec"), namespace)
+        self.assertEqual(namespace["master_key"](), master)
+
+    def test_master_key_audit_rejects_exposed_key(self) -> None:
+        master = bytes(range(32))
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "runtime.bin").write_bytes(
+                b"prefix" + crypto.b85encode(master).encode("ascii")
+            )
+            with self.assertRaises(builder.BuildError):
+                builder.assert_no_master_key(root, master)
+
+    def test_pe_debug_directory_is_cleared(self) -> None:
+        data = bytearray(0x400)
+        data[0:2] = b"MZ"
+        data[0x3C:0x40] = (0x80).to_bytes(4, "little")
+        data[0x80:0x84] = b"PE\0\0"
+        coff = 0x84
+        data[coff + 2:coff + 4] = (1).to_bytes(2, "little")
+        data[coff + 16:coff + 18] = (0xE0).to_bytes(2, "little")
+        optional = coff + 20
+        data[optional:optional + 2] = (0x10B).to_bytes(2, "little")
+        data[optional + 92:optional + 96] = (16).to_bytes(4, "little")
+        entry = optional + 96 + 6 * 8
+        data[entry:entry + 4] = (0x1000).to_bytes(4, "little")
+        data[entry + 4:entry + 8] = (28).to_bytes(4, "little")
+        section = optional + 0xE0
+        data[section + 8:section + 12] = (0x180).to_bytes(4, "little")
+        data[section + 12:section + 16] = (0x1000).to_bytes(4, "little")
+        data[section + 16:section + 20] = (0x200).to_bytes(4, "little")
+        data[section + 20:section + 24] = (0x200).to_bytes(4, "little")
+        data[0x200:0x21C] = b"CodeView" + b"\0" * 20
+
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "runtime.pyd"
+            path.write_bytes(data)
+            self.assertTrue(builder._scrub_pe_debug_directory(path))
+            cleaned = path.read_bytes()
+            self.assertEqual(cleaned[entry:entry + 8], b"\0" * 8)
+            self.assertEqual(cleaned[0x200:0x21C], b"\0" * 28)
+            self.assertEqual(cleaned[:2], b"MZ")
+            self.assertEqual(cleaned[0x80:0x84], b"PE\0\0")
 
 
 if __name__ == "__main__":

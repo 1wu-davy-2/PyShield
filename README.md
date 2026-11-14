@@ -23,7 +23,7 @@ PyShield 是一套自研的 Python / Django 源码保护工具。构建期把业
 - **续期与时钟保护**：许可证带签发日期，续期后可在进程内热重载；runtime 用 Windows DPAPI（其它平台用 HMAC）保护最后运行日期，并写入主记录与独立锚点，删除单个状态文件不会重置回拨检测。模块加载时定期重新校验授权，长时间运行的进程不会跨过到期日仍在解密。
 - **构建绑定**：模块 AAD 同时绑定 `build_id` 与模块 id，跨构建移植密文会解密失败。
 - **多种密码套件**：AES-256-GCM、ChaCha20-Poly1305，以及零依赖的纯 Python ChaCha20 + HMAC-SHA256。纯 Python ChaCha 按 64 KiB 分块异或，避免大模块产生超大整数。
-- **字节码 / 原生 runtime**：默认 `--runtime-pyc`；`--runtime-native` 用 Cython 把 runtime 编译为 `.pyd` / `.so`，进一步提高静态提取门槛。`--runtime-source` 仅供调试，会把解密逻辑以明文发布。
+- **字节码 / 原生 runtime**：Trail 默认 `--runtime-pyc`；Pro / Enterprise 在工具链可用时默认 `--runtime-native`，用 Cython 把 runtime 编译为 `.pyd` / `.so`，并执行符号剥离、PDB/CodeView 清理。主密钥不再作为单个 Base85 常量写入 runtime，而是拆分、XOR 掩码后由 `_keyring` 在运行时重建。`--runtime-source` 仅供调试，会把解密逻辑以明文发布。
 - **离线边界**：客户端必须在本地完成解密，因此主密钥最终会进入客户环境；在完全不联网、不依赖硬件密钥的前提下，不存在“攻击者拿不到明文”的方案。PyShield 的目标是把成本从脚本提取提升到逆向与动态调试级别；真正的机密性边界需要服务端解锁或 TPM/加密狗。
 
 ## 环境要求
@@ -32,7 +32,7 @@ PyShield 是一套自研的 Python / Django 源码保护工具。构建期把业
 
 - CPython，推荐 3.12（在 3.12.0 上验证）
 - 可选 `cryptography`：启用 AES-256-GCM / ChaCha20-Poly1305
-- 可选 `Cython`、`setuptools` 和 C 编译器：启用 `--runtime-native`
+- 可选 `Cython`、`setuptools`、`strip`/`llvm-strip` 和 C 编译器：启用 `--runtime-native`；打包带原生能力的桌面构建器时也需要 `Cython>=3`
 - 目标项目根目录必须存在 `manage.py`
 
 部署机：
@@ -145,8 +145,8 @@ python shield.py license deactivate
 | `--integrity` | `protected`（默认，代码 + runtime）、`full`（含数据文件）、`off` |
 | `--mutable` | 允许现场修改、不进入清单的额外文件模式（fnmatch），可重复 |
 | `--cipher` | `auto`（默认）、`chacha`、`chacha-pure`、`aesgcm` |
-| `--runtime-pyc` | runtime 只发布 sourceless `.pyc`（默认；可显式指定） |
-| `--runtime-native` | 用 Cython 编译 runtime（与 `--runtime-pyc` / `--runtime-source` 互斥） |
+| `--runtime-pyc` | runtime 只发布 sourceless `.pyc`（试用版/缺工具链时的默认；可显式指定） |
+| `--runtime-native` | 用 Cython 编译 runtime，并 strip/清 PDB/CodeView（Pro/Enterprise 在工具链可用时的默认；与 `--runtime-pyc` / `--runtime-source` 互斥） |
 | `--runtime-source` | runtime 以 `.py` 发布，仅用于调试；会暴露解密逻辑 |
 | `--encrypt-migrations` | 迁移文件也加密 |
 | `--encrypt-tests` | 测试文件也加密 |
@@ -167,11 +167,13 @@ python shield.py license deactivate
 
 | 模式 | 说明 |
 | --- | --- |
-| 默认 / `--runtime-pyc` | runtime 编译为 `UNCHECKED_HASH` 的 sourceless `.pyc`，不发布 runtime 源码 |
-| `--runtime-native` | 用 Cython 编译 `_core`、`_crypto`、`_ed25519`、`_chacha_fast` 为 `.pyd` / `.so` |
+| `--runtime-pyc` | runtime 编译为 `UNCHECKED_HASH` 的 sourceless `.pyc`，不发布 runtime 源码 |
+| `--runtime-native` | 用 Cython 编译 `_core`、`_crypto`、`_ed25519`、`_chacha_fast`、`_keyring` 为 `.pyd` / `.so`；构建后执行符号剥离、删除 `.pdb` 并清 PE CodeView 目录 |
 | `--runtime-source` | runtime 以 `.py` 发布，只用于排查问题；会暴露解密逻辑 |
 
-原生 runtime 与操作系统、CPU 架构和 Python ABI 绑定，必须在与部署机一致的环境中构建。构建器自身也不再以明文 `datas` 携带 runtime 模板，而是使用编译进 PYZ 的压缩资源。
+主密钥由构建时生成的 `_keyring` 模块保存：拆成 8 段并与随机掩码 XOR，`strings` 不会得到完整 Base85 主密钥；运行时再重建。它仍然可以被有能力的攻击者通过调用模块函数或内存 dump 获取，不是机密性边界。
+
+原生 runtime 与操作系统、CPU 架构和 Python ABI 绑定，必须在与部署机一致的环境中构建。构建器自身也不再以明文 `datas` 携带 runtime 模板，而是使用编译进 PYZ 的压缩资源。桌面构建器打包了 Cython/setuptools，可通过隐藏的 `--pyshield-setup` 子进程完成原生编译；C 编译器和 strip 工具仍需本机安装。
 
 ## 完整性清单
 
@@ -246,7 +248,7 @@ python shield.py issue --secret <output>.shield-secret.json -e 2027-12-31
 ## 安全边界
 
 - 服务端代码最终要在内存中解密，runtime 中的 `master_key` 也可能被提取；本工具提高的是逆向与源码泄露门槛，不是绝对不可破解的 DRM。
-- **离线客户端不存在绝对机密性**：许可证不再携带 `build_key`，默认 runtime 也不再发布 `.py` 源码，但拿到发布目录且有逆向能力的攻击者仍可提取主密钥并自行还原模块。需要真正机密性时，应引入服务端解锁、TPM/加密狗或额外的原生密钥模块。
+- **离线客户端不存在绝对机密性**：许可证不再携带 `build_key`，runtime 也不再发布 `.py` 源码；主密钥被拆分/掩码存放，不再以单个 Base85 常量出现，但拿到发布目录且有逆向能力的攻击者仍可通过调用 `_keyring` 或内存 dump 提取主密钥并自行还原模块。需要真正机密性时，应引入服务端解锁、TPM/加密狗或额外的原生密钥模块。
 - Ed25519 签名可以阻止伪造许可证，但无法阻止攻击者绕过校验逻辑或 dump 已解密的代码。
 - 完整性清单由 runtime 自身执行校验；如果攻击者可以整体替换 `_shield_runtime/`，清单也会一起失效。它用于发现现场误改或局部篡改，不是二进制级防篡改。
 - 时钟回拨检测依赖本地状态与 DPAPI/HMAC；删除主记录与锚点后仍可重置历史，服务端时间或硬件单调计数器才是可靠锚点。宽限期和到期日仍应通过合同与授权流程约束。
@@ -255,7 +257,7 @@ python shield.py issue --secret <output>.shield-secret.json -e 2027-12-31
 - 构建与部署必须使用相同的 Python 小版本；原生 runtime 还要求相同的操作系统和 CPU 架构。
 - 迁移与测试默认保持明文；模板与静态资源不加密，前端代码对用户可见。
 - 泄漏 `*.shield-secret.json` 等同于泄漏构建方最高权限密钥，应立即重新构建并作废旧包。
-- 发布卫生（Authenticode、PDB 路径清理、发布物暴露审计）见 [docs/security-hardening.md](docs/security-hardening.md)。
+- 发布卫生：原生 runtime 已做符号剥离和 PDB/CodeView 清理，UPX 已关闭；Authenticode 签名与构建器内置二进制的 PDB 路径审计仍需发布流程处理，见 [docs/security-hardening.md](docs/security-hardening.md)。
 - 构建器自身的实验性自保护构建见 [docs/selfbuild-poc.md](docs/selfbuild-poc.md)；它只提高静态逆向成本，不改变上述离线边界。
 
 ## 文档

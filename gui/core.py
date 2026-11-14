@@ -29,7 +29,7 @@ HISTORY_FILENAME = "history.json"
 
 CIPHERS = ("chacha-pure", "chacha", "aesgcm")
 INTEGRITY_MODES = ("protected", "full", "off")
-RUNTIME_MODES = ("source", "pyc")
+RUNTIME_MODES = ("source", "pyc", "native")
 EXPIRY_MODES = ("never", "days", "date")
 BINDING_MODES = ("any", "first-run", "fixed")
 MIN_PYTHON = (3, 10)
@@ -39,7 +39,7 @@ HISTORY_LIMIT = 100
 
 DEFAULT_CIPHER = "chacha-pure"
 DEFAULT_INTEGRITY = "protected"
-DEFAULT_RUNTIME = "pyc"
+DEFAULT_RUNTIME = "native"
 
 EMBEDDED_PYTHON = f"{sys.version_info[0]}.{sys.version_info[1]}.{sys.version_info[2]}"
 EMBEDDED_PYTHON_MINOR = f"{sys.version_info[0]}.{sys.version_info[1]}"

@@ -25,11 +25,11 @@ from pathlib import Path
 
 from . import _crypto
 from . import _ed25519
+from . import _keyring
 from . import _machine
 from . import _secure_store
 
 BUILD_ID = "__PYSHELD_BUILD_ID__"
-MASTER_KEY_B85 = "__PYSHELD_MASTER_KEY__"
 SIGNING_PUBLIC_KEY_B85 = "__PYSHELD_SIGNING_PUBLIC_KEY__"
 PYTHON_VERSION = "__PYSHELD_PYTHON_VERSION__"
 CIPHER = "__PYSHELD_CIPHER__"
@@ -103,7 +103,7 @@ def _read_license() -> tuple[Path, bytes]:
 
 
 def _master_key() -> bytes:
-    return _crypto.b85decode(MASTER_KEY_B85)
+    return _keyring.master_key()
 
 
 def _build_key(master_key: bytes) -> bytes:

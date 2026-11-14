@@ -290,9 +290,14 @@
                       </button>
                       <button class="segment" data-value="pyc" role="radio">
                         <span>字节码运行时</span>
-                        <small>推荐 · 无源码</small>
+                        <small>兼容 · 无源码</small>
+                      </button>
+                      <button class="segment" data-value="native" role="radio">
+                        <span>原生运行时</span>
+                        <small>专业版 · Cython 编译</small>
                       </button>
                     </div>
+                    <p class="field-hint" id="nativeRuntimeHint" hidden></p>
                   </div>
                   <div class="field">
                     <label>完整性清单</label>
@@ -716,9 +721,11 @@
                 <div class="field">
                   <label for="settingRuntime">默认运行时</label>
                   <select id="settingRuntime">
-                    <option value="pyc">字节码运行时（推荐）</option>
+                    <option value="native">原生运行时（专业版）</option>
+                    <option value="pyc">字节码运行时</option>
                     <option value="source">源码运行时</option>
                   </select>
+                  <p class="field-hint" id="settingNativeHint" hidden></p>
                 </div>
                 <div class="field">
                   <label for="settingSuffix">输出目录后缀</label>

@@ -10,7 +10,11 @@
     aesgcm: "AES-256-GCM",
   };
   const INTEGRITY_LABELS = { protected: "保护核心", full: "完整校验", off: "关闭" };
-  const RUNTIME_LABELS = { source: "源码运行时（调试）", pyc: "字节码运行时" };
+  const RUNTIME_LABELS = {
+    source: "源码运行时（调试）",
+    pyc: "字节码运行时",
+    native: "原生运行时（Cython）",
+  };
   const BINDING_LABELS = {
     any: "不绑定设备",
     "first-run": "首次启动自动绑定",
@@ -78,6 +82,7 @@
     license: null,
     trial: null,
     integrity: null,
+    nativeRuntime: null,
     trialTimer: null,
     trialTries: 0,
   };
@@ -980,7 +985,16 @@
     const settings = state.settings || {};
     $("#settingCipher").value = settings.cipher || "chacha-pure";
     $("#settingIntegrity").value = settings.integrity || "protected";
-    $("#settingRuntime").value = settings.runtime || "pyc";
+    $("#settingRuntime").value = settings.runtime || "native";
+    const nativeOption = $("#settingRuntime option[value='native']");
+    if (nativeOption) nativeOption.disabled = Boolean(nativeRuntimeBlockedReason(state.license));
+    if (
+      nativeOption &&
+      nativeOption.disabled &&
+      $("#settingRuntime").value === "native"
+    ) {
+      $("#settingRuntime").value = "pyc";
+    }
     $("#settingSuffix").value = settings.output_suffix || "-shielded";
     $("#settingAutoPython").checked = settings.auto_detect_python !== false;
     $("#settingNoVerify").checked = settings.no_verify === true;
@@ -1042,6 +1056,7 @@
     }
     state.settings = response.settings;
     $("#suffixHint").textContent = response.settings.output_suffix;
+    if (response.warning) toast(response.warning, "error");
     if (state.outputAuto) {
       const project = $("#projectPath").value.trim();
       if (project) $("#outputPath").value = `${project.replace(/[\\/]+$/, "")}${response.settings.output_suffix}`;
@@ -1136,8 +1151,26 @@
     return Boolean(license && license.edition === "trial");
   }
 
+  function licenseAllowsNativeRuntime(license) {
+    if (!license || !license.valid) return false;
+    if (license.mode === "development") return true;
+    return Array.isArray(license.features) && license.features.includes("native-runtime");
+  }
+
+  function nativeRuntimeBlockedReason(license) {
+    if (!licenseAllowsNativeRuntime(license)) {
+      return "原生运行时需要专业版或企业版授权。";
+    }
+    const info = state.nativeRuntime || {};
+    if (info.available === false) {
+      return info.reason || "本机缺少 Cython、C 编译器或 strip 工具。";
+    }
+    return "";
+  }
+
   function applyEditionLimits(license) {
     const trial = isTrialEdition(license);
+    const nativeBlocked = nativeRuntimeBlockedReason(license);
     document.body.classList.toggle("is-trial", trial);
     $$("#cipherGroup .segment").forEach((button) => {
       const locked = trial && button.dataset.value !== "chacha-pure";
@@ -1149,17 +1182,51 @@
       button.classList.toggle("is-locked", locked);
       button.setAttribute("aria-disabled", locked ? "true" : "false");
     });
+    $$("#runtimeGroup .segment").forEach((button) => {
+      const locked = button.dataset.value === "native" && Boolean(nativeBlocked);
+      button.classList.toggle("is-locked", locked);
+      button.setAttribute("aria-disabled", locked ? "true" : "false");
+      button.title = locked ? nativeBlocked : "";
+    });
+    const nativeHint = $("#nativeRuntimeHint");
+    if (nativeHint) {
+      nativeHint.hidden = !nativeBlocked;
+      nativeHint.textContent = nativeBlocked ? `原生运行时不可用：${nativeBlocked}` : "";
+    }
+    const settingNativeHint = $("#settingNativeHint");
+    if (settingNativeHint) {
+      settingNativeHint.hidden = !nativeBlocked;
+      settingNativeHint.textContent = nativeBlocked
+        ? `原生运行时不可用：${nativeBlocked}`
+        : "";
+    }
+    const nativeOption = $("#settingRuntime option[value='native']");
+    if (nativeOption) nativeOption.disabled = Boolean(nativeBlocked);
+    if (
+      nativeBlocked &&
+      getSegment("runtimeGroup") === "native"
+    ) {
+      setSegment("runtimeGroup", "pyc");
+    }
+    if (
+      nativeBlocked &&
+      $("#settingRuntime") &&
+      $("#settingRuntime").value === "native"
+    ) {
+      $("#settingRuntime").value = "pyc";
+    }
     const customer = $("#customer");
     if (customer) {
       customer.disabled = trial;
       if (trial && customer.value) customer.value = "";
     }
-    if (!trial) return;
-    if (getSegment("cipherGroup") && getSegment("cipherGroup") !== "chacha-pure") {
-      setSegment("cipherGroup", "chacha-pure");
-    }
-    if (getSegment("integrityGroup") === "full") {
-      setSegment("integrityGroup", "protected");
+    if (trial) {
+      if (getSegment("cipherGroup") && getSegment("cipherGroup") !== "chacha-pure") {
+        setSegment("cipherGroup", "chacha-pure");
+      }
+      if (getSegment("integrityGroup") === "full") {
+        setSegment("integrityGroup", "protected");
+      }
     }
     syncSummary();
   }
@@ -1608,7 +1675,7 @@
     const settings = state.settings || {};
     setSegment("cipherGroup", settings.cipher || "chacha-pure");
     setSegment("integrityGroup", settings.integrity || "protected");
-    setSegment("runtimeGroup", settings.runtime || "pyc");
+    setSegment("runtimeGroup", settings.runtime || "native");
     setSegment("expiryGroup", "never");
     setSegment("bindingGroup", "any");
     $("#noVerify").checked = settings.no_verify === true;
@@ -1637,6 +1704,7 @@
       }
     }
     state.settings = response.settings;
+    state.nativeRuntime = response.native_runtime || null;
     state.machine = response.machine || "";
     $("#machineFingerprint").value = state.machine;
     renderIntegrity(response.integrity);
@@ -1882,6 +1950,10 @@
           tampered: false,
           message: "预览模式",
           repair_sources: [],
+        },
+        native_runtime: {
+          available: false,
+          reason: "预览模式未检测本机编译工具链",
         },
       });
     }
@@ -2326,7 +2398,14 @@
         toast("试用版只能使用 ChaCha20 纯 Python", "error");
       }
     });
-    onSegment("runtimeGroup", null);
+    onSegment("runtimeGroup", (value) => {
+      if (value !== "native") return;
+      const reason = nativeRuntimeBlockedReason(state.license);
+      if (!reason) return;
+      setSegment("runtimeGroup", "pyc");
+      toast(`原生运行时不可用：${reason}`, "error");
+      syncSummary();
+    });
     onSegment("integrityGroup", (value) => {
       if (isTrialEdition(state.license) && value === "full") {
         setSegment("integrityGroup", "protected");

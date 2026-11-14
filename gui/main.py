@@ -47,7 +47,53 @@ def _dispatch_message(api: Api, window, payload: dict) -> None:
         _handle_link(api, window, link)
 
 
+def _run_embedded_setup(argv: list[str]) -> bool:
+    """Run a build script inside the frozen builder process.
+
+    ``pyshield.builder`` needs to execute ``setup.py build_ext`` for native
+    runtime builds. In a PyInstaller onefile app ``sys.executable`` is the app
+    itself, so the app exposes this hidden entry point instead of requiring an
+    external Python installation.
+    """
+    if len(argv) < 3 or argv[1] != "--pyshield-setup":
+        return False
+    import runpy
+
+    script = argv[2]
+    log_path = Path(script).with_name("native-setup.log")
+    try:
+        log = log_path.open("a", encoding="utf-8", buffering=1)
+    except OSError:
+        log = open(os.devnull, "w", encoding="utf-8")
+    # Windowed PyInstaller builds have sys.stdout/stderr set to None. Cython's
+    # compiled modules can block when they try to write progress to them, so
+    # give the nested setup process a real stream.
+    sys.stdout = log
+    sys.stderr = log
+    code = 0
+    try:
+        sys.argv = [script, *argv[3:]]
+        runpy.run_path(script, run_name="__main__")
+    except SystemExit as exc:
+        code = exc.code if isinstance(exc.code, int) else 1
+    except BaseException:
+        import traceback
+
+        traceback.print_exc()
+        code = 1
+    finally:
+        try:
+            log.flush()
+        except OSError:
+            pass
+    # Some compiler/setuptools paths leave non-daemon threads behind. This is
+    # a short-lived helper process, so terminate it deterministically.
+    os._exit(code)
+
+
 def main() -> int:
+    if _run_embedded_setup(sys.argv):
+        return 0
     import webview
 
     link = instance.deep_link_from_argv(sys.argv)

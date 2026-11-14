@@ -132,6 +132,8 @@ class RequestValidationTests(unittest.TestCase):
     def test_valid_request(self) -> None:
         request = core.BuildRequest.from_payload(self.payload())
         self.assertEqual(core.validate_request(request), [])
+        native = core.BuildRequest.from_payload(self.payload(runtime="native"))
+        self.assertEqual(core.validate_request(native), [])
 
     def test_missing_project_and_output(self) -> None:
         request = core.BuildRequest.from_payload({})
@@ -155,7 +157,7 @@ class RequestValidationTests(unittest.TestCase):
 
     def test_unknown_options(self) -> None:
         request = core.BuildRequest.from_payload(
-            self.payload(cipher="rot13", integrity="strict", runtime="native")
+            self.payload(cipher="rot13", integrity="strict", runtime="jit")
         )
         errors = core.validate_request(request)
         self.assertTrue(any("未知加密算法" in item for item in errors))
@@ -229,6 +231,7 @@ class SettingsAndHistoryTests(unittest.TestCase):
     def test_defaults_and_roundtrip(self) -> None:
         settings = core.load_settings()
         self.assertEqual(settings["cipher"], core.DEFAULT_CIPHER)
+        self.assertEqual(settings["runtime"], core.DEFAULT_RUNTIME)
         self.assertEqual(settings["output_suffix"], core.DEFAULT_OUTPUT_SUFFIX)
 
         saved = core.save_settings({
@@ -325,6 +328,27 @@ class BuildManagerTests(unittest.TestCase):
         self.assertEqual(history[0]["cipher"], "chacha-pure")
         self.assertEqual(history[0]["output"], str(self.root / "project-shielded"))
         self.assertEqual(history[0]["tool_mode"], "development")
+
+    def test_native_runtime_requires_paid_entitlement(self) -> None:
+        status = mock.Mock()
+        status.entitlement = None
+        status.allows.return_value = False
+        status.to_dict.return_value = {}
+        request = core.BuildRequest.from_payload({
+            "project": str(self.project),
+            "output": str(self.root / "native-out"),
+            "cipher": "chacha-pure",
+            "runtime": "native",
+            "no_verify": True,
+        })
+        with mock.patch("gui.backend.tool_license.require", return_value=status):
+            response = self.manager.start(request, core.load_settings())
+        self.assertFalse(response["ok"], response)
+        self.assertTrue(
+            any("原生运行时" in item for item in response["errors"]),
+            response,
+        )
+        self.assertEqual(self.manager.snapshot()["status"], "idle")
 
     def test_build_first_run_binding(self) -> None:
         request = core.BuildRequest.from_payload({
@@ -455,6 +479,8 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(boot["license"]["mode"], "development")
         self.assertEqual(boot["state"]["status"], "idle")
         self.assertEqual(boot["defaults"]["cipher"], core.DEFAULT_CIPHER)
+        self.assertIn("available", boot["native_runtime"])
+        self.assertIn("reason", boot["native_runtime"])
 
     def test_inspect_defaults_output(self) -> None:
         info = self.api.inspect({"project": str(self.project)})
@@ -465,6 +491,15 @@ class ApiTests(unittest.TestCase):
         self.assertIn("mypkg", info["project"]["packages"])
         self.assertEqual(info["output"], str(self.root / "project-shielded"))
         self.assertTrue(info["secret"].endswith(".shield-secret.json"))
+
+    def test_native_settings_fall_back_when_unavailable(self) -> None:
+        with mock.patch.object(
+            Api, "_native_runtime_block_reason", return_value="缺少 Cython"
+        ):
+            saved = self.api.save_settings({"runtime": "native"})
+        self.assertTrue(saved["ok"], saved)
+        self.assertEqual(saved["settings"]["runtime"], "pyc")
+        self.assertIn("warning", saved)
 
     def test_save_settings_and_history(self) -> None:
         saved = self.api.save_settings({"output_suffix": "-sealed"})

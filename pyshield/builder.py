@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 import importlib.machinery
+import importlib.util
 import json
 import marshal
 import os
@@ -27,8 +28,9 @@ MARKER_FILE = ".pyshield-build.json"
 MANIFEST_FILE = manifest.MANIFEST_FILENAME
 LICENSE_FILE = licensing.LICENSE_FILENAME
 PAYLOAD_CHUNK = 1000
-NATIVE_MODULES = ("_core", "_crypto", "_ed25519", "_chacha_fast")
+NATIVE_MODULES = ("_core", "_crypto", "_ed25519", "_chacha_fast", "_keyring")
 INTEGRITY_MODES = ("protected", "full", "off")
+KEYRING_PARTS = 8
 NATIVE_SETUP = """\
 import os
 
@@ -36,7 +38,7 @@ from setuptools import Extension, setup
 from Cython.Build import cythonize
 
 PACKAGE = "_shield_runtime"
-MODULES = ("_core", "_crypto", "_ed25519", "_chacha_fast")
+MODULES = ("_core", "_crypto", "_ed25519", "_chacha_fast", "_keyring")
 BASE = os.path.join("src", PACKAGE)
 SOURCES = []
 for name in MODULES:
@@ -298,6 +300,74 @@ def protect_module(module: Module, build_key: bytes, build_id: str, cipher: str)
     return crypto.b85encode(sealed)
 
 
+def _masked_key_material(master_key: bytes) -> tuple[bytes, list[bytes]]:
+    if len(master_key) != 32:
+        raise BuildError("master key must be 32 bytes")
+    mask = crypto.random_bytes(len(master_key))
+    masked = bytes(left ^ right for left, right in zip(master_key, mask))
+    part_size = len(masked) // KEYRING_PARTS
+    parts = [
+        masked[index * part_size:(index + 1) * part_size]
+        for index in range(KEYRING_PARTS)
+    ]
+    return mask, parts
+
+
+def render_keyring(master_key: bytes) -> str:
+    """Render per-build masked key material.
+
+    The runtime still has to reconstruct the key locally, but the full key is
+    never present as one literal. A plain ``strings`` run only finds random
+    masked hex fragments. This is cost raising, not a confidentiality boundary.
+    """
+    mask, parts = _masked_key_material(master_key)
+    lines = "\n".join(f'    bytes.fromhex("{part.hex()}"),' for part in parts)
+    return f'''\
+"""Generated per-build runtime key material.
+
+Do not commit or reuse this file. The master key is split and XOR-masked so it
+is not recoverable with a plain ``strings`` scan. This raises extraction cost;
+it is not a confidentiality boundary.
+"""
+
+from __future__ import annotations
+
+_MASK = bytes.fromhex("{mask.hex()}")
+_PARTS = (
+{lines}
+)
+
+
+def master_key() -> bytes:
+    material = b"".join(_PARTS)
+    return bytes(
+        value ^ _MASK[index % len(_MASK)]
+        for index, value in enumerate(material)
+    )
+'''
+
+
+def assert_no_master_key(root: Path, master_key: bytes) -> None:
+    """Fail the build if the output still exposes the full master key."""
+    needles = (
+        crypto.b85encode(master_key).encode("ascii"),
+        master_key,
+        master_key.hex().encode("ascii"),
+    )
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        try:
+            data = path.read_bytes()
+        except OSError:
+            continue
+        for needle in needles:
+            if needle and needle in data:
+                raise BuildError(
+                    f"master key is still exposed in {path}; refusing to publish"
+                )
+
+
 def install_runtime(
     output: Path,
     build_id: str,
@@ -323,7 +393,6 @@ def install_runtime(
     text = core.read_text(encoding="utf-8")
     replacements = {
         "__PYSHELD_BUILD_ID__": build_id,
-        "__PYSHELD_MASTER_KEY__": crypto.b85encode(master_key),
         "__PYSHELD_SIGNING_PUBLIC_KEY__": crypto.b85encode(signing_public_key),
         "__PYSHELD_PYTHON_VERSION__": f"{sys.version_info[0]}.{sys.version_info[1]}",
         "__PYSHELD_CIPHER__": cipher,
@@ -336,6 +405,9 @@ def install_runtime(
     if "__PYSHELD_" in text:
         raise BuildError("runtime template contains unresolved placeholders")
     core.write_text(text, encoding="utf-8", newline="\n")
+    (runtime / "_keyring.py").write_text(
+        render_keyring(master_key), encoding="utf-8", newline="\n",
+    )
 
     if runtime_mode == "native":
         compile_runtime_native(runtime)
@@ -362,6 +434,148 @@ def find_mingw() -> Path | None:
     return Path(compiler).parent if compiler else None
 
 
+def _strip_tools() -> list[Path]:
+    tools: list[Path] = []
+    if os.name == "nt":
+        mingw = find_mingw()
+        if mingw is not None:
+            for name in ("strip.exe", "strip", "llvm-strip.exe", "llvm-strip", "objcopy.exe", "objcopy"):
+                candidate = mingw / name
+                if candidate.is_file():
+                    tools.append(candidate)
+    for name in ("strip", "llvm-strip", "objcopy"):
+        candidate = shutil.which(name)
+        if candidate:
+            tools.append(Path(candidate))
+    seen: set[str] = set()
+    unique: list[Path] = []
+    for tool in tools:
+        key = str(tool).lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(tool)
+    return unique
+
+
+def native_runtime_available() -> tuple[bool, str]:
+    """Return whether auto-selected native runtime can be built and hardened."""
+    missing = [
+        name for name in ("Cython", "setuptools")
+        if importlib.util.find_spec(name) is None
+    ]
+    if missing:
+        return False, "缺少 " + "、".join(missing) + "；请安装 cython 与 setuptools"
+    compiler = find_mingw()
+    if compiler is None:
+        compiler = shutil.which("cl") or shutil.which("cc") or shutil.which("gcc")
+    if compiler is None:
+        return False, "未找到 C 编译器；Windows 可安装 MinGW-w64 或设置 MINGW_PREFIX"
+    if not _strip_tools():
+        return False, "未找到 strip、llvm-strip 或 objcopy；无法完成原生符号清理"
+    return True, ""
+
+
+def _scrub_pe_debug_directory(path: Path) -> bool:
+    """Best-effort removal of the PE CodeView/debug directory.
+
+    This does not remove debug data outside the directory, but it removes the
+    standard pointer that tells debuggers where the PDB/CodeView record lives.
+    """
+    try:
+        data = bytearray(path.read_bytes())
+        if len(data) < 0x40 or data[:2] != b"MZ":
+            return False
+        pe_offset = int.from_bytes(data[0x3C:0x40], "little")
+        if pe_offset <= 0 or pe_offset + 24 > len(data):
+            return False
+        if data[pe_offset:pe_offset + 4] != b"PE\0\0":
+            return False
+        coff = pe_offset + 4
+        section_count = int.from_bytes(data[coff + 2:coff + 4], "little")
+        optional_size = int.from_bytes(data[coff + 16:coff + 18], "little")
+        optional = coff + 20
+        if optional + optional_size > len(data) or optional_size < 96:
+            return False
+        magic = int.from_bytes(data[optional:optional + 2], "little")
+        if magic == 0x10B:
+            directory = optional + 96
+            count_offset = optional + 92
+        elif magic == 0x20B:
+            directory = optional + 112
+            count_offset = optional + 108
+        else:
+            return False
+        directory_count = int.from_bytes(data[count_offset:count_offset + 4], "little")
+        if directory_count <= 6 or directory + 7 * 8 > len(data):
+            return False
+
+        entry = directory + 6 * 8
+        rva = int.from_bytes(data[entry:entry + 4], "little")
+        size = int.from_bytes(data[entry + 4:entry + 8], "little")
+        data[entry:entry + 8] = b"\0" * 8
+
+        if rva and size:
+            section_table = optional + optional_size
+            for index in range(section_count):
+                section = section_table + index * 40
+                if section + 40 > len(data):
+                    break
+                virtual_size = int.from_bytes(data[section + 8:section + 12], "little")
+                virtual_address = int.from_bytes(data[section + 12:section + 16], "little")
+                raw_size = int.from_bytes(data[section + 16:section + 20], "little")
+                raw_pointer = int.from_bytes(data[section + 20:section + 24], "little")
+                span = max(virtual_size, raw_size)
+                if virtual_address <= rva < virtual_address + span:
+                    offset = raw_pointer + (rva - virtual_address)
+                    if 0 <= offset and offset + size <= len(data):
+                        data[offset:offset + size] = b"\0" * size
+                    break
+        path.write_bytes(data)
+        return True
+    except (OSError, ValueError, IndexError):
+        return False
+
+
+def _strip_native_artifact(path: Path) -> bool:
+    stripped = False
+    for tool in _strip_tools():
+        is_objcopy = tool.name.lower().startswith("objcopy")
+        temporary = path.with_name(path.name + ".stripped")
+        if is_objcopy:
+            command = [str(tool), "--strip-unneeded", str(path), str(temporary)]
+        else:
+            command = [str(tool), "--strip-unneeded", str(path)]
+        try:
+            completed = subprocess.run(
+                command, capture_output=True, text=True,
+                encoding="utf-8", errors="replace",
+            )
+        except OSError:
+            completed = None
+        if is_objcopy:
+            if completed is not None and completed.returncode == 0 and temporary.is_file():
+                os.replace(temporary, path)
+                stripped = True
+                break
+            temporary.unlink(missing_ok=True)
+        elif completed is not None and completed.returncode == 0:
+            stripped = True
+            break
+
+    if path.suffix.lower() in {".pyd", ".dll"}:
+        _scrub_pe_debug_directory(path)
+    return stripped
+
+
+def _remove_debug_sidecars(runtime: Path) -> None:
+    for pattern in ("*.pdb", "*.ilk", "*.exp", "*.lib"):
+        for sidecar in runtime.glob(pattern):
+            try:
+                sidecar.unlink()
+            except OSError:
+                pass
+
+
 def compile_runtime_native(runtime: Path) -> None:
     try:
         import Cython  # noqa: F401
@@ -379,7 +593,19 @@ def compile_runtime_native(runtime: Path) -> None:
         shutil.copytree(runtime, package_source)
         (build_dir / "setup.py").write_text(NATIVE_SETUP, encoding="utf-8", newline="\n")
 
-        command = [sys.executable, "setup.py", "build_ext"]
+        frozen = bool(
+            getattr(sys, "frozen", False)
+            or globals().get("__compiled__") is not None
+        )
+        if frozen:
+            # A frozen app cannot run ``python setup.py`` through sys.executable;
+            # gui/main.py exposes a hidden setup runner for this nested step.
+            command = [
+                sys.executable, "--pyshield-setup",
+                str(build_dir / "setup.py"), "build_ext",
+            ]
+        else:
+            command = [sys.executable, "setup.py", "build_ext"]
         env = os.environ.copy()
         mingw = find_mingw() if os.name == "nt" else None
         if mingw is not None:
@@ -393,6 +619,12 @@ def compile_runtime_native(runtime: Path) -> None:
         )
         if completed.returncode != 0:
             details = (completed.stdout + completed.stderr).strip()
+            setup_log = build_dir / "native-setup.log"
+            if setup_log.is_file():
+                try:
+                    details += "\n" + setup_log.read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    pass
             raise BuildError("cannot compile native runtime:\n" + details[-4000:])
 
         library_root = next(
@@ -401,14 +633,24 @@ def compile_runtime_native(runtime: Path) -> None:
         if library_root is None:
             raise BuildError("native runtime build produced no library directory")
 
+        stripped = 0
         for name in NATIVE_MODULES:
             for suffix in importlib.machinery.EXTENSION_SUFFIXES:
                 candidate = library_root / RUNTIME_PACKAGE / (name + suffix)
                 if candidate.is_file():
-                    shutil.copy2(candidate, runtime / candidate.name)
+                    destination = runtime / candidate.name
+                    shutil.copy2(candidate, destination)
+                    if _strip_native_artifact(destination):
+                        stripped += 1
                     break
             else:
                 raise BuildError(f"native runtime did not produce {name} extension")
+        _remove_debug_sidecars(runtime)
+        if stripped < len(NATIVE_MODULES):
+            raise BuildError(
+                "native runtime was built but symbols could not be stripped; "
+                "install binutils (strip) or LLVM and retry"
+            )
 
         for name in NATIVE_MODULES:
             (runtime / (name + ".py")).unlink(missing_ok=True)
@@ -680,6 +922,7 @@ def build(options: BuildOptions) -> BuildResult:
             temp, build_id, master_key, signing_public_key, cipher,
             options.integrity, runtime_mode,
         )
+        assert_no_master_key(temp / RUNTIME_PACKAGE, master_key)
 
         python_version = f"{sys.version_info[0]}.{sys.version_info[1]}"
         report_stage(options, "license", "writing license", 72)

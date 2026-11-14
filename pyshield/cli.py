@@ -239,6 +239,25 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 if problems:
                     raise tool_license.ToolLicenseError("；".join(problems))
+
+            # Pro/Enterprise builds default to native runtime when the build
+            # machine can actually compile and strip it. Explicit --runtime-*
+            # flags always win; missing tooling falls back to bytecode with a
+            # visible note instead of failing the build.
+            runtime_native = args.runtime_native
+            runtime_pyc = args.runtime_pyc
+            runtime_source = args.runtime_source
+            if not (runtime_native or runtime_pyc or runtime_source):
+                if license_status.allows(tool_license.FEATURE_NATIVE_RUNTIME):
+                    available, reason = builder.native_runtime_available()
+                    if available:
+                        runtime_native = True
+                    else:
+                        print(
+                            f"[pyshield] native runtime unavailable ({reason}); "
+                            "using bytecode runtime",
+                            file=sys.stderr,
+                        )
             builder.build(builder.BuildOptions(
                 project=args.project,
                 output=args.output,
@@ -253,9 +272,9 @@ def main(argv: list[str] | None = None) -> int:
                 cipher=cipher,
                 customer=args.customer,
                 integrity=args.integrity,
-                runtime_source=args.runtime_source,
-                runtime_pyc=args.runtime_pyc,
-                runtime_native=args.runtime_native,
+                runtime_source=runtime_source,
+                runtime_pyc=runtime_pyc,
+                runtime_native=runtime_native,
                 no_verify=args.no_verify,
                 force=args.force,
                 dry_run=args.dry_run,

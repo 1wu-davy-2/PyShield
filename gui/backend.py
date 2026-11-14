@@ -131,6 +131,20 @@ class BuildManager:
                     "errors": problems,
                     "license": license_status.to_dict(),
                 }
+        if request.runtime == "native":
+            if not license_status.allows(tool_license.FEATURE_NATIVE_RUNTIME):
+                return None, {
+                    "ok": False,
+                    "errors": ["原生运行时需要专业版或企业版授权，请切换为字节码运行时。"],
+                    "license": license_status.to_dict(),
+                }
+            available, reason = builder.native_runtime_available()
+            if not available:
+                return None, {
+                    "ok": False,
+                    "errors": [f"原生运行时不可用：{reason}"],
+                    "license": license_status.to_dict(),
+                }
         return (verify_python, verify_note, license_status), None
 
     def check(self, request: core.BuildRequest, settings: dict) -> dict:
@@ -181,6 +195,7 @@ class BuildManager:
             integrity=request.integrity,
             runtime_source=request.runtime == "source",
             runtime_pyc=request.runtime == "pyc",
+            runtime_native=request.runtime == "native",
             no_verify=request.no_verify or verify_python is None,
             force=request.force,
             verify_python=verify_python,
@@ -407,6 +422,7 @@ class Api:
             "trial": self._trial_state(),
             "state": self.manager.snapshot(),
             "integrity": core.state_status(),
+            "native_runtime": self._native_runtime_state(),
         }
 
     def inspect(self, payload: dict | None = None) -> dict:
@@ -911,11 +927,21 @@ class Api:
         return self.manager.cancel()
 
     def save_settings(self, payload: dict | None = None) -> dict:
+        candidate = core._normalized_settings(payload or {})
+        warning = ""
+        if candidate["runtime"] == "native":
+            reason = self._native_runtime_block_reason()
+            if reason:
+                candidate["runtime"] = "pyc"
+                warning = f"原生运行时不可用，已回退为字节码运行时：{reason}"
         try:
-            settings = core.save_settings(payload or {})
+            settings = core.save_settings(candidate)
         except (OSError, state_db.StateError) as exc:
             return {"ok": False, "error": f"无法保存设置：{exc}", "integrity": core.state_status()}
-        return {"ok": True, "settings": settings}
+        response = {"ok": True, "settings": settings}
+        if warning:
+            response["warning"] = warning
+        return response
 
     def reveal(self, path: str = "") -> dict:
         target = Path(str(path or "")).expanduser()
@@ -955,6 +981,24 @@ class Api:
             return ""
         path = result[0] if isinstance(result, (list, tuple)) else result
         return str(path)
+
+    @staticmethod
+    def _native_runtime_state() -> dict:
+        available, reason = builder.native_runtime_available()
+        return {"available": available, "reason": reason}
+
+    @staticmethod
+    def _native_runtime_block_reason() -> str:
+        try:
+            status = tool_license.check(features=[tool_license.FEATURE_GUI])
+        except Exception as exc:  # pragma: no cover - defensive for GUI bootstrap
+            return f"无法校验工具授权：{exc}"
+        if not status.allows(tool_license.FEATURE_NATIVE_RUNTIME):
+            return "原生运行时需要专业版或企业版授权。"
+        available, reason = builder.native_runtime_available()
+        if not available:
+            return f"原生运行时不可用：{reason}"
+        return ""
 
     @staticmethod
     def _license_status() -> dict:
