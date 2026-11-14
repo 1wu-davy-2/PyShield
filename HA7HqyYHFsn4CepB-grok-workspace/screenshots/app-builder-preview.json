@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "PyShield 加密构建器",
+      "hasCanvas": false,
+      "bodyTextLen": 570,
+      "bodyTextHash": "60231ffd9ebf299d798fc6e7c8665ec81a4c2b4a3c94fc64669bd04642b4f563",
+      "bodyTextPrefix": "画面 未激活 试用中 构建 构建中 构建成功 记录 空记录 设置 关于 试用结束 申请页 开通成功 联系专业版 联系企业版 官网",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "PyShield 加密构建器",
+      "hasCanvas": false,
+      "bodyTextLen": 603,
+      "bodyTextHash": "bfa05cc500d1473a3a8bd7d11ae5a633dfbd6327e4483862ffa47d10b0d19613",
+      "bodyTextPrefix": "画面 桌面 · 未激活 桌面 · 试用中 桌面 · 构建 桌面 · 构建中 桌面 · 构建成功 桌面 · 记录 桌面 · 空记录",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-preview.json"
+}
