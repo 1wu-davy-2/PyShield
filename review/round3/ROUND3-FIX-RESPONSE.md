@@ -39,7 +39,7 @@
 - 全量单元测试：172 通过，1 跳过（原生工具链缺失）。
 - 冻结 exe 的隐藏 setup 子进程：已验证可导入 Cython、执行 `cythonize` 并正常退出（windowed bootloader 下需重定向 stdout/stderr）。
 - 主 exe 冒烟：启动后存活 12 秒；自保护 exe 同样存活 12 秒。
-- 受保护 Django 示例：`manage.py check` 通过，`manage.py reveal` 输出 `protected demo command OK`；`demo.hidden_flag.FLAG` 可从解密模块导入，输出中无明文泄漏。
+- 受保护 Django 示例：`manage.py check` 通过，`manage.py reveal` 输出 `protected demo command OK`；`demo.hidden_flag` 直接导入按设计抛出 `RuntimeError`，发布物中未发现明文 flag；flag 哈希见 `SHA256SUMS.txt`。
 - 受保护源码样本：28 个业务模块全部为 stub；无构建 secret、无 `.pyc`、无 `runtime_template`；`_core.py` 不含 `MASTER_KEY_B85`；`_keyring.py` 存在。
 - 原生 runtime 端到端构建：**未完成**（当前机器无 C 编译器和 strip），因此 strip/CodeView 逻辑有单元测试和代码检查，但没有本机原生 `.pyd` 的 `strings` 实测；需要 CI/审查方在带 MinGW 或 MSVC+LLVM 的环境复核。
 
