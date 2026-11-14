@@ -88,3 +88,5 @@ python tools/selfbuild.py --stage-only
 `tests/test_selfbuild.py` 会检查 staging 不包含 runtime 模板、受保护树全部为 stub、许可证不含 `build_key`，并在无 PyInstaller 的环境下实际导入受保护的 `pyshield.builder`。
 
 CI 的 `.github/workflows/selfbuild-poc.yml` 会在 Windows 上构建并上传实验产物；它不参与 `build-develop` 的正式 release。
+
+供安全审查使用的“PyInstaller 打包前受保护源码树”样本及其校验方法见 [selfbuild-review-sample.md](selfbuild-review-sample.md)。
