@@ -1,7 +1,7 @@
 1560efc99f1558a5207c0a6e10dd2ce6cc05f0643f531583109c0fcecc917e1c  PyShieldBuilder.exe
 bd18a6a7d1c7a272a51bc0527c30820e89846c748de2f20ee2bfffc7f7cd7126  PyShieldBuilder-selfbuild.exe
 1e05ca031cdb9b4b8350f74fcc741494e5c8cf23259a57650ab1c9a6c131f835  PyShieldBuilder-protected-sample-round3.zip
-eb5fc582c7072b7f95915ef6b646679d276fd3fcff587e9e4795243e5054904f  round3-django-shielded.zip
+cecfe77a6e04baa311a73041ef68f5f0476c5b0f736e357eaf16f4e130423384  round3-django-shielded.zip
 
 # flag value (demo.hidden_flag.FLAG) SHA-256:
 # 46b5119e53dcb631ca73426deb23910af129b589c8a9f618da1663aa9448e3bc

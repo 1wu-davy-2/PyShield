@@ -11,7 +11,7 @@
 - 打包前受保护源码树：`review/round3/PyShieldBuilder-protected-sample-round3.zip`
   - SHA-256：`1e05ca031cdb9b4b8350f74fcc741494e5c8cf23259a57650ab1c9a6c131f835`
 - 受保护 Django 测试工程：`review/round3/round3-django-shielded.zip`
-  - SHA-256：`eb5fc582c7072b7f95915ef6b646679d276fd3fcff587e9e4795243e5054904f`
+  - SHA-256：`cecfe77a6e04baa311a73041ef68f5f0476c5b0f736e357eaf16f4e130423384`
 - 源码：`develop @ 749ca3d`（含 `2b5b16d` 的原生 runtime 加固）
 
 ## 请重点验证

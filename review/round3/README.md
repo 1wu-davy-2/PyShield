@@ -7,7 +7,7 @@
 | `PyShieldBuilder.exe`（仓库根目录，未纳入 git） | 重新构建的桌面构建器，49,236,676 B |
 | `dist-selfbuild/PyShieldBuilder-selfbuild.exe`（未纳入 git） | 重新构建的自保护构建器，40,553,221 B |
 | `PyShieldBuilder-protected-sample-round3.zip` | PyInstaller 打包前的受保护源码树（28 个业务模块 stub），用于静态检查，423,766 B |
-| `round3-django-shielded.zip` | 可直接运行的受保护 Django 示例工程，用于 Crack Challenge，57,397 B |
+| `round3-django-shielded.zip` | 可直接运行的受保护 Django 示例工程，用于 Crack Challenge，57,506 B |
 | `ROUND3-CHALLENGE.md` | Crack Challenge 目标、flag 哈希与规则 |
 | `ROUND3-INVITATION.md` | 可直接发给审查方的邀请话术 |
 | `VULNERABILITY-REPORT-FORMAT.md` | 要求审查方使用的漏洞报告格式 |
