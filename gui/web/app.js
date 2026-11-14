@@ -248,6 +248,13 @@
     return parts[parts.length - 1] || "";
   }
 
+  function joinPath(base, leaf) {
+    const text = String(base || "").replace(/[\\/]+$/, "");
+    if (!text) return leaf;
+    const separator = text.includes("\\") ? "\\" : "/";
+    return `${text}${separator}${leaf}`;
+  }
+
   function syncExpiryFields() {
     const mode = getSegment("expiryGroup");
     $("#expireDaysField").hidden = mode !== "days";
@@ -289,6 +296,12 @@
     $("#summaryIntegrity").textContent = INTEGRITY_LABELS[form.integrity] || form.integrity;
     $("#summaryBinding").textContent = bindingLabel(form);
     $("#summaryLicense").textContent = expiresLabel(form);
+    const licenseFile = $("#summaryLicenseFile");
+    if (licenseFile) {
+      const path = form.output ? joinPath(form.output, "pyshield.lic") : "";
+      licenseFile.textContent = path || "—";
+      licenseFile.title = path;
+    }
     $("#statLicense").textContent = expiresLabel(form);
     if (!state.lastSummary) {
       $("#statLicenseHint").textContent = "当前表单未签发";
@@ -600,8 +613,101 @@
     $("#buildSubtitle").textContent = "正在生成受保护副本，请保持窗口打开。";
   }
 
+  function buildQuotaNote(license, trial) {
+    if (!license) return "确认后立即消耗 1 次构建额度。";
+    if (license.mode === "development") return "开发模式 · 不消耗构建额度。";
+    const trialData = trial || license.trial || {};
+    const isTrial = license.edition === "trial" || license.mode === "trial" || trialData.trial;
+    if (isTrial) {
+      let left = trialData.builds_left;
+      let limit = trialData.build_limit;
+      if ((left == null || left === "") && license.quota && license.quota.limit) {
+        left = Math.max(0, Number(license.quota.limit) - Number(license.quota.used || 0));
+        limit = license.quota.limit;
+      }
+      return `确认后立即消耗 1 次构建额度（试用剩余 ${left == null ? "—" : left}${limit ? ` / ${limit}` : ""} 次）。`;
+    }
+    if (license.quota && license.quota.limit) {
+      const left = Math.max(0, Number(license.quota.limit) - Number(license.quota.used || 0));
+      return `确认后立即消耗 1 次构建额度（本月剩余 ${left} 次）。`;
+    }
+    if (license.mode === "licensed") {
+      return "正式授权 · 不限制构建次数，确认后进入构建日志页。";
+    }
+    return "确认后立即消耗 1 次构建额度。";
+  }
+
+  function updateConfirmModal(form, check) {
+    if (check && check.output && !form.output.trim()) {
+      form.output = check.output;
+      $("#outputPath").value = check.output;
+      state.outputAuto = true;
+    }
+    state.lastForm = { ...form };
+    syncSummary();
+    const badge = $("#summaryBadge");
+    badge.textContent = state.lastSummary ? "待重新构建" : "待构建";
+    badge.className = "status-badge soft";
+    $("#confirmQuotaNote").textContent = buildQuotaNote(
+      (check && check.license) || state.license,
+      (check && check.trial) || state.trial
+    );
+    $("#buildConfirmStart").disabled = false;
+    $("#buildConfirmModal").hidden = false;
+    $("#buildConfirmStart").focus();
+  }
+
+  function closeBuildConfirm() {
+    $("#buildConfirmModal").hidden = true;
+    $("#buildConfirmStart").disabled = false;
+  }
+
+  function applyBuildQuota(license) {
+    if (!license || !state.trial || license.mode === "development") return;
+    const trialData = { ...state.trial };
+    if (license.trial && license.trial.builds_left != null) {
+      trialData.builds_left = license.trial.builds_left;
+      if (license.trial.max_builds != null) trialData.build_limit = license.trial.max_builds;
+    } else if (license.quota && license.quota.limit != null) {
+      trialData.builds_left = Math.max(
+        0,
+        Number(license.quota.limit) - Number(license.quota.used || 0)
+      );
+      trialData.build_limit = license.quota.limit;
+    } else {
+      return;
+    }
+    state.trial = trialData;
+    renderTrial({ trial: trialData });
+  }
+
   async function startBuild() {
     if (state.busy) return;
+    showErrors([]);
+    const form = collect();
+    state.lastForm = form;
+    const response = await call("check_build", form);
+    if (!response.ok) {
+      showErrors(response.errors || (response.error ? [response.error] : ["构建无法开始。"]));
+      if (!maybeShowTrialEnded(response.license)) {
+        if (response.license && response.license.code === "not_activated") {
+          switchView("trial");
+          toast("请先申请试用或导入授权", "error");
+        } else {
+          toast("请先修正表单问题", "error");
+        }
+      }
+      return;
+    }
+    if (response.license) renderLicense(response.license);
+    updateConfirmModal(form, response);
+  }
+
+  async function confirmStartBuild() {
+    if (state.busy) return;
+    const button = $("#buildConfirmStart");
+    if (button.disabled) return;
+    button.disabled = true;
     showErrors([]);
     const form = collect();
     state.lastForm = form;
@@ -617,6 +723,8 @@
 
     const response = await call("start_build", form);
     if (!response.ok) {
+      button.disabled = false;
+      closeBuildConfirm();
       setBusy(false);
       state.lastStatus = "idle";
       $("#progressBlock").hidden = true;
@@ -631,10 +739,13 @@
       }
       return;
     }
+    closeBuildConfirm();
+    if (response.license) renderLicense(response.license);
+    applyBuildQuota(response.license);
     if (response.note) appendLogLine(response.note);
     renderBuildHeader(form);
     switchView("build");
-    toast("构建已开始");
+    toast("构建已开始，已消耗 1 次构建额度");
     pollBuild();
   }
 
@@ -1529,6 +1640,7 @@
 
     const panel = new URLSearchParams(location.search).get("panel");
     if (state.preview && panel === "python") await openPythonModal();
+    if (state.preview && panel === "confirm") await startBuild();
   }
 
   // ---------------------------------------------------------------- preview
@@ -1786,6 +1898,31 @@
           summary: "Python 3.12.0 · Django 6.1.3 · cryptography 50.0.2",
         },
         machine: "9f3c1a72b0d84e51c4a201e57d8b16a3",
+      });
+    }
+    if (name === "check_build") {
+      const payload = args[0] || {};
+      if (state.previewState === "unlicensed") {
+        return Promise.resolve({
+          ok: false,
+          errors: ["请先申请试用或导入授权"],
+          license: mockLicense(),
+        });
+      }
+      if (state.previewState === "exhausted") {
+        return Promise.resolve({
+          ok: false,
+          errors: ["试用构建次数已用完（3/3），请购买专业版"],
+          license: mockLicense(),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        project: payload.project || "E:\\projects\\erp-portal",
+        output: payload.output || "E:\\projects\\erp-portal-shielded",
+        license: mockLicense(),
+        trial: mockTrial(),
+        note: "自动检测到校验解释器：.venv\\Scripts\\python.exe",
       });
     }
     if (name === "start_build") {
@@ -2192,6 +2329,11 @@
     $("#copyFingerprint").addEventListener("click", copyFingerprint);
     $("#useMachine").addEventListener("click", useMachine);
     $("#startBtn").addEventListener("click", startBuild);
+    $("#buildConfirmCancel").addEventListener("click", closeBuildConfirm);
+    $("#buildConfirmStart").addEventListener("click", confirmStartBuild);
+    $("#buildConfirmModal").addEventListener("click", (event) => {
+      if (event.target === $("#buildConfirmModal")) closeBuildConfirm();
+    });
     $("#cancelBtn").addEventListener("click", cancelBuild);
     $("#openOutput").addEventListener("click", () => {
       if (state.lastSummary) reveal(state.lastSummary.output);
@@ -2224,7 +2366,9 @@
     $$(".win-btn").forEach((button) => {
       button.addEventListener("click", () => windowAction(button.dataset.window));
     });
-    $(".topbar-title").addEventListener("dblclick", () => windowAction("maximize"));
+    $$(".topbar-title, .topbar-drag").forEach((node) => {
+      node.addEventListener("dblclick", () => windowAction("maximize"));
+    });
 
     $("#refreshBtn").addEventListener("click", async () => {
       $("#refreshBtn").classList.add("is-spinning");
@@ -2289,6 +2433,10 @@
     });
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
+      if (!$("#buildConfirmModal").hidden) {
+        closeBuildConfirm();
+        return;
+      }
       if (!$("#pythonModal").hidden) {
         closePythonModal();
         return;

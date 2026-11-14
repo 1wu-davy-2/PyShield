@@ -286,6 +286,41 @@ class BuildManagerTests(unittest.TestCase):
         self.assertEqual(secret["fingerprints"], [])
         self.assertEqual(core.load_history()[0]["binding"], "first-run")
 
+    def test_build_consumes_trial_quota_when_started(self) -> None:
+        _, _, public_key = license_admin.generate_root(self.root / "keys")
+        with mock.patch.dict(
+            "os.environ",
+            {
+                tool_license.ENV_PUBLIC_KEY: crypto.b85encode(public_key),
+                tool_license.ENV_HOME: str(self.root / "trial-home"),
+                tool_license.ENV_TRIAL_BUILDS: "3",
+            },
+        ):
+            os.environ.pop(tool_license.ENV_DEV, None)
+            status = tool_license.check()
+            self.assertEqual(status.mode, "trial")
+            self.assertEqual(status.trial["builds_left"], 3)
+
+            request = core.BuildRequest.from_payload({
+                "project": str(self.project),
+                "cipher": "chacha-pure",
+                "runtime": "pyc",
+                "no_verify": True,
+            })
+            check = self.manager.check(request, core.load_settings())
+            self.assertTrue(check["ok"], check)
+            self.assertEqual(tool_license.check().trial["builds_left"], 3)
+
+            start = self.manager.start(request, core.load_settings())
+            self.assertTrue(start["ok"], start)
+            self.assertEqual(start["license"]["mode"], "trial")
+            self.assertEqual(start["license"]["trial"]["builds_left"], 2)
+            self.assertEqual(tool_license.check().trial["builds_left"], 2)
+
+            snapshot = self.wait()
+            self.assertEqual(snapshot["status"], "success", snapshot["error"])
+            self.assertEqual(tool_license.check().trial["builds_left"], 2)
+
     def test_build_rejected_when_trial_is_exhausted(self) -> None:
         _, _, public_key = license_admin.generate_root(self.root / "keys")
         with mock.patch.dict(

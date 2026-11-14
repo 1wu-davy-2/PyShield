@@ -10,7 +10,7 @@ PyShield 把 Django 项目的 Python 源码加密成不可读的 stub，带许�
 
 当前状态：
 
-- 引擎（加密/清单/许可证/运行时）稳定，145 个单测全绿；
+- 引擎（加密/清单/许可证/运行时）稳定，146 个单测全绿；
 - 试用链路完整：exe 首启生成序列号 → 官网申请 → 14 天/3 次授权回传 → 自动激活；
 - 桌面端与官网页面已按 Grok 原型（`HA7HqyYHFsn4CepB-grok-workspace/`，UI 参考，不参与构建）统一视觉；
 - CI（GitHub Actions，`.github/workflows/build-develop.yml`）产出 `ci-develop-latest` 快照 release。
@@ -35,7 +35,7 @@ python tools/trial_demo.py --reset          # 清空演示数据
 # 界面预览（不需要 pywebview，浏览器直接打开）
 python -m http.server 8130 --directory gui/web
 # http://127.0.0.1:8130/index.html?preview=1&view=trial
-# 可用参数：view=workspace|build|history|trial|settings|about，state=unlicensed|exhausted，panel=python
+# 可用参数：view=workspace|build|history|trial|settings|about，state=unlicensed|exhausted，panel=python|confirm
 ```
 
 环境：Python 3.12+；桌面端额外需要 `pywebview`（Windows 走 `pythonnet` + WebView2）。生产引擎零第三方依赖（`cryptography` 可选加速）。
@@ -56,9 +56,9 @@ python -m http.server 8130 --directory gui/web
 | `pyshield/devsite.py` | 无公钥构建自动起本地模拟站 | keyless 构建 = 开发构建 |
 | `pyshield/python_runtime.py` | 校验解释器一键下载 | 镜像版本探测 + 嵌入包 + pip/Django |
 | `gui/` | 桌面端（backend 桥接 + web 界面） | 见 `docs/desktop-builder.md` |
-| `gui/web/` | 前端契约：144 个 `#id`、`.segment`、`.nav-item`、`.view` | 改视觉别改契约 |
+| `gui/web/` | 前端契约：224 个 `#id`、`.segment`、`.nav-item`、`.view` | 改视觉别改契约 |
 | `tools/` | build_commercial、trial_demo、make_icon | |
-| `tests/` | 145 个测试 | 新功能必须带测试 |
+| `tests/` | 146 个测试 | 新功能必须带测试 |
 
 ## 4. 关键设计决定（别踩）
 
@@ -66,13 +66,13 @@ python -m http.server 8130 --directory gui/web
 2. **没有公钥 ≠ 开发模式**：`check()` 的判定顺序是 `PYSHELD_DEV=1` → development；无公钥+有本地授权 → 未验签加载；无公钥+无授权 → `unlicensed`（首屏进版本页）。只有显式 `PYSHELD_DEV=1` 才不限构建。
 3. **试用策略只有一份**：`tool_license.trial_policy()` / `trial_build_problems()`，CLI 与 GUI 共用；试用比专业版更严格（仅 ChaCha20-pure、无 full 清单、无客户水印、3 次/14 天）。
 4. **错误靠 `code` 不靠文案**：`quota_exhausted` / `trial_expired` / `not_activated` / `machine_mismatch`，GUI 按 code 决定弹窗与跳转。
-5. **构建页是两个视图**：工作区（配置+摘要+开始加密）→ 构建日志页（进度+日志+结果卡）。跳转逻辑在 `app.js` 的 `startBuild()`，元素 id（`#progressBlock`、`#terminal` 等）原样搬过去的，交互契约没变。
+5. **构建页是两个视图**：工作区（全宽配置 + 底部操作条）→ 确认弹窗（摘要 + 额度提示）→ 构建日志页（进度+日志+结果卡）。`app.js` 的 `startBuild()` 只调 `check_build` 做无副作用校验并弹窗；`confirmStartBuild()` 才调 `start_build`，由后端在 `BuildManager.start()` 里记录配额。起始额度在确认时扣除，失败/取消不退还。元素 id（`#progressBlock`、`#terminal` 等）原样沿用，交互契约没变。
 6. **深链被浏览器拦是常态**：`pyshield://` 跳转需要用户手势；授权到账后 `Api._raise_window()` 自动置顶 + 轮询兜底（2.5s 一次）。
 7. **解释器下载只装到用户目录**：`%APPDATA%\PyShield\runtimes\`，`PYSHELD_RUNTIME_DIR` 可重定向；镜像只显示真正带 Windows 嵌入包的补丁版本（仅源码发布的安全补丁会被 HEAD 探测跳过）。
 
 ## 5. 测试与 CI
 
-- 本地：`python -m unittest discover -s tests`（145 个，3 个 skip）；
+- 本地：`python -m unittest discover -s tests`（146 个，Windows 下 1 个 skip）；
 - CI 七个 job：Unit ×2（ubuntu/windows）、Trial registration flow（真起进程）、Protected Django demo（`PYSHELD_DEV=1`，新门禁会拦自检构建，别删这个 env）、Windows/Linux builder、Publish CI snapshot；
 - 产物：release tag `ci-develop-latest`（exe 约 16MB）。
 

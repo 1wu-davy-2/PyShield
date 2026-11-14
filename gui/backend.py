@@ -82,10 +82,11 @@ class BuildManager:
         with self._lock:
             return self._state["status"] == "running"
 
-    def start(self, request: core.BuildRequest, settings: dict) -> dict:
+    def _prepare(self, request: core.BuildRequest, settings: dict):
+        """Validate a build request and resolve its license without side effects."""
         with self._lock:
             if self._state["status"] == "running":
-                return {"ok": False, "error": "已有构建任务正在运行。"}
+                return None, {"ok": False, "error": "已有构建任务正在运行。"}
 
         verify_python, verify_note = self._pick_verify_python(request, settings)
         if not request.output.strip() and request.project.strip():
@@ -97,12 +98,12 @@ class BuildManager:
                 f"{core.EMBEDDED_PYTHON_MINOR} 不匹配、未安装 Django。"
             )
         if errors:
-            return {"ok": False, "errors": errors}
+            return None, {"ok": False, "errors": errors}
 
         try:
             license_status = tool_license.require(features=[tool_license.FEATURE_GUI])
         except tool_license.ToolLicenseError as exc:
-            return {
+            return None, {
                 "ok": False,
                 "errors": [f"工具授权不可用：{exc}"],
                 "license": tool_license.status_dict(),
@@ -114,11 +115,44 @@ class BuildManager:
                 request.cipher, request.integrity, request.customer,
             )
             if problems:
-                return {
+                return None, {
                     "ok": False,
                     "errors": problems,
                     "license": license_status.to_dict(),
                 }
+        return (verify_python, verify_note, license_status), None
+
+    def check(self, request: core.BuildRequest, settings: dict) -> dict:
+        """Validate a build without starting it or consuming quota."""
+        prepared, response = self._prepare(request, settings)
+        if response is not None:
+            return response
+        verify_python, verify_note, license_status = prepared
+        return {
+            "ok": True,
+            "project": request.project,
+            "output": request.output,
+            "verify_python": verify_python,
+            "note": verify_note,
+            "license": license_status.to_dict(),
+        }
+
+    def start(self, request: core.BuildRequest, settings: dict) -> dict:
+        prepared, response = self._prepare(request, settings)
+        if response is not None:
+            return response
+        verify_python, verify_note, license_status = prepared
+
+        # A build consumes one quota unit as soon as it is confirmed. Failed or
+        # cancelled runs do not refund it; the confirmation dialog says so.
+        try:
+            tool_license.record_build(license_status)
+        except (tool_license.ToolLicenseError, OSError) as exc:
+            return {
+                "ok": False,
+                "errors": [f"无法记录授权配额：{exc}"],
+                "license": tool_license.status_dict(),
+            }
 
         options = builder.BuildOptions(
             project=str(Path(request.project).expanduser().resolve()),
@@ -161,7 +195,12 @@ class BuildManager:
             target=self._run, args=(options, request, verify_python, license_status), daemon=True,
         )
         self._thread.start()
-        return {"ok": True, "verify_python": verify_python, "note": verify_note}
+        return {
+            "ok": True,
+            "verify_python": verify_python,
+            "note": verify_note,
+            "license": license_status.to_dict(),
+        }
 
     def cancel(self) -> dict:
         with self._lock:
@@ -186,11 +225,6 @@ class BuildManager:
         except Exception as exc:
             self._finish("failed", None, str(exc), request)
         else:
-            try:
-                tool_license.record_build(license_status)
-            except (tool_license.ToolLicenseError, OSError) as exc:
-                self._finish("failed", None, f"构建已完成，但无法记录授权配额：{exc}", request)
-                return
             builder.update_tool_info(result.output, license_status.watermark())
             summary = self._summary(result, request, license_status)
             self._finish("success", summary, None, request)
@@ -548,9 +582,18 @@ class Api:
         window = self._window or (webview.windows[0] if webview.windows else None)
         if window is None:
             return {"ok": False, "error": "窗口尚未就绪。"}
+        # pywebview validates each filter as "Description (*.ext[;*.ext])".
+        # A bare "python*" pattern is rejected, so only offer .exe on Windows
+        # and leave the filter open elsewhere (interpreter binaries have no
+        # extension on Linux/macOS).
+        filters = (
+            ("Python 解释器 (*.exe)", "所有文件 (*.*)")
+            if sys.platform == "win32"
+            else ()
+        )
         result = window.create_file_dialog(
             webview.OPEN_DIALOG,
-            file_types=("Python 解释器 (*.exe;python*;python3*)", "所有文件 (*.*)"),
+            file_types=filters,
         )
         if not result:
             return {"ok": False, "cancelled": True}
@@ -809,6 +852,13 @@ class Api:
         if not serial:
             return {"ok": False, "error": "激活链接无效。"}
         return self.trial_apply(serial)
+
+    def check_build(self, payload: dict | None = None) -> dict:
+        request = core.BuildRequest.from_payload(payload)
+        response = self.manager.check(request, core.load_settings())
+        if response.get("ok"):
+            response["trial"] = self._trial_state()
+        return response
 
     def start_build(self, payload: dict | None = None) -> dict:
         request = core.BuildRequest.from_payload(payload)

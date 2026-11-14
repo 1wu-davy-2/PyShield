@@ -101,6 +101,7 @@
           </div>
           <p id="pageSubtitle">选择项目目录，配置保护参数，一键生成可部署的受保护副本。</p>
         </div>
+        <div class="topbar-drag pywebview-drag-region" aria-hidden="true"></div>
         <div class="topbar-actions">
           <button class="license-pill" id="licensePill" title="查看工具授权状态">
             <svg class="icon"><use href="#i-key"/></svg>
@@ -159,7 +160,7 @@
 
           <div class="workspace-grid">
             <div class="stack">
-              <section class="card">
+              <section class="card card-wide">
                 <header class="card-head">
                   <div>
                     <h2>项目与输出</h2>
@@ -375,7 +376,7 @@
                 </div>
               </section>
 
-              <section class="card">
+              <section class="card card-wide">
                 <header class="card-head">
                   <div>
                     <h2>高级选项</h2>
@@ -420,42 +421,22 @@
                 </div>
               </section>
             </div>
+          </div>
 
-            <div class="side-stack">
-              <section class="card summary-card">
-                <header class="card-head">
-                  <div>
-                    <h2>构建摘要</h2>
-                    <p>执行前请确认输出与许可证</p>
-                  </div>
-                  <span class="status-badge soft" id="summaryBadge">待构建</span>
-                </header>
-
-                <dl class="summary-list">
-                  <div><dt>项目</dt><dd id="summaryProject">—</dd></div>
-                  <div><dt>输出</dt><dd id="summaryOutput">—</dd></div>
-                  <div><dt>算法</dt><dd id="summaryCipher">ChaCha20 · 纯 Python</dd></div>
-                  <div><dt>运行时</dt><dd id="summaryRuntime">字节码运行时</dd></div>
-                  <div><dt>完整性</dt><dd id="summaryIntegrity">保护核心</dd></div>
-                  <div><dt>设备绑定</dt><dd id="summaryBinding">不绑定设备</dd></div>
-                  <div><dt>许可证</dt><dd id="summaryLicense">永久</dd></div>
-                </dl>
-
-                <div class="form-errors" id="formErrors" hidden>
-                  <div class="form-errors-title"><svg class="icon"><use href="#i-alert"/></svg> 请先修正以下问题</div>
-                  <ul id="formErrorsList"></ul>
-                </div>
-
-                <button class="btn primary action" id="startBtn">
-                  <svg class="icon"><use href="#i-play"/></svg>
-                  <span>开始加密</span>
-                </button>
-
-                <p class="security-note">
-                  <svg class="icon"><use href="#i-lock"/></svg>
-                  <span>构建密钥只在本机生成。部署时只分发输出目录，切勿带上 <code>*.shield-secret.json</code>。</span>
-                </p>
-              </section>
+          <div class="workspace-actions" id="workspaceActions">
+            <div class="form-errors" id="formErrors" hidden>
+              <div class="form-errors-title"><svg class="icon"><use href="#i-alert"/></svg> 请先修正以下问题</div>
+              <ul id="formErrorsList"></ul>
+            </div>
+            <div class="workspace-action-main">
+              <div class="workspace-action-copy">
+                <strong>确认输出与许可证后开始加密</strong>
+                <span>点击后会先弹出构建摘要，确认后进入构建日志页并消耗 1 次构建额度。</span>
+              </div>
+              <button class="btn primary action" id="startBtn">
+                <svg class="icon"><use href="#i-play"/></svg>
+                <span>开始加密</span>
+              </button>
             </div>
           </div>
         </section>
@@ -885,6 +866,44 @@
       <div class="modal-actions">
         <button class="btn primary" id="trialEndedBuy">购买专业版</button>
         <button class="btn ghost" id="trialEndedLater">稍后再说</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="buildConfirmModal" hidden>
+    <div class="modal-card build-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="buildConfirmTitle">
+      <header class="confirm-head">
+        <div>
+          <h2 id="buildConfirmTitle">确认开始加密</h2>
+          <p>执行前请确认输出与许可证</p>
+        </div>
+        <span class="status-badge soft" id="summaryBadge">待构建</span>
+      </header>
+
+      <dl class="summary-list confirm-summary">
+        <div><dt>项目</dt><dd id="summaryProject">—</dd></div>
+        <div><dt>输出</dt><dd id="summaryOutput">—</dd></div>
+        <div><dt>算法</dt><dd id="summaryCipher">ChaCha20 · 纯 Python</dd></div>
+        <div><dt>运行时</dt><dd id="summaryRuntime">字节码运行时</dd></div>
+        <div><dt>完整性</dt><dd id="summaryIntegrity">保护核心</dd></div>
+        <div><dt>设备绑定</dt><dd id="summaryBinding">不绑定设备</dd></div>
+        <div><dt>许可证</dt><dd id="summaryLicense">永久</dd></div>
+        <div><dt>许可证文件</dt><dd id="summaryLicenseFile">—</dd></div>
+      </dl>
+
+      <p class="confirm-quota" id="confirmQuotaNote">确认后立即消耗 1 次构建额度。</p>
+
+      <p class="security-note confirm-note">
+        <svg class="icon"><use href="#i-lock"/></svg>
+        <span>构建密钥只在本机生成。部署时只分发输出目录，切勿带上 <code>*.shield-secret.json</code>。</span>
+      </p>
+
+      <div class="modal-actions">
+        <button class="btn secondary" id="buildConfirmCancel">返回修改</button>
+        <button class="btn primary" id="buildConfirmStart">
+          <svg class="icon"><use href="#i-play"/></svg>
+          <span>确认并开始加密</span>
+        </button>
       </div>
     </div>
   </div>

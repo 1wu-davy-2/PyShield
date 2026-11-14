@@ -760,13 +760,15 @@ def require(
 
 
 def record_build(status: ToolLicenseStatus, today: date | None = None) -> None:
-    """Consume one build from the trial or monthly quota after a successful build."""
+    """Consume one build from the trial or monthly quota when a build starts."""
     today = today or date.today()
     if not status.valid or status.mode == "development":
         return
     if status.mode == "trial":
         payload = dict(status.trial or {})
         payload["builds"] = int(payload.get("builds", 0)) + 1
+        if payload.get("builds_left") is not None:
+            payload["builds_left"] = max(0, int(payload["builds_left"]) - 1)
         payload["last_build"] = today.isoformat()
         _save_trial(payload, status.machine)
         status.trial = payload
