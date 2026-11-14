@@ -19,7 +19,7 @@ Windows 双击 `dist/PyShieldBuilder.exe`，Linux 执行 `dist/PyShieldBuilder`�
 | 选项 | 默认值 | 说明 |
 | --- | --- | --- |
 | 加密算法 | ChaCha20 · 纯 Python | 部署机零额外依赖 |
-| 运行时形态 | 字节码运行时 | runtime 以 sourceless `.pyc` 发布 |
+| 运行时形态 | Pro/Enterprise 原生；Trial/缺工具链字节码 | 原生 runtime 需 Cython、C 编译器与 strip；否则回退 sourceless `.pyc` |
 | 完整性清单 | 保护核心 | 校验业务代码与 runtime |
 | 许可证 | 永久 | 可在表单中改为天数或日期 |
 | 设备绑定 | 不绑定 | 可改为首次启动绑定或指定指纹 |
@@ -191,5 +191,5 @@ exe 冒烟测试建议：
 - 发布时只交付输出目录，绝不能附带 `*.shield-secret.json`；
 - 许可证格式 v3 由 Ed25519 签名，只含授权字段，不含模块解密密钥；runtime 只内置公钥，提取对称主密钥不能伪造许可证；
 - 源码保护提高逆向成本，不构成绝对 DRM；离线分发下主密钥最终会进入客户环境，具备逆向能力的攻击者仍可能提取内存中的代码或主密钥；
-- 字节码是默认 runtime；`--runtime-source` 仅用于调试，会以明文发布解密逻辑；
+- Pro/Enterprise 在工具链可用时默认原生 runtime，Trial 或工具链缺失时回退字节码；`--runtime-source` 仅用于调试，会以明文发布解密逻辑；
 - 完整性清单只在进程首次加载时扫描一次，5 分钟重验不覆盖清单；它用于发现现场误改或局部篡改，不能阻止整体替换 runtime。状态 HMAC 由 `build_key` 派生，但提取 master 后仍可伪造，正确表述是“防单点丢失/误损坏”，不是绝对防篡改。发布卫生详见 [security-hardening.md](security-hardening.md)。

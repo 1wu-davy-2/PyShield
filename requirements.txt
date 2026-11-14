@@ -3,7 +3,8 @@
 # 可选：AES-256-GCM 与 ChaCha20-Poly1305（构建机和部署机都需要安装）
 # cryptography>=42
 
-# 可选：--runtime-native 原生 runtime（仅构建机需要，另需 C 编译器）
+# 可选：--runtime-native 原生 runtime（仅构建机需要，另需 C 编译器与 strip）
+# 打包带原生能力的 PyShieldBuilder.exe 时也需要 Cython>=3
 # Cython>=3
 # setuptools>=68
 
