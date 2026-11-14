@@ -1,5 +1,7 @@
 # 自保护构建审查样本
 
+> Round 3 的最新材料见 [`review/round3/`](../review/round3/README.md)。本文保留第二轮样本的记录，数字与哈希对应旧提交 `2b4e501`。
+
 这份材料用于回答一个问题：**PyShieldBuilder 在交给 PyInstaller 之前，业务代码到底处于什么状态？** 样本是 `tools/selfbuild.py` 的中间产物，不是发布包，也不是新的保护承诺。
 
 ## 1. 样本位置
