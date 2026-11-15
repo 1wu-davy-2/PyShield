@@ -8,6 +8,10 @@ dist*/
 *.lic
 .pytest_cache/
 
+# React console (license-portal/web): dependencies and build output
+node_modules/
+.vite/
+
 # Commercial tool licensing secrets: never commit
 pyshield/_tool_key.py
 pyshield/_site.py

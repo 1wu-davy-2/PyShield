@@ -1548,11 +1548,25 @@
     const value = input.value.trim();
     if (!value) {
       input.focus();
-      toast("请输入序列号", "error");
+      toast("请输入序列号或激活码", "error");
       return;
     }
-    const response = await call("trial_apply", value);
+    // PS-XXXX-XXXX-XXXX is this machine's serial; PSP/PSE prefixes are paid
+    // activation keys issued by the licensing portal. A PST code is the
+    // display-only trial code and is activated by the browser callback.
+    const compact = value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const isSerial = compact.startsWith("PS") && compact.length === 14;
+    if (!isSerial && compact.startsWith("PST")) {
+      toast("试用码无需在客户端输入：网页申请成功后会自动回传授权；付费激活码请使用 PSP/PSE 开头。", "error");
+      return;
+    }
+    const useLicenseKey = !isSerial && /^PS[PE]/.test(compact);
+    const response = useLicenseKey
+      ? await call("license_redeem", value)
+      : await call("trial_apply", value);
     if (!response || !response.ok) {
+      if (response && response.license) renderLicense(response.license);
+      if (response && response.trial) renderTrial({ trial: response.trial });
       toast((response && response.error) || "激活失败", "error");
       return;
     }
@@ -1561,7 +1575,26 @@
     else await refreshLicense();
     $("#trialCodeRow").hidden = true;
     input.value = "";
-    toast("激活成功", "success");
+    toast("授权已激活", "success");
+  }
+
+  async function refreshAuthorization() {
+    // Source runs may not expose license_refresh yet; keep the old refresh.
+    const api = window.pywebview && window.pywebview.api;
+    if (!api || typeof api.license_refresh !== "function") {
+      const response = await refreshTrial();
+      return { fallback: true, trial: response };
+    }
+    const refreshed = await call("license_refresh");
+    if (!refreshed || !refreshed.ok) {
+      await refreshTrial({ silent: true });
+      return refreshed || { ok: false, error: "授权刷新失败" };
+    }
+    if (refreshed.license) renderLicense(refreshed.license);
+    else await refreshLicense();
+    if (refreshed.trial) renderTrial({ trial: refreshed.trial });
+    else await refreshTrial({ silent: true });
+    return refreshed;
   }
 
   async function copySerial() {
@@ -2392,6 +2425,7 @@
   // ---------------------------------------------------------------- events
 
   function bindEvents() {
+    $("#trialCodeInput").placeholder = "请输入序列号或激活码";
     onSegment("cipherGroup", (value) => {
       if (isTrialEdition(state.license) && value !== "chacha-pure") {
         setSegment("cipherGroup", "chacha-pure");
@@ -2545,8 +2579,16 @@
     $("#licenseDeactivate").addEventListener("click", licenseDeactivate);
     $("#trialSaveServer").addEventListener("click", trialSaveServer);
     $("#trialRefresh").addEventListener("click", async () => {
-      const response = await refreshTrial();
-      if (response && response.ok) toast("授权状态已刷新", "success");
+      const refreshed = await refreshAuthorization();
+      if (refreshed && refreshed.fallback) {
+        if (refreshed.trial && refreshed.trial.ok) toast("授权状态已刷新", "success");
+        return;
+      }
+      if (refreshed && refreshed.ok) {
+        toast(refreshed.updated ? "授权已更新" : "授权状态已刷新", "success");
+      } else {
+        toast((refreshed && refreshed.error) || "授权刷新失败", "error");
+      }
     });
     $("#trialCopySerial").addEventListener("click", copySerial);
     $$("[data-plan-open]").forEach((button) => {

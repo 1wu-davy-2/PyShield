@@ -1,0 +1,55 @@
+[Unit]
+Description=PyShield License Portal
+Documentation=file:/opt/pyshield-portal/license-portal/README.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=pyshield
+Group=pyshield
+WorkingDirectory=/opt/pyshield-portal
+Environment=PYTHONPATH=/opt/pyshield-portal/license-portal:/opt/pyshield-portal
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+EnvironmentFile=-/etc/pyshield-portal/portal.env
+ExecStart=/opt/pyshield-portal/.venv/bin/python -m license_portal run --config /etc/pyshield-portal/config.json
+Restart=always
+RestartSec=3
+TimeoutStopSec=15
+UMask=0077
+
+# Hardening. The portal only needs to read code/config and write its data dir.
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pyshield-portal
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RemoveIPC=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+
+# Optional: provide the signing passphrase as a systemd credential instead of
+# storing PYSHELD_PORTAL_SIGNING_PASSPHRASE in portal.env.
+#
+# The application reads the passphrase from the environment, so the credential
+# file must be exported by a small shell wrapper. If you enable this block,
+# comment out the normal ExecStart= line above first (a service may only have
+# one ExecStart= unless Type=oneshot).
+#
+# LoadCredential=pyshield-signing-pass:/etc/pyshield-portal/signing-pass
+# ExecStart=/bin/sh -c 'PYSHELD_PORTAL_SIGNING_PASSPHRASE="$(cat "$CREDENTIALS_DIRECTORY/pyshield-signing-pass")" exec /opt/pyshield-portal/.venv/bin/python -m license_portal run --config /etc/pyshield-portal/config.json'
+
+[Install]
+WantedBy=multi-user.target

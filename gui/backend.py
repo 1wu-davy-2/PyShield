@@ -884,6 +884,51 @@ class Api:
             return {"ok": False, "error": "激活链接无效。"}
         return self.trial_apply(serial)
 
+    def license_redeem(self, key: str = "") -> dict:
+        """Redeem an activation key issued by the license portal."""
+        try:
+            entitlement = trial_license.activate_key(self._trial_server(), key)
+        except (trial_license.TrialError, tool_license.ToolLicenseError, OSError) as exc:
+            return {
+                "ok": False,
+                "error": str(exc),
+                "license": self._license_status(),
+                "trial": self._trial_state(),
+            }
+        return {
+            "ok": True,
+            "license": tool_license.check().to_dict(),
+            "trial": self._trial_state(),
+            "license_id": entitlement.license_id,
+            "edition": entitlement.edition,
+        }
+
+    def license_refresh(self) -> dict:
+        """Ask the license portal whether a newer signed entitlement exists."""
+        try:
+            result = trial_license.refresh_license(self._trial_server())
+        except (trial_license.TrialError, tool_license.ToolLicenseError, OSError) as exc:
+            return {
+                "ok": False,
+                "error": str(exc),
+                "license": self._license_status(),
+                "trial": self._trial_state(),
+            }
+        updated = bool(result.get("updated"))
+        if updated:
+            self._raise_window()
+        response = {
+            "ok": True,
+            "updated": updated,
+            "status": result.get("status"),
+            "license": self._license_status(),
+            "trial": self._trial_state(),
+        }
+        for name in ("license_id", "edition", "expires", "revision", "document"):
+            if name in result:
+                response[name] = result[name]
+        return response
+
     def check_build(self, payload: dict | None = None) -> dict:
         request = core.BuildRequest.from_payload(payload)
         response = self.manager.check(request, core.load_settings())

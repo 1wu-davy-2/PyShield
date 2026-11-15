@@ -254,6 +254,85 @@ def claim_and_apply(server: str, public_key: bytes | None = None) -> tool_licens
     return apply_document(claim(server), public_key=public_key)
 
 
+def activate_key(
+    server: str,
+    key: str,
+    machine: str | None = None,
+    timeout: float = 15.0,
+) -> tool_license.Entitlement:
+    """Redeem an activation key on the license portal and install the result."""
+    state = install_state()
+    payload = {
+        "key": str(key or "").strip(),
+        "serial": state["serial"],
+        "machine": machine or state["machine"],
+        "version": __version__,
+    }
+    response = _request("POST", server, "/api/license/activate", payload, timeout)
+    document = response.get("document")
+    if not isinstance(document, dict):
+        raise TrialError(str(response.get("error") or "授权服务没有返回授权文件"))
+    return apply_document(document)
+
+
+def refresh_license(
+    server: str,
+    machine: str | None = None,
+    timeout: float = 10.0,
+) -> dict:
+    """Query the license portal and install a newer entitlement when offered."""
+    state = install_state()
+    license_id = ""
+    revision = 0
+    try:
+        entitlement = tool_license.load_entitlement()
+    except tool_license.ToolLicenseError:
+        # A missing or unreadable local license must not block a server-side
+        # refresh; the portal document is verified again before installation.
+        entitlement = None
+    if entitlement is not None:
+        license_id = entitlement.license_id
+        payload = (
+            entitlement.document.get("payload")
+            if isinstance(entitlement.document, dict) else None
+        )
+        if isinstance(payload, dict):
+            try:
+                revision = int(payload.get("revision") or 0)
+            except (TypeError, ValueError):
+                revision = 0
+    request = {
+        "serial": state["serial"],
+        "machine": machine or state["machine"],
+        "license_id": license_id,
+        "revision": revision,
+    }
+    response = _request("POST", server, "/api/license/status", request, timeout)
+    result = {
+        "ok": True,
+        "status": str(response.get("status") or ""),
+        "updated": False,
+    }
+    for name in (
+        "serial", "license_id", "edition", "expires", "revision",
+        "max_builds", "trial_code", "deep_link", "reason",
+    ):
+        if name in response:
+            result[name] = response[name]
+    document = response.get("document")
+    if document is not None:
+        if not isinstance(document, dict):
+            raise TrialError("授权服务返回了无效授权文件")
+        entitlement = apply_document(document)
+        result.update({
+            "updated": True,
+            "document": document,
+            "license_id": entitlement.license_id,
+            "edition": entitlement.edition,
+        })
+    return result
+
+
 def wait_for_grant(
     server: str,
     timeout: float = 180.0,

@@ -1,0 +1,38 @@
+{
+  "data_dir": "/var/lib/pyshield-portal",
+  "host": "127.0.0.1",
+  "port": 8091,
+  "site_url": "https://license.example.com",
+  "site_name": "PyShield 授权中心",
+  "contact_wechat": "pyshield-support",
+  "support_email": "support@example.com",
+
+  "trial_days": 14,
+  "trial_builds": 3,
+  "trial_grace_days": 0,
+  "email_verification": true,
+  "rate_limit_per_hour": 12,
+
+  "smtp_host": "smtp.example.com",
+  "smtp_port": 587,
+  "smtp_user": "portal@example.com",
+  "smtp_password": "",
+  "smtp_from": "portal@example.com",
+  "smtp_tls": "starttls",
+
+  "turnstile_site_key": "",
+  "turnstile_secret": "",
+
+  "secure_cookies": true,
+  "trust_proxy": true,
+  "session_hours": 12,
+  "dev": false,
+  "admin_allow_ips": [
+    "203.0.113.10",
+    "10.8.0.0/24"
+  ],
+
+  "signing_passphrase": "",
+  "key_redemption_days": 30,
+  "max_body": 65536
+}
