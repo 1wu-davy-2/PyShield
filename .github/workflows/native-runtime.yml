@@ -64,8 +64,14 @@ jobs:
           --no-verify
           --force
 
-      - name: Verify native output
-        run: python tools/check_native_build.py dist-native
+      - name: Verify native layout
+        run: python tools/check_native_build.py --phase layout dist-native
+
+      - name: Verify no master key exposure
+        run: python tools/check_native_build.py --phase keys dist-native
+
+      - name: Run protected native app
+        run: python tools/check_native_build.py --phase run dist-native
 
       - name: Checksum native sample
         shell: pwsh
