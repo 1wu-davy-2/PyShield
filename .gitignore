@@ -29,3 +29,7 @@ HA7HqyYHFsn4CepB-grok-workspace/.tanstack/
 
 # challenge flag values never enter git
 review/round3/flag-value.txt
+
+# extracted review trees are local-only
+review/round3/extracted/
+review/round3/round3-django-shielded/
