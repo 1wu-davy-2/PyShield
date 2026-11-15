@@ -587,6 +587,10 @@ class BuilderTests(unittest.TestCase):
         self.assertFalse((runtime / "_crypto.py").exists())
         self.assertFalse((runtime / "_ed25519.py").exists())
         self.assertFalse((runtime / "_keyring.py").exists())
+        self.assertFalse((runtime / "_machine.py").exists())
+        self.assertFalse((runtime / "_secure_store.py").exists())
+        self.assertFalse((runtime / "__init__.py").exists())
+        self.assertFalse((runtime / "__main__.py").exists())
         self.assertFalse((runtime / "_chacha_fast.pyx").exists())
         self.assertTrue(
             any(runtime.glob("_core*.pyd")) or any(runtime.glob("_core*.so")),

@@ -58,6 +58,11 @@ def main(argv: list[str] | None = None) -> int:
             if not _native_extensions(runtime, name):
                 fail(f"native extension missing for {name}")
 
+        plaintext = [path for path in runtime.rglob("*.py") if path.is_file()]
+        if plaintext:
+            fail("plaintext runtime sources remain: " + ", ".join(
+                path.name for path in plaintext
+            ))
         for path in runtime.iterdir():
             if path.suffix.lower() in {".pdb", ".ilk", ".exp", ".lib"}:
                 fail(f"debug sidecar remains: {path.name}")

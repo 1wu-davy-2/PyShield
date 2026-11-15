@@ -411,6 +411,9 @@ def install_runtime(
 
     if runtime_mode == "native":
         compile_runtime_native(runtime)
+        # Native modules remove their own .py/.pyx sources; compile the few
+        # remaining runtime modules so the output has no plaintext runtime.
+        compile_runtime(runtime)
     elif runtime_mode == "pyc":
         compile_runtime(runtime)
     (runtime / "_chacha_fast.pyx").unlink(missing_ok=True)
