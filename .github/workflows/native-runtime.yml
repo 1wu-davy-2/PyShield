@@ -86,6 +86,27 @@ jobs:
           PYSHELD_STATE_DIR: ${{ github.workspace }}/native-state
         run: python -c "from _shield_runtime import license_status; print(license_status())"
 
+      - name: Check direct load_module (package)
+        env:
+          PYSHELD_STATE_DIR: ${{ github.workspace }}/native-state
+        run: python tools/diagnose_native_runtime.py --execute --target mypkg dist-native
+
+      - name: Check direct load_module (module)
+        env:
+          PYSHELD_STATE_DIR: ${{ github.workspace }}/native-state
+        run: python tools/diagnose_native_runtime.py --execute --target mypkg.tools dist-native
+
+      - name: Check direct load_module (standalone)
+        env:
+          PYSHELD_STATE_DIR: ${{ github.workspace }}/native-state
+        run: python tools/diagnose_native_runtime.py --execute --target standalone dist-native
+
+      - name: Check protected standalone import
+        working-directory: dist-native
+        env:
+          PYSHELD_STATE_DIR: ${{ github.workspace }}/native-state
+        run: python -c "import standalone; print('standalone ok', standalone.ping())"
+
       - name: Check protected package init
         working-directory: dist-native
         env:

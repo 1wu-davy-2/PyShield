@@ -31,6 +31,9 @@ def main(argv: list[str] | None = None) -> int:
     (package / "tools.py").write_text(
         "def double(value):\n    return value * 2\n", encoding="utf-8",
     )
+    (root / "standalone.py").write_text(
+        "def ping():\n    return 'pong'\n", encoding="utf-8",
+    )
     (package / "data.txt").write_text("native ci data\n", encoding="utf-8")
     print(f"created {root}")
     return 0
