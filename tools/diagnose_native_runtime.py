@@ -66,8 +66,15 @@ def main(argv: list[str] | None = None) -> int:
         code = marshal.loads(zlib.decompress(raw))
         print(f"native decrypt OK: {module_id}, names={code.co_names[:6]}")
         if args.execute:
-            namespace = {"__name__": name, "__file__": str(path)}
-            _core.load_module(name, str(path), chunks, module_id)
+            try:
+                _core.load_module(name, str(path), chunks, module_id)
+            except BaseException as exc:
+                print(
+                    f"::error title=native-load-{name}::"
+                    f"{type(exc).__name__}: {exc}".replace("\n", " "),
+                    flush=True,
+                )
+                raise
             print(f"native load_module OK: {name}")
     return 0
 
