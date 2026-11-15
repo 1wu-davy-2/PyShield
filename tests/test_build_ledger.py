@@ -149,6 +149,10 @@ class LedgerTests(unittest.TestCase):
             bind_mode=tool_license.BIND_FIXED,
             fingerprints=["machine-a"],
             activation_required=False,
+            # Fixed dates below must stay inside the window no matter when the
+            # suite runs; without this the entitlement defaults to the real
+            # not_before and the cross-month scenario breaks after midnight.
+            not_before=date(2026, 11, 1),
         )
         path = license_admin.write_document(document, self.root / "license.json")
         activation.install_license(path, machine="machine-a")

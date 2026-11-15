@@ -1,7 +1,7 @@
 # PyShield Round 3 第五轮修复复核报告（审计范文）
 
 - 评估日期：2026-11-15
-- 复核对象：源码 `develop @ d98b48e`（PSH-R5 主提交 `9365307`）；第五轮产物（构建器、自保护构建器、静态样本、挑战包）；`ROUND3-FIX-RESPONSE.md`、`ROUND3-INVITATION.md`、`review/round3/README.md`
+- 复核对象：源码 `develop @ 130f1d7`（PSH-R5 主提交 `9365307`；含 CI 复测暴露的入口包容错与短路径规范化）；第五轮产物（构建器、自保护构建器、静态样本、挑战包）；`ROUND3-FIX-RESPONSE.md`、`ROUND3-INVITATION.md`、`review/round3/README.md`
 - 测试环境：Windows 10 Pro 10.0.19045 x64；CPython 3.12.0（产物运行）、CPython 3.13.14（工具与单元测试）；Django 5.2.8；PyInstaller 6.22.3；本地 Cython 可用
 - 边界：沿用离线客户端前提；不要求“攻击者拿不到明文”，只评估提取成本、状态回滚、许可证校验和发布卫生。`master_key()` 可调用、运行时内存明文、双删重置、DPAPI 降级、无 Authenticode、无 TPM/服务端仍是已承认的残余风险，本轮不重复计为漏洞。
 - 性质：本报告是**修复后的复核**，不是独立第三方审计。结论只覆盖本轮可比对的产物与源码。
@@ -18,13 +18,13 @@
 
 已核对的事实：
 
-- 挑战包 `round3-django-shielded.zip`：68,103 B，SHA-256 `8319a62be298a779ece6ade424addec1d47ba62602ce8fe750f9d17e511793d4`，build `1defa4a6e5e8df9c`，27 个条目，`__pycache__` 0 条。
-- 静态样本 `PyShieldBuilder-protected-sample-round3.zip`：547,238 B，SHA-256 `984c701c8ef2a8b22753054d1098a7c7abfe6bacfcf69624ae18cc52c3966ac4`，build `692a5f580935dfaf`，41 个业务模块 stub，runtime 源码包含 `_isolate_bytecode`/`unsigned bytecode cache`。
-- `PyShieldBuilder-r5.exe`：49,305,274 B，SHA-256 `504e89cc242714e2304e8898a639c5b885a98f5b96a0c784a6f6f8b901310200`（本机构建）。
-- `PyShieldBuilder-selfbuild.exe`：40,711,334 B，SHA-256 `7dce130c9857d6899ac854041fddd1358c5953a53a798e63209531abc30c541e`（本轮重建）。
-- flag 可离线恢复：值已轮换且不进 git（`review/round3/flag-value.txt` 被 ignore），SHA-256 `4d2b771c90f071e8f1602c00d9d5e4d7f998658873a1c353d9a81b2efbe66e37`，本轮耗时约 77 ms（key 2.4 / derive 26.3 / decrypt 48.0）。轮换原因：首推 `0e18ad5` 把旧 flag 明文带进了公开仓库历史，旧值作废。
-- 全量测试：**245 tests OK (skipped=5)**。
-- 首次推送 `0e18ad5` 的 CI **失败并暴露了一个真实误报**（入口包缓存），已在 `5ca70cf` 修复并重新触发；详见 §1.1 的“CI 复测暴露”。
+- 挑战包 `round3-django-shielded.zip`：68,116 B，SHA-256 `1be02ace3a2f8b8e161f41b8488dc545537bae20930566f880326086fcda9742`，build `60650120c0d42ab3`，27 个条目，`__pycache__` 0 条。
+- 静态样本 `PyShieldBuilder-protected-sample-round3.zip`：548,749 B，SHA-256 `6f628ef1d3c682671fff4523b1fc0a9075ae436078614b73433a5c7602fba136`，build `ef3bb96a41a169b5`，41 个业务模块 stub，runtime 源码包含 `_isolate_bytecode`/`unsigned bytecode cache`。
+- `PyShieldBuilder-r5.exe`：49,307,453 B，SHA-256 `db212b615ef77ec085913701a9bb944aa093c796978a41c68357613737ca9ce6`（本机构建）。
+- `PyShieldBuilder-selfbuild.exe`：40,711,405 B，SHA-256 `684e88c7b38195a2c9ea1b23406892751a1b65eec4a8eb89e174f8d5eb970b9b`（本轮重建）。
+- flag 可离线恢复：值已轮换且不进 git（`review/round3/flag-value.txt` 被 ignore），SHA-256 `4d2b771c90f071e8f1602c00d9d5e4d7f998658873a1c353d9a81b2efbe66e37`，本轮耗时约 96 ms（key 2.0 / derive 57.5 / decrypt 36.1）。轮换原因：首推 `0e18ad5` 把旧 flag 明文带进了公开仓库历史，旧值作废。
+- 全量测试：**247 tests OK (skipped=5)**（完整环境与仅 cryptography 的 CI 等价环境各跑一遍）。
+- CI 先后暴露两个真实问题：`0e18ad5` 入口包缓存误报（`5ca70cf` 修复）、`5ca70cf` 的 TEMP 短路径 8.3 规范化误报（`130f1d7` 修复）；详见 §1.1 的“CI 复测暴露”。
 
 ## 1. 修复项复核
 
@@ -33,8 +33,8 @@
 - 严重度：**High**（发布目录可写时；目录仅管理员可写可降为 Medium）
 - CVSS 3.1：`CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H`，约 **7.8**（沿用上轮评分，攻击复杂度与影响未变）
 - 受影响组件：`round3-django-shielded.zip` 的 `demo/`、`demo/management/`、`sampleproj/` 缓存；`manifest.collect_files`；runtime `_scan_integrity`
-- 受影响产物与 SHA-256：`round3-django-shielded.zip` `8319a62b…93d4`（修复版；上轮受影响版本为 `34c5e49f…7954`）
-- 源码版本/提交：`develop @ 5ca70cf`
+- 受影响产物与 SHA-256：`round3-django-shielded.zip` `1be02ace…9742`（修复版；上轮受影响版本为 `34c5e49f…7954`）
+- 源码版本/提交：`develop @ 130f1d7`
 - 测试环境：Windows 10 Pro 19045 x64、CPython 3.12.0、Django 5.2.8
 - 前置条件/攻击者模型：能写发布目录的本地用户；无需管理员、调试器或内存 dump
 - 状态：**已修复验证**
@@ -106,6 +106,8 @@ marker `PYSHELD_PYC_BYPASS_R5` 未出现在 stdout/stderr，说明缓存没有�
 
 `5ca70cf` 的处理：扫描跳过 `sys.modules` 中已导入模块的 `__cached__`（未导入模块的缓存仍然拒绝），并新增 `_prune_imported_caches` 在导入时清掉这份合法缓存，保证同一发布目录换入口（`manage.py`）启动也不误报；新增 `test_package_entry_import_is_tolerated` 覆盖“包入口 → 缓存被清理 → `manage.py check` 二次启动”全链路。本报告的验证（含本节 PoC）均基于 `5ca70cf` 之后的产物。
 
+第二次 CI 复测（`5ca70cf`）在 Windows 单测仍失败，暴露了同一功能的第二个误报：GitHub runner 的 `TEMP` 是 8.3 短路径（`C://Users//RUNNER~1//AppData//Local//Temp`），`__cached__` 保留短名，而 `_dist_dir()` 经 `Path.resolve()` 展开成长名，`normcase(abspath(...))` 比对失败，入口包的合法缓存再次被拒。`130f1d7` 把三方比对统一改为 `Path(...).resolve()`，并新增 `test_entry_import_from_short_path`（用 `GetShortPathNameW` 构造 CI 同款 cwd）锁住该场景。
+
 #### 影响
 
 修复前：可写发布目录中的伪造 pyc 可执行任意代码，绕过“受保护文件被改会发现”的承诺，且交付物本身携带缓存。修复后：伪造缓存在正常布局下既不被执行，也会在首个受保护模块加载前触发完整性失败；发布物不再包含可执行缓存。
@@ -122,8 +124,8 @@ marker `PYSHELD_PYC_BYPASS_R5` 未出现在 stdout/stderr，说明缓存没有�
 - 严重度：**Low**（沿用；工具/文档问题，未发现已发生的密钥泄露）
 - CVSS 3.1：`CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N`，约 **3.3**
 - 受影响组件：`tools/check_release.py`；`ROUND3-FIX-RESPONSE.md` 的发布卫生表述
-- 受影响产物与 SHA-256：不适用（工具/文档）；挑战包 `8319a62b…93d4`
-- 源码版本/提交：`develop @ 5ca70cf`
+- 受影响产物与 SHA-256：不适用（工具/文档）；挑战包 `1be02ace…9742`
+- 源码版本/提交：`develop @ 130f1d7`
 - 前置条件/攻击者模型：构建/发布流程依赖该检查器；本地用户
 - 状态：**已修复验证（覆盖与语义）；随机密钥不可判定是能力边界**
 
@@ -188,17 +190,17 @@ runtime co_filename: _shield_runtime/_core.py
 
 | 声明 | 核对结果 | 说明 |
 | --- | --- | --- |
-| 挑战包 SHA-256 | 匹配 `8319a62b…93d4` | 68,103 B；27 条目 |
-| 静态样本 SHA-256 | 匹配 `b82a5a96…2528` | 548,599 B；41 stub；build `3740d1b3…` |
-| `PyShieldBuilder-r5.exe` SHA-256 | 匹配 `e8008dac…6e22` | 49,307,490 B；本机构建 |
-| 自保护 exe SHA-256 | 匹配 `3ec1ac47…8f5c` | 40,712,974 B；本轮重建 |
+| 挑战包 SHA-256 | 匹配 `1be02ace…9742` | 68,116 B；27 条目 |
+| 静态样本 SHA-256 | 匹配 `6f628ef1…f136` | 548,749 B；41 stub；build `ef3bb96a…` |
+| `PyShieldBuilder-r5.exe` SHA-256 | 匹配 `db212b61…9ce6` | 49,307,453 B；本机构建 |
+| 自保护 exe SHA-256 | 匹配 `684e88c7…0b9b` | 40,711,405 B；本轮重建 |
 | flag 可从 zip 恢复 | 是 | 值已轮换不进 git；hash `4d2b771c…e37`；约 77 ms |
 | zip 内无明文 flag | 是 | 解密后 `co_consts` 含 flag，zip 条目 0 命中 |
 | zip 内无 `__pycache__` | 是 | 0 条；`check_release.py` 通过 |
 | 受保护示例可运行 | 是 | `check` rc=0、`reveal` 输出 `protected demo command OK`、`verify --json` 21 文件 |
 | 运行后不产生缓存 | 是 | `pycache dirs: 0` |
-| 全量测试 | 246 OK / 5 skipped | 本地 3.13/3.12，含未设置 `PYTHONDONTWRITEBYTECODE` 的环境 |
-| CI | 首推失败 → 修复重推 | `0e18ad5` 暴露入口包误报；`5ca70cf` 修复后重新触发，见 §1.1 |
+| 全量测试 | 247 OK / 5 skipped | 完整环境与仅 cryptography 的 CI 等价环境 |
+| CI | 两次失败 → 修复重推 | 入口包误报（`5ca70cf`）、短路径误报（`130f1d7`），见 §1.1 |
 | 文档表述 | 一致 | `--temp 0` 不再作为密钥证明；补充了 `--secret`/`--skip-key-scan` 语义 |
 
 ## 3. 回归范围
@@ -266,7 +268,7 @@ py -3.12 review\round3\poc-round4\recover_flag.py .
 
 ## 6. 发送前检查清单
 
-1. **推送 `5ca70cf` 触发 CI**，确认三个 run 通过后把 run 号补进邀请函；若改用 CI 产物，重新计算 exe 哈希。
+1. **推送 `130f1d7` 触发 CI**，确认三个 run 通过后把 run 号补进邀请函；若改用 CI 产物，重新计算 exe 哈希。
 2. 确认发送的 exe 与源码一致：本报告核对的 `PyShieldBuilder-r5.exe` 是本机构建，`PyShieldBuilder.exe` 仍是 `ae718c4` 的旧 CI 产物（不含修复），不要混发。
 3. 重跑 `pycache_tamper_r5.py`、`prefix_hijack_r5.py`、`check_release_gap_r5.py`，把日志随包附上。
 4. 不要再用 `--temp 0` 作为“无密钥泄露”的证明；需要密钥结论时提供 `--secret`。
