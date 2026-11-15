@@ -70,8 +70,24 @@ jobs:
       - name: Verify no master key exposure
         run: python tools/check_native_build.py --phase keys dist-native
 
+      - name: Check native imports
+        working-directory: dist-native
+        run: |
+          python -c "import _shield_runtime; print('package import ok')"
+          python -c "import _shield_runtime._core as core; print('core ok', core.BUILD_ID)"
+          python -c "import _shield_runtime._crypto, _shield_runtime._ed25519, _shield_runtime._keyring, _shield_runtime._chacha_fast; print('extensions ok')"
+
       - name: Run protected native app
-        run: python tools/check_native_build.py --phase run dist-native
+        working-directory: dist-native
+        env:
+          PYSHELD_STATE_DIR: ${{ github.workspace }}/native-state
+        run: python manage.py check
+
+      - name: Verify native runtime
+        working-directory: dist-native
+        env:
+          PYSHELD_STATE_DIR: ${{ github.workspace }}/native-state
+        run: python -m _shield_runtime verify --json
 
       - name: Checksum native sample
         shell: pwsh
