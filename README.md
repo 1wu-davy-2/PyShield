@@ -205,8 +205,9 @@ python shield.py license deactivate
 | `full` | 再校验模板、静态数据等 `data` 文件 | 交付内容不可变的场景 |
 | `off` | 不生成清单，也不校验 | 需要最大现场灵活性 |
 
-- 许可证、`local_settings.py`、`settings_local.py`、`.env*`、`*.sqlite3`、日志、`media/`、`staticfiles/`、`__pycache__` 默认视为可变文件，不进入清单；
-- 新增文件不会破坏启动（清单只校验已登记文件）；删除或修改受保护文件会被拒绝；
+- 许可证、`local_settings.py`、`settings_local.py`、`.env*`、`*.sqlite3`、日志、`media/`、`staticfiles/` 默认视为可变文件，不进入清单；
+- 新增数据文件不会破坏启动（清单只校验已登记文件）；删除或修改受保护文件会被拒绝；
+- **`__pycache__` 与 `.pyc` 不属于可变文件**：构建结束时清除，清单生成阶段直接拒绝带缓存的树，runtime 也不读取发布目录的 pyc；出现未签名缓存会以 `unsigned bytecode cache` 拒绝启动。详见 [docs/security-hardening.md](docs/security-hardening.md)；
 - 其他需要现场修改的文件用 `--mutable "path/pattern"` 声明；
 - 校验失败会拒绝加载，错误信息列出前几个不一致的文件。
 

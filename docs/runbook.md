@@ -307,7 +307,7 @@ PYSHELD_LICENSE=/secure/pyshield.lic python manage.py check
 3. 停止正在运行的服务（Windows 下避免文件占用）；
 4. 重新执行构建命令；
 5. 在产物上验证 `manage.py check` 与关键页面；
-6. 执行发布卫生扫描：`python tools/check_release.py <输出目录>`；
+6. 执行发布卫生扫描：`python tools/check_release.py <输出目录>`（有构建密钥时加 `--secret <output>.shield-secret.json`，没有时加 `--skip-key-scan` 并接受密钥扫描缺口）；
 7. 发布整个输出目录；
 8. 构建密钥继续留在构建方，不随包发布。
 
@@ -389,7 +389,7 @@ python -m unittest discover -s tests -v
 - 完整性清单由 runtime 自身校验，且只在进程首次加载时扫描一次；5 分钟重验只覆盖许可证/绑定/时钟。如果攻击者能整体替换 `_shield_runtime/`，清单也会失效。它用于发现现场误改、局部篡改和跨构建移植，不是二进制级防篡改。
 - 时钟状态与回拨检测是尽力而为：MAC 密钥由 `build_key` 派生，提取 master 后仍可伪造；同时删除主记录与锚点仍会重置历史；默认状态按 OS 用户隔离。请结合 NTP、机器级锚点、服务端时间、合同和授权流程。
 - 原生 runtime 把主密钥、验签逻辑和快速 ChaCha 编译进 `.pyd`/`.so`，显著提高静态提取门槛，但无法阻止有能力的攻击者在运行时内存中提取。
-- 发布卫生（Authenticode、PDB 路径、发布暴露审计）见 [security-hardening.md](security-hardening.md)。`tools/check_release.py` 会扫描发布树中的挑战 flag、master/build key、私钥标记和包内 `*.shield-secret.json`；`--temp` 可检查构建机临时目录。
+- 发布卫生（Authenticode、PDB 路径、发布暴露审计）见 [security-hardening.md](security-hardening.md)。`tools/check_release.py` 会扫描发布树中的挑战 flag、master/build key、私钥标记、包内 `*.shield-secret.json`，并拒绝 `__pycache__` 与未列入签名清单的 `.pyc`。master/build key 只能通过与已知密钥比对来发现：需要 sibling `*.shield-secret.json` 或 `--secret`，否则会报“无法验证”而不是给出 OK；`--temp` 检查构建机临时目录，缺少密钥时同样 fail-closed。
 - MCP 服务是本地 agent 接口，不是远程服务：只允许 stdio，不监听端口；`--output-root` 和 `--secret-dir` 应与 agent 工作区隔离；默认不执行目标项目代码；`check_output` 是显式高风险开关。MCP 的额度/退款规则与 CLI/GUI 的“启动即扣、失败不退”不同，详见 [MCP 构建服务](mcp-server.md)。
 - 迁移与测试默认保持明文；如包含敏感逻辑，使用 `--encrypt-migrations` / `--encrypt-tests`。
 - 加密提高的是逆向与源码泄露门槛，不是绝对不可破解的 DRM；服务端代码最终会在内存中还原，请配合合同、授权、SaaS 化等手段。

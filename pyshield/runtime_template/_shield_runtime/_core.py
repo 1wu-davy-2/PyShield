@@ -4,7 +4,8 @@ Module payloads are encrypted with a key derived from the build master key.
 The license carries authorization data only; it does not contain the module
 key. Before any protected module is loaded the signed package manifest is
 checked, so protected files and the runtime itself cannot be modified without
-detection.
+detection. Bytecode caches are never read from the deployment directory and any
+cache that is not part of the signed manifest is rejected.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ import marshal
 import os
 import platform
 import sys
+import tempfile
 import threading
 import time
 import types
@@ -44,6 +46,9 @@ BUILD_KEY_SALT = b"pyshield-build-key-v1"
 MANIFEST_FILE = ".pyshield-manifest.json"
 MANIFEST_FORMAT = 1
 MANIFEST_CATEGORIES = ("code", "runtime", "data")
+
+RUNTIME_PACKAGE_NAME = "_shield_runtime"
+BYTECODE_SUFFIXES = (".pyc", ".pyo")
 
 STATE_FORMAT = 2
 STATE_PURPOSE = "pyshield-clock"
@@ -149,6 +154,61 @@ def _safe_relative(relative: str) -> bool:
     return ".." not in relative.split("/")
 
 
+def _isolate_bytecode() -> None:
+    """Keep the interpreter away from bytecode caches in the deployment tree.
+
+    CPython accepts a timestamp-based ``.pyc`` whenever its header matches the
+    source ``mtime``/``size``; the payload itself is not authenticated. In a
+    writable deployment that lets an attacker plant ``<pkg>/__pycache__/*.pyc``
+    which runs instead of the protected stub while every signed file still
+    hashes correctly. Pointing ``sys.pycache_prefix`` at an unpredictable path
+    and disabling cache writes keeps later imports from reading those files.
+    """
+    if getattr(sys, "_pyshield_bytecode_isolated", False):
+        return
+    try:
+        sys.pycache_prefix = str(
+            Path(tempfile.gettempdir())
+            / f"pyshield-bytecode-{BUILD_ID[:16]}-{os.urandom(8).hex()}"
+        )
+    except Exception:
+        pass
+    sys.dont_write_bytecode = True
+    sys._pyshield_bytecode_isolated = True
+
+
+# Protected packages are imported after this module, so installing the
+# isolation here means their import lookups never see a planted cache entry.
+_isolate_bytecode()
+
+
+def _scan_bytecode_caches(root: Path) -> list[str]:
+    """Report import caches that no signed manifest entry can cover."""
+    failures: list[str] = []
+    runtime_prefix = RUNTIME_PACKAGE_NAME + "/"
+    for path in sorted(root.rglob("*")):
+        try:
+            if path.is_symlink():
+                continue
+            relative = path.relative_to(root).as_posix()
+        except (OSError, ValueError):
+            continue
+        if relative.startswith(runtime_prefix):
+            # A forged runtime cache is equivalent to replacing the runtime,
+            # which the documentation already lists as an offline boundary.
+            continue
+        try:
+            is_file = path.is_file()
+        except OSError:
+            continue
+        if is_file and path.suffix.lower() in BYTECODE_SUFFIXES:
+            failures.append(f"{relative}: unsigned bytecode cache")
+        if len(failures) >= 20:
+            failures.append("more bytecode caches were not listed")
+            break
+    return failures
+
+
 def _load_manifest() -> dict:
     path = _dist_dir() / MANIFEST_FILE
     try:
@@ -221,6 +281,7 @@ def _scan_integrity(full: bool) -> dict:
         except OSError as exc:
             failures.append(f"{relative}: {exc}")
         checked += 1
+    failures.extend(_scan_bytecode_caches(root))
     return {"enabled": True, "checked": checked, "failures": failures}
 
 

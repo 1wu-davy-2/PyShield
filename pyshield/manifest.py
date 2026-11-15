@@ -18,6 +18,10 @@ from . import __version__, crypto, ed25519
 MANIFEST_FILENAME = ".pyshield-manifest.json"
 MANIFEST_FORMAT = 1
 
+PYCACHE_DIR = "__pycache__"
+BYTECODE_SUFFIXES = (".pyc", ".pyo")
+RUNTIME_PREFIX = "_shield_runtime/"
+
 CATEGORY_CODE = "code"
 CATEGORY_RUNTIME = "runtime"
 CATEGORY_DATA = "data"
@@ -43,10 +47,6 @@ DEFAULT_MUTABLE_PATTERNS = (
     "*/media/*",
     "staticfiles/*",
     "*/staticfiles/*",
-    "*.pyc",
-    "*.pyo",
-    "__pycache__/*",
-    "*/__pycache__/*",
 )
 
 
@@ -64,6 +64,29 @@ def file_sha256(path: Path) -> str:
 
 def is_mutable(relative: str, patterns: tuple[str, ...] | list[str]) -> bool:
     return any(fnmatch.fnmatchcase(relative, pattern) for pattern in patterns)
+
+
+def iter_bytecode_caches(root: Path) -> list[str]:
+    """Return release-relative ``__pycache__`` entries and sourceless bytecode.
+
+    CPython validates a timestamp-based ``.pyc`` only against the source
+    ``mtime``/``size``; a forged cache therefore runs instead of the protected
+    stub while every signed file still matches. Bytecode caches must never ship
+    inside a protected tree, so the builder and the runtime treat their
+    presence as a packaging error rather than as data to be hashed.
+    """
+    found: list[str] = []
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink():
+            continue
+        relative = path.relative_to(root).as_posix()
+        if PYCACHE_DIR in path.parts:
+            if path.is_dir() or path.suffix.lower() in BYTECODE_SUFFIXES:
+                found.append(relative)
+            continue
+        if path.is_file() and path.suffix.lower() in BYTECODE_SUFFIXES:
+            found.append(relative)
+    return found
 
 
 def is_safe_relative(relative: str) -> bool:
@@ -101,8 +124,23 @@ def collect_files(
     root: Path,
     code_paths: tuple[str, ...] | list[str],
     mutable_patterns: tuple[str, ...] | list[str],
+    forbid_bytecode: bool = True,
 ) -> dict[str, dict]:
     code = {PurePosixPath(path).as_posix() for path in code_paths}
+    if forbid_bytecode:
+        caches = [
+            relative for relative in iter_bytecode_caches(root)
+            if not relative.startswith(RUNTIME_PREFIX)
+        ]
+        if caches:
+            shown = ", ".join(caches[:5])
+            if len(caches) > 5:
+                shown += f", and {len(caches) - 5} more"
+            raise ManifestError(
+                "release tree contains bytecode caches that no signed manifest can "
+                f"cover: {shown}; delete __pycache__ directories and *.pyc files "
+                "before packaging"
+            )
     files: dict[str, dict] = {}
     for path in sorted(root.rglob("*")):
         if path.is_symlink() or not path.is_file():
@@ -181,7 +219,9 @@ def load_manifest(path: Path, public_key: bytes) -> dict:
     return payload
 
 
-def verify_files(root: Path, payload: dict, full: bool = False) -> list[str]:
+def verify_files(
+    root: Path, payload: dict, full: bool = False, check_bytecode: bool = True,
+) -> list[str]:
     checked = {CATEGORY_CODE, CATEGORY_RUNTIME}
     if full:
         checked.add(CATEGORY_DATA)
@@ -206,4 +246,10 @@ def verify_files(root: Path, payload: dict, full: bool = False) -> list[str]:
                 raise OSError("hash mismatch")
         except OSError as exc:
             failures.append(f"{relative}: {exc}")
+    if check_bytecode:
+        listed = set(payload.get("files", {}))
+        for relative in iter_bytecode_caches(root):
+            if relative.startswith(RUNTIME_PREFIX) or relative in listed:
+                continue
+            failures.append(f"{relative}: unsigned bytecode cache")
     return failures

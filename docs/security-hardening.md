@@ -98,12 +98,23 @@ python tools/embed_runtime.py
 - 绑定写与读复用 `secure_store` 的唯一临时文件、共享冲突重试，并在 primary/anchor 的整个 read-modify-write 外层持有跨进程锁。单份写入失败不会阻塞启动，下一次启动会从存活副本恢复缺失的一份。
 - PyInstaller onefile 的 `_MEIPASS` 是临时目录：首次绑定记录会随进程退出消失。runtime 现在把任何非 onedir `_MEIPASS` 都视为临时并拒绝首次绑定；`PYSHELD_BINDING_FILE` 在 onefile 下不能关闭检查，也不能让解压目录持久化。应改用固定指纹或 onedir 构建。非 onefile 的只读部署仍可用 `PYSHELD_BINDING_FILE` 指向包外可写路径，但这会削弱复制防护。
 
-### 2.5 已知残余风险（对外表述必须保留）
+### 2.5 导入字节码与 `__pycache__`
+
+CPython 对 timestamp-based `.pyc` 只校验源文件的 `mtime`/`size`，不校验 pyc 内容。发布目录可写时，攻击者可以在 `demo/__init__.py` 旁写入 `demo/__pycache__/__init__.cpython-312.pyc`，让它在导入时替代受保护的 stub 执行，而清单里所有文件仍然哈希一致。修复分三层：
+
+- **发布物**：构建结束执行 `clean_pycache()`，并调用 `assert_no_bytecode_caches()` 再次确认输出树没有 `__pycache__` 或非 runtime 的 `.pyc`；`manifest.collect_files(forbid_bytecode=True)` 在写清单前直接拒绝带缓存的树。`_shield_runtime/` 下的 sourceless `.pyc`（pyc/native runtime 模式）是清单内的 runtime 文件，不受影响。
+- **运行时**：`_core.py` 在导入时执行 `_isolate_bytecode()`，把 `sys.pycache_prefix` 指向一个不可预测且不存在的路径并关闭 `sys.dont_write_bytecode`，之后的导入既不会读取发布目录里的 pyc，也不会把新缓存写进去；`_scan_integrity()` 另外把 `_shield_runtime/` 之外的任何 `.pyc`/`.pyo` 报为 `unsigned bytecode cache`，即使绕过前缀隔离也会在首个受保护模块加载前失败。
+- **发布检查**：`tools/check_release.py` 拒绝目录/zip 中任何 `__pycache__` 条目，以及未出现在该包签名清单里的 `.pyc`/`.pyo`。
+
+这仍然不是“可写目录不可攻击”：能替换 `_shield_runtime` 本身的攻击者不受清单保护（见残余风险）；本项修的是“意外的可执行缓存”从发布物和完整性模型里消失，并且伪造缓存在正常布局下不再被执行。
+
+### 2.6 已知残余风险（对外表述必须保留）
 
 | 残余项 | 现状 | 影响 |
 | --- | --- | --- |
 | 主密钥可提取 | `_keyring.master_key()` 可调用；`.pyc`/`.pyd`/内存都可被分析 | 能看到完整发布目录的攻击者仍可离线解密；keyring 只是去掉直接字符串常量 |
 | 状态 MAC 可伪造 | 时钟 MAC 由 `build_key` 派生，绑定 MAC 也是；提取 master 后可伪造 | “防篡改”不成立，正确表述是“防单点丢失/误损坏” |
+| 导入缓存绕过 | 默认不读取发布目录 pyc、不写缓存，且未签名 pyc 会失败；可写目录里替换 runtime 本身仍不受清单保护 | 伪造 `demo/__pycache__/*.pyc` 不再执行；但替换 `_shield_runtime` 等价于替换校验器 |
 | 双删重置 | 删除主状态和锚点仍可重置时钟/绑定 | 纯离线方案无法彻底修复；需要服务端或硬件单调计数器 |
 | 旧状态迁移开关 | 默认拒绝；`PYSHELD_ALLOW_LEGACY_STATE=1` 只允许迁移一次，成功后写一次性 marker | 同时删除 marker 与两份状态仍可重新打开迁移路径；迁移后应移除该变量 |
 | 状态锁不可用时 | 状态目录不可写时锁文件创建失败，退化为无锁读写 | 唯一临时文件与重试仍防止撕裂；真正不可写时按设计 fail-closed |
@@ -139,10 +150,11 @@ python -m unittest discover -s tests -v
 # 检查 runtime bundle 是否过期
 python tools/embed_runtime.py --check
 
-# 发布前扫描：flag、构建密钥、私钥和包内 secret 文件
-python tools/check_release.py dist-demo
-python tools/check_release.py dist
-python tools/check_release.py --temp
+# 发布前扫描：flag、构建密钥、私钥、包内 secret 文件和未签名字节码
+python tools/check_release.py dist-demo                 # 自动用 sibling secret
+python tools/check_release.py --secret build/dist.shield-secret.json dist
+python tools/check_release.py --temp --secret build/dist.shield-secret.json
+python tools/check_release.py --skip-key-scan dist      # 没有构建密钥时显式接受密钥扫描缺口
 
 # MCP 冒烟（源码或冻结产物）
 python tools/mcp_smoke.py --server module

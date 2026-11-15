@@ -89,9 +89,34 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(len(failures), 1)
         self.assertIn("mypkg/views.py", failures[0])
 
-        (self.root / "_shield_runtime" / "_core.py").unlink()
+    def test_bytecode_cache_is_rejected_at_build_time(self) -> None:
+        cache = self.root / "mypkg" / "__pycache__"
+        cache.mkdir()
+        (cache / "views.cpython-312.pyc").write_bytes(b"cache")
+        with self.assertRaises(manifest.ManifestError) as caught:
+            self.make()
+        self.assertIn("__pycache__", str(caught.exception))
+
+    def test_verify_files_reports_unlisted_bytecode(self) -> None:
+        payload = self.make()
+        cache = self.root / "mypkg" / "__pycache__"
+        cache.mkdir()
+        (cache / "views.cpython-312.pyc").write_bytes(b"cache")
         failures = manifest.verify_files(self.root, payload)
-        self.assertEqual(len(failures), 2)
+        self.assertTrue(
+            any("unsigned bytecode" in item for item in failures), failures,
+        )
+        self.assertEqual(
+            manifest.verify_files(self.root, payload, check_bytecode=False), [],
+        )
+
+    def test_sourceless_runtime_bytecode_is_allowed(self) -> None:
+        runtime = self.root / "_shield_runtime"
+        (runtime / "_core.pyc").write_bytes(b"runtime")
+        payload = self.make()
+        files = payload["files"]
+        self.assertEqual(files["_shield_runtime/_core.pyc"]["category"], "runtime")
+        self.assertFalse(any("__pycache__" in name for name in files))
 
     def test_full_mode_covers_data(self) -> None:
         payload = self.make(integrity="full")

@@ -875,9 +875,41 @@ def directory_size(root: Path) -> int:
     return total
 
 
-def clean_pycache(root: Path) -> None:
+def clean_pycache(root: Path) -> int:
+    removed = 0
     for cache in root.rglob("__pycache__"):
-        shutil.rmtree(cache, ignore_errors=True)
+        if cache.is_dir():
+            shutil.rmtree(cache, ignore_errors=True)
+            removed += 1
+    return removed
+
+
+def assert_no_bytecode_caches(output: Path) -> None:
+    """Fail the build when a release tree still contains import bytecode.
+
+    The signed manifest hashes source files; it cannot cover ``.pyc`` payloads.
+    CPython validates a cache against the source ``mtime``/``size`` only, so a
+    cache shipped (or planted) next to a protected stub can execute instead of
+    the stub. Builds must publish a tree without caches.
+    """
+    leftovers: list[str] = []
+    for cache in output.rglob("__pycache__"):
+        leftovers.append(cache.relative_to(output).as_posix())
+    for path in output.rglob("*"):
+        if not path.is_file() or path.suffix.lower() not in (".pyc", ".pyo"):
+            continue
+        relative = path.relative_to(output).as_posix()
+        if relative.startswith(RUNTIME_PACKAGE + "/"):
+            continue
+        leftovers.append(relative)
+    if leftovers:
+        shown = ", ".join(sorted(set(leftovers))[:5])
+        if len(leftovers) > 5:
+            shown += f", and {len(leftovers) - 5} more"
+        raise BuildError(
+            "release tree still contains bytecode caches after cleanup: "
+            f"{shown}; close any process that holds them and rebuild"
+        )
 
 
 def build(options: BuildOptions) -> BuildResult:
@@ -1111,7 +1143,10 @@ def _build_impl(options: BuildOptions) -> BuildResult:
     })
 
     report_stage(options, "cleanup", "cleaning bytecode caches", 96)
-    clean_pycache(output)
+    removed = clean_pycache(output)
+    assert_no_bytecode_caches(output)
+    if removed:
+        report_log(options, f"removed {removed} __pycache__ directories from the output")
 
     result = BuildResult(
         output, secret_path, license_path, build_id, len(modules), cipher,

@@ -56,6 +56,25 @@ def make_project(root: Path) -> None:
     (root / "old.shield-secret.json").write_text("{}", encoding="utf-8")
 
 
+def write_forged_pyc(source: Path, cache_dir: Path, payload: str) -> Path:
+    """Write a timestamp-based cache that CPython would accept for ``source``."""
+    import importlib.util
+    import marshal
+    import struct
+
+    stat = source.stat()
+    header = (
+        importlib.util.MAGIC_NUMBER
+        + struct.pack("<I", 0)
+        + struct.pack("<I", int(stat.st_mtime) & 0xFFFFFFFF)
+        + struct.pack("<I", stat.st_size)
+    )
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    target = cache_dir / f"{source.stem}.{sys.implementation.cache_tag}.pyc"
+    target.write_bytes(header + marshal.dumps(compile(payload, str(source), "exec")))
+    return target
+
+
 class BuilderTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
@@ -364,6 +383,36 @@ class BuilderTests(unittest.TestCase):
         completed = self.run_project("check")
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("package manifest", completed.stderr)
+
+    def test_planted_bytecode_cache_is_rejected(self) -> None:
+        self.build()
+        source = self.output / "mypkg" / "__init__.py"
+        write_forged_pyc(
+            source,
+            self.output / "mypkg" / "__pycache__",
+            "print('PYSHELD_PYC_BYPASS')\nVALUE = 42\n",
+        )
+        completed = self.run_project("check")
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertNotIn("PYSHELD_PYC_BYPASS", completed.stdout + completed.stderr)
+        self.assertIn("unsigned bytecode cache", completed.stderr)
+        self.assertIn("mypkg/__pycache__", completed.stderr)
+
+    def test_runtime_does_not_write_bytecode_into_dist(self) -> None:
+        self.build()
+        env = os.environ.copy()
+        env["PYSHELD_LICENSE"] = str(self.output / "pyshield.lic")
+        env["PYSHELD_STATE_DIR"] = str(self.state_dir)
+        env.pop("PYTHONDONTWRITEBYTECODE", None)
+        completed = subprocess.run(
+            [sys.executable, str(self.output / "manage.py"), "check"],
+            cwd=self.output, env=env, capture_output=True, text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertFalse(
+            list(self.output.rglob("__pycache__")),
+            "protected tree must stay free of bytecode caches",
+        )
 
     def test_verify_command(self) -> None:
         result = self.build(integrity="full")
