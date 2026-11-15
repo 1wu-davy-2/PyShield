@@ -69,9 +69,17 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 _core.load_module(name, str(path), chunks, module_id)
             except BaseException as exc:
+                cause = exc.__cause__
+                detail = (
+                    f"{type(exc).__name__}: {exc}"
+                    + (
+                        f" | cause={type(cause).__name__}: {cause}"
+                        if cause is not None else ""
+                    )
+                )
                 print(
                     f"::error title=native-load-{name}::"
-                    f"{type(exc).__name__}: {exc}".replace("\n", " "),
+                    f"{detail}".replace("\n", " "),
                     flush=True,
                 )
                 raise
