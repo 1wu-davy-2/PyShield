@@ -1,10 +1,10 @@
 # Round 3 审查材料
 
-本目录是第二轮复核后的第三轮材料（2026-11-15 修复版），对应源码 `develop @ 9bd4b9f` 加本轮修复工作树（时钟并发、旧状态迁移、onefile 绑定和挑战 flag 可达性）。所有样本只用于授权安全评估，不是正式发布链路。
+本目录是第二轮复核后的第三轮材料（2026-11-15 修复版），对应源码 `develop @ 8adeccf`（时钟并发、旧状态迁移、onefile 绑定、单实例启动和挑战 flag 可达性）。所有样本只用于授权安全评估，不是正式发布链路。
 
 | 文件 | 说明 |
 | --- | --- |
-| `PyShieldBuilder.exe`（仓库根目录，未纳入 git） | 重新构建的桌面构建器，49,243,867 B |
+| `PyShieldBuilder.exe`（仓库根目录，未纳入 git） | 重新构建的桌面构建器，21,541,926 B |
 | `dist-selfbuild/PyShieldBuilder-selfbuild.exe`（未纳入 git） | 重新构建的自保护构建器，40,562,131 B |
 | `PyShieldBuilder-protected-sample-round3.zip` | PyInstaller 打包前的受保护源码树（28 个业务模块 stub），用于静态检查，430,520 B |
 | `round3-django-shielded.zip` | 可直接运行的受保护 Django 示例工程，用于 Crack Challenge，70,742 B |
@@ -30,7 +30,7 @@ python manage.py reveal
 
 `.github/workflows/native-runtime.yml` 会在 `develop` push 时于 Windows 和 Ubuntu 上执行 `--runtime-native` 构建，验证原生扩展、无明文 runtime、无 PDB 侧车、无完整主密钥，并运行受保护应用。
 
-上一轮通过：`9bd4b9f`，[run 43666681749](https://github.com/1wu-davy-2/PyShield/actions/runs/43666681749)。本轮代码修复尚未提交，提交后需重新触发同一矩阵。产物名：`native-runtime-windows-latest`、`native-runtime-ubuntu-24.04`。
+本轮通过：`8adeccf`，[native-runtime run 43675650384](https://github.com/1wu-davy-2/PyShield/actions/runs/43675650384)、[build-develop run 43675650496](https://github.com/1wu-davy-2/PyShield/actions/runs/43675650496)、[selfbuild-poc run 43675650448](https://github.com/1wu-davy-2/PyShield/actions/runs/43675650448)。产物名：`native-runtime-windows-latest`、`native-runtime-ubuntu-24.04`、`PyShieldBuilder-windows-x64`、`PyShieldBuilder-selfbuild-windows-x64`。桌面 exe 已用 CI 快照 `ci-develop-latest` 替换本地文件。
 
 ## 校验
 
