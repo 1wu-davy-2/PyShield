@@ -9,7 +9,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from unittest import mock
 
-from gui import core, main as gui_main, tray
+from gui import core, instance, main as gui_main, tray
 from gui.backend import Api, BuildManager
 from pyshield import crypto, devsite, license_admin, licensing, tool_license
 from tests.test_builder import make_project
@@ -55,6 +55,39 @@ class TrayTests(unittest.TestCase):
         args.Cancel = False
         controller._on_form_closing(None, args)
         self.assertFalse(args.Cancel)
+
+
+class SingleInstanceTests(unittest.TestCase):
+    def test_second_acquire_is_rejected_until_release(self) -> None:
+        name = f"pyshield-test-{os.getpid()}-{time.time_ns()}"
+        with tempfile.TemporaryDirectory() as temp:
+            with mock.patch.dict(
+                os.environ,
+                {
+                    instance.ENV_ALLOW_MULTI: "",
+                    "XDG_RUNTIME_DIR": temp,
+                },
+            ):
+                first = instance.acquire_single_instance(name)
+                self.assertIsNotNone(first)
+                try:
+                    self.assertIsNone(instance.acquire_single_instance(name))
+                finally:
+                    first.release()
+                third = instance.acquire_single_instance(name)
+                self.assertIsNotNone(third)
+                third.release()
+
+    def test_multi_instance_override_is_explicit(self) -> None:
+        with mock.patch.dict(os.environ, {instance.ENV_ALLOW_MULTI: "1"}):
+            first = instance.acquire_single_instance()
+            second = instance.acquire_single_instance()
+            self.assertIsNotNone(first)
+            self.assertIsNotNone(second)
+            self.assertTrue(first.bypassed)
+            self.assertTrue(second.bypassed)
+            first.release()
+            second.release()
 
 
 class LaunchDispatchTests(unittest.TestCase):

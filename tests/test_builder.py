@@ -11,6 +11,7 @@ import tempfile
 import unittest
 from datetime import date, timedelta
 from pathlib import Path
+from unittest import mock
 
 from pyshield import builder, crypto, fingerprint, licensing, secure_store
 
@@ -423,7 +424,8 @@ class BuilderTests(unittest.TestCase):
             "last_seen": last_seen,
         }
         sealed = secure_store.seal_state(
-            payload, fingerprint.machine_fingerprint(), "pyshield-clock"
+            payload, fingerprint.machine_fingerprint(), "pyshield-clock",
+            crypto.b85decode(secret["build_key"]),
         )
         secure_store.write_private(self.state_dir / (build_id + ".state"), sealed)
         completed = self.run_project("check")
@@ -464,6 +466,144 @@ class BuilderTests(unittest.TestCase):
                 raw, machine, "pyshield-clock", build_key,
             )
             self.assertEqual(record["last_seen"], today.isoformat())
+
+    def test_legacy_clock_state_requires_explicit_opt_in(self) -> None:
+        result = self.build(expire="2035-01-01")
+        secret = licensing.read_secret(result.secret)
+        build_id = secret["build_id"]
+        machine = fingerprint.machine_fingerprint()
+        build_key = crypto.b85decode(secret["build_key"])
+        seen = date.today() - timedelta(days=1)
+        payload = {"format": 2, "build_id": build_id, "last_seen": seen.isoformat()}
+        legacy = secure_store.seal_state(payload, machine, "pyshield-clock")
+        paths = (
+            self.state_dir / (build_id + ".state"),
+            self.state_dir / (build_id + ".state.anchor"),
+        )
+        for path in paths:
+            secure_store.write_private(path, legacy)
+
+        completed = self.run_project("check")
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("PYSHELD_ALLOW_LEGACY_STATE", completed.stderr)
+
+        with mock.patch.dict(os.environ, {"PYSHELD_ALLOW_LEGACY_STATE": "1"}):
+            completed = self.run_project("check")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        for path in paths:
+            record = secure_store.open_state(
+                secure_store.read_private(path), machine, "pyshield-clock", build_key,
+            )
+            self.assertEqual(record["last_seen"], date.today().isoformat())
+
+    def test_implausible_future_clock_state_is_rejected(self) -> None:
+        result = self.build(expire="2035-01-01")
+        secret = licensing.read_secret(result.secret)
+        build_id = secret["build_id"]
+        machine = fingerprint.machine_fingerprint()
+        build_key = crypto.b85decode(secret["build_key"])
+        payload = {
+            "format": 2,
+            "build_id": build_id,
+            "last_seen": (date.today() + timedelta(days=30)).isoformat(),
+        }
+        sealed = secure_store.seal_state(payload, machine, "pyshield-clock", build_key)
+        for path in (
+            self.state_dir / (build_id + ".state"),
+            self.state_dir / (build_id + ".state.anchor"),
+        ):
+            secure_store.write_private(path, sealed)
+
+        completed = self.run_project("check")
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("implausible future date", completed.stderr)
+
+    def test_concurrent_clock_writes_do_not_fail(self) -> None:
+        result = self.build(expire="2035-01-01")
+        secret = licensing.read_secret(result.secret)
+        build_id = secret["build_id"]
+        machine = fingerprint.machine_fingerprint()
+        build_key = crypto.b85decode(secret["build_key"])
+        script = (
+            "import os\n"
+            "from _shield_runtime import _core\n"
+            "_core._check_clock(bytes.fromhex(os.environ['PYSHELD_TEST_BUILD_KEY']))\n"
+        )
+        for round_no in range(2):
+            state = Path(self.temp.name) / f"concurrent-{round_no}"
+            state.mkdir()
+            env = os.environ.copy()
+            env["PYSHELD_STATE_DIR"] = str(state)
+            env["PYSHELD_TEST_BUILD_KEY"] = crypto.b85decode(secret["build_key"]).hex()
+            env.pop("PYSHELD_ALLOW_VOLATILE_STATE", None)
+            workers = [
+                subprocess.Popen(
+                    [sys.executable, "-c", script],
+                    cwd=self.output, env=env,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True,
+                )
+                for _ in range(8)
+            ]
+            outputs = [worker.communicate(timeout=30) for worker in workers]
+            failures = [
+                f"#{index}: {(out or '').strip()[:300]}"
+                for index, (worker, (out, _)) in enumerate(zip(workers, outputs))
+                if worker.returncode != 0
+            ]
+            self.assertEqual(failures, [], f"round {round_no}")
+            self.assertFalse(list(state.glob("*.tmp")))
+            records = []
+            for suffix in ("", ".anchor"):
+                record = secure_store.open_state(
+                    secure_store.read_private(state / (build_id + ".state" + suffix)),
+                    machine, "pyshield-clock", build_key,
+                )
+                records.append(record["last_seen"])
+            self.assertEqual(records[0], records[1])
+
+    def test_binding_override_does_not_disable_onefile_guard(self) -> None:
+        result = self.build(bind_first_run=True)
+        secret = licensing.read_secret(result.secret)
+        fake_mei = self.state_dir / "_MEIfake"
+        binding = self.state_dir / "binding.json"
+        script = (
+            "import json, os, sys\n"
+            "from _shield_runtime import _core\n"
+            "sys._MEIPASS = os.environ['FAKE_MEI']\n"
+            "os.environ['PYSHELD_BINDING_FILE'] = os.environ['BINDING_PATH']\n"
+            "onefile = _core._binding_paths_are_volatile()\n"
+            "try:\n"
+            "    _core._check_first_run_binding(bytes.fromhex(os.environ['BUILD_KEY']))\n"
+            "    rejected = False\n"
+            "except _core.LicenseError:\n"
+            "    rejected = True\n"
+            "del sys._MEIPASS\n"
+            "os.environ['PYSHELD_BINDING_FILE'] = os.environ['BINDING_MEI_PATH']\n"
+            "override_mei = _core._binding_paths_are_volatile()\n"
+            "os.environ['PYSHELD_BINDING_FILE'] = os.environ['BINDING_PERSISTENT']\n"
+            "persistent = _core._binding_paths_are_volatile()\n"
+            "print(json.dumps({'onefile': onefile, 'rejected': rejected, "
+            "'override_mei': override_mei, 'persistent': persistent}))\n"
+        )
+        env = os.environ.copy()
+        env["PYSHELD_LICENSE"] = str(self.output / "pyshield.lic")
+        env["PYSHELD_STATE_DIR"] = str(self.state_dir)
+        env["FAKE_MEI"] = str(fake_mei)
+        env["BINDING_PATH"] = str(binding)
+        env["BINDING_MEI_PATH"] = str(self.state_dir / "_MEIfoo" / "binding.json")
+        env["BINDING_PERSISTENT"] = str(self.state_dir / "normal" / "binding.json")
+        env["BUILD_KEY"] = crypto.b85decode(secret["build_key"]).hex()
+        completed = subprocess.run(
+            [sys.executable, "-c", script], cwd=self.output, env=env,
+            capture_output=True, text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        result_data = json.loads(completed.stdout.strip().splitlines()[-1])
+        self.assertTrue(result_data["onefile"])
+        self.assertTrue(result_data["rejected"])
+        self.assertTrue(result_data["override_mei"])
+        self.assertFalse(result_data["persistent"])
 
     def test_hot_reload_after_renewal(self) -> None:
         result = self.build(expire="2000-01-01")

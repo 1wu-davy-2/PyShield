@@ -70,7 +70,7 @@ python -m http.server 8130 --directory gui/web
 5. **构建页是两个视图**：工作区（全宽配置 + 底部操作条）→ 确认弹窗（摘要 + 额度提示）→ 构建日志页（进度+日志+结果卡）。`app.js` 的 `startBuild()` 只调 `check_build` 做无副作用校验并弹窗；`confirmStartBuild()` 才调 `start_build`，由后端在 `BuildManager.start()` 里记录配额。起始额度在确认时扣除，失败/取消不退还。元素 id（`#progressBlock`、`#terminal` 等）原样沿用，交互契约没变。
 6. **深链被浏览器拦是常态**：`pyshield://` 跳转需要用户手势；授权到账后 `Api._raise_window()` 自动置顶 + 轮询兜底（2.5s 一次）。
 7. **解释器下载只装到用户目录**：`%APPDATA%\PyShield\runtimes\`，`PYSHELD_RUNTIME_DIR` 可重定向；镜像只显示真正带 Windows 嵌入包的补丁版本（仅源码发布的安全补丁会被 HEAD 探测跳过）。
-8. **关闭是隐藏到托盘，不是退出**：`gui/tray.py` 给 frameless 窗口补回缺失的 `WS_MINIMIZEBOX`（否则点任务栏按钮不会最小化/还原），并用 WinForms `NotifyIcon` 接管 `FormClosing`：✕ / Alt+F4 隐藏窗口，托盘双击还原，右键「退出 PyShield」才真正结束；构建中拒绝退出。Linux 无托盘，关闭仍直接退出。第二次启动会通过 LinkServer 的 `show` 消息唤起已隐藏实例，不新开窗口。
+8. **关闭是隐藏到托盘，不是退出**：`gui/tray.py` 给 frameless 窗口补回缺失的 `WS_MINIMIZEBOX`（否则点任务栏按钮不会最小化/还原），并用 WinForms `NotifyIcon` 接管 `FormClosing`：✕ / Alt+F4 隐藏窗口，托盘双击还原，右键「退出 PyShield」才真正结束；构建中拒绝退出。Linux 无托盘，关闭仍直接退出。第二次启动会先尝试通过 LinkServer 的 `show` 消息唤起已隐藏实例；全局命名互斥锁保证即使配置目录不同也不会新开窗口。
 
 ## 5. 测试与 CI
 

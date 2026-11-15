@@ -1,0 +1,354 @@
+{
+  "assessment": {
+    "round": 3,
+    "date": "2026-11-15",
+    "source_commit": "08f400a (behavior), 9bd4b9f (materials)",
+    "environment": "Windows 10 Pro 19045 x64, CPython 3.12.0, Django 5.2.8, PyInstaller 6.22.3",
+    "artifacts": {
+      "PyShieldBuilder.exe": "486fd67e4e23efd30c582529437076b6690d38232a4ff24662b96c334644b0f9",
+      "PyShieldBuilder-selfbuild.exe": "3a3d0ecfacd5fe2c02c0203f60ac6158ebe69ea85fae3a2526a86fd5f9adcd2a",
+      "PyShieldBuilder-protected-sample-round3.zip": "7a87d55eb55443c99019b0678a530833f8a7c5589c8ad40c6a8dcfefc9f00b23",
+      "round3-django-shielded.zip": "3ec82a849b58e126b660f4632f45c209a5571a943139753867b036bcb46304a2"
+    },
+    "flag_sha256": "46b5119e53dcb631ca73426deb23910af129b589c8a9f618da1663aa9448e3bc",
+    "tests": "172 passed, 1 skipped; embed_runtime --check OK"
+  },
+  "findings": [
+    {
+      "id": "PSH-R3-001",
+      "title": "最终挑战包不含 flag（raise 之后的赋值被 CPython 删除）",
+      "severity": "informational",
+      "cvss": "N/A",
+      "component": "review/round3/round3-django-shielded.zip -> demo.hidden_flag",
+      "artifact_sha256": "3ec82a849b58e126b660f4632f45c209a5571a943139753867b036bcb46304a2",
+      "source_commit": "08f400a",
+      "environment": "Windows 10 Pro 19045 x64, CPython 3.12.0, Django 5.2.8",
+      "preconditions": "read access to the delivered zip; no execution required",
+      "status": "new",
+      "summary": "The final demo.hidden_flag code object contains no FLAG constant. The source puts FLAG = ... after an unconditional raise; CPython 3.12 removes unreachable code, leaving FLAG only in co_names. The intended value was recovered from the build machine's %TEMP% source and an earlier build (1d39fa1523ef46b0), not from the delivered zip.",
+      "root_cause": "demo/hidden_flag.py line 5 FLAG = ... follows line 3 raise RuntimeError(...); compile() drops the unreachable assignment. The compiled code object's co_code/co_linetable match the final payload byte-for-byte, while co_consts contains no flag.",
+      "repro_steps": [
+        "Extract round3-django-shielded.zip",
+        "Run poc_keyring_decrypt.py on the extracted tree; observe demo.hidden_flag names include FLAG but consts do not",
+        "Run flag_rootcause.py; compare compile(source) with the decrypted payload code object",
+        "Run scan_flag.py; final zip has zero flag/hash hits",
+        "Run poc_keyring_decrypt.py on the earlier build 1d39fa1523ef46b0 to see the FLAG const"
+      ],
+      "poc": "review/round3/poc/poc_keyring_decrypt.py, flag_rootcause.py, scan_flag.py; logs in poc/logs",
+      "impact": "The challenge cannot be solved from the delivered zip. A reviewer relying on the artifact cannot recover the flag; submission would require the build workspace or an earlier build. Not a PyShield confidentiality defect.",
+      "evidence": [
+        "recovered value: PSH-ROUND3-c32ae3df08a0237b95d472b8413c54f8",
+        "sha256(value): 46b5119e53dcb631ca73426deb23910af129b589c8a9f618da1663aa9448e3bc",
+        "final code object names: ('__doc__', 'RuntimeError', 'FLAG'); consts: docstring + guard message",
+        "logs/flag-rootcause.log: co_code equal=True, co_linetable equal=True, flag string in consts=False",
+        "logs/flag-scan.log: final tree 36 files, 0 hits; zip 1 file, 0 hits",
+        "earlier build 1d39fa1523ef46b0: consts include the flag string"
+      ],
+      "remediation": "Move FLAG before the raise (or remove the unconditional raise), rebuild, assert in CI that the decrypted module's co_consts contains the flag, regenerate zip and SHA256SUMS, and clean build-machine temp files.",
+      "residual_risk": "Local users on the build machine can read build workspaces; the flag also leaked into %TEMP% (PSH-R3-005)."
+    },
+    {
+      "id": "PSH-R3-002",
+      "title": "并发时钟状态访问导致 fail-closed 启动失败",
+      "severity": "medium",
+      "cvss": "CVSS:3.1/AV:L/AC:H/PR:L/UI:N/S:U/C:N/I:N/A:H",
+      "component": "pyshield/runtime_template/_shield_runtime/_core.py (_read_clock/_write_clock/_read_clock_file); pyshield/secure_store.py (write_private/read_private)",
+      "artifact_sha256": "3ec82a849b58e126b660f4632f45c209a5571a943139753867b036bcb46304a2, 3a3d0ecfacd5fe2c02c0203f60ac6158ebe69ea85fae3a2526a86fd5f9adcd2a",
+      "source_commit": "08f400a",
+      "environment": "Windows 10 Pro 19045 x64, CPython 3.12.0",
+      "preconditions": "two or more processes import protected modules concurrently; write access to the state directories",
+      "status": "new",
+      "summary": "Concurrent clock writes collide on a deterministic .tmp path and lack a cross-process lock. In an 8-process x 5-round test, 2/40 workers failed with SecureStoreError or LicenseError (WinError 32 / Permission denied), so a process can fail to import protected modules and start.",
+      "root_cause": "secure_store.write_private uses target.name + '.tmp'; _read_clock/_write_clock perform read-modify-write on primary and anchor without an inter-process lock; _read_clock_file does not wrap SecureStoreError from read_private; _write_clock raises when both writes fail (written == 0).",
+      "repro_steps": [
+        "Extract the selfbuild sample (or use any --runtime-pyc build)",
+        "Run review/round3/poc/race_driver.py (8 workers x 5 rounds, each calls _core._check_clock)",
+        "Observe 1-2 failures in some rounds with WinError 32 / Permission denied on the .state/.tmp path",
+        "logs/race.log: total failed workers 2/40"
+      ],
+      "poc": "review/round3/poc/race_driver.py, state_race_worker.py; logs/race.log and logs/state-tests.log",
+      "impact": "Availability: a worker/process fails to start; fail-closed, no license bypass or plaintext disclosure. Triggers on first run, daily first start, single-file recovery, or license renewal when multiple processes start together.",
+      "evidence": [
+        "logs/race.log: 8/8, 8/8, 8/8, 7/8, 7/8; 2/40 failed",
+        "errors: SecureStoreError cannot read ...state: [Errno 13] Permission denied; LicenseError cannot record clock state ...state.tmp -> ...state",
+        "logs/state-tests.log: concurrent thread test fails with WinError 32 on .tmp -> .state"
+      ],
+      "remediation": "Use a unique temp file per write (mkstemp in the target directory) and retry transient sharing violations; add an inter-process lock around the state read-modify-write; wrap read_private SecureStoreError as LicenseError; add a CI test with 8-16 concurrent processes.",
+      "residual_risk": "A genuinely unwritable state directory still fails closed; that is intended and documented via PYSHELD_ALLOW_VOLATILE_STATE."
+    },
+    {
+      "id": "PSH-R3-003",
+      "title": "旧公开-MAC 状态迁移形成一次性伪造/降级",
+      "severity": "medium",
+      "cvss": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:N/I:H/A:N",
+      "component": "_shield_runtime/_core.py::_read_clock_file legacy fallback; pyshield/secure_store.py::state_key(secret=None)",
+      "artifact_sha256": "3ec82a849b58e126b660f4632f45c209a5571a943139753867b036bcb46304a2",
+      "source_commit": "08f400a",
+      "environment": "Windows 10 Pro 19045 x64, CPython 3.12.0",
+      "preconditions": "local user with write access to the clock state files (same as the accepted delete-both boundary)",
+      "status": "partial_fix",
+      "summary": "Keyed state MACs work, but _read_clock_file falls back to the legacy public-MAC format on keyed failure. An attacker without the build key can write a legacy record with an arbitrary last_seen; the runtime accepts it once and rewrites both copies as keyed. This can reset rollback history or persist a future date and block startup.",
+      "root_cause": "_read_clock_file catches SecureStoreError from keyed open_state and retries open_state without a secret; _read_clock sees primary_legacy/anchor_legacy and calls _write_clock(seen, paths, secret), blessing the forged date. The legacy MAC key is sha256('pyshield-state-key-v1|purpose|machine'), which is public.",
+      "repro_steps": [
+        "Write primary and anchor with secure_store.seal_state(payload, machine, purpose) (no secret) and last_seen=2020-01-01",
+        "Call _core._read_clock(build_key)",
+        "Observe it returns 2020-01-01 and both files are now readable with the keyed secret",
+        "logs/state-tests.log: legacy state accepted once; legacy state rewritten keyed"
+      ],
+      "poc": "review/round3/poc/state_tests.py section 6; logs/state-tests.log",
+      "impact": "Arbitrary clock history reset without the build key, allowing clock-rollback/expiry bypass; a future-dated legacy record causes a persistent fail-closed startup. Capability is equivalent to deleting both state files (known boundary) but defeats the keyed-MAC anti-tamper property and is stealthier.",
+      "evidence": [
+        "logs/state-tests.log: keyed MAC rejects no-secret and wrong-secret; legacy state accepted once and rewritten keyed",
+        "_core.py:308-336 legacy fallback; _core.py:399-407 rewrite; secure_store.py:108-112 public key derivation"
+      ],
+      "remediation": "Remove the legacy fallback or gate it behind an explicit build/license migration flag; limit to a one-time marker; bound last_seen to a plausible range; document that keyed MAC does not stop writers with state-directory access.",
+      "residual_risk": "Deleting both state files still resets history; that is an accepted offline-client boundary."
+    },
+    {
+      "id": "PSH-R3-004",
+      "title": "Onefile 首次绑定保护是启发式，可被环境变量/布局绕过",
+      "severity": "low",
+      "cvss": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:N/I:L/A:N",
+      "component": "_shield_runtime/_core.py::_binding_paths_are_volatile/_binding_paths; PYSHELD_BINDING_FILE",
+      "artifact_sha256": "3ec82a849b58e126b660f4632f45c209a5571a943139753867b036bcb46304a2",
+      "source_commit": "08f400a",
+      "environment": "Windows 10 Pro 19045 x64, CPython 3.12.0",
+      "preconditions": "first-run binding license; local user control over the launch environment or deployment layout",
+      "status": "partial_fix",
+      "summary": "The default PyInstaller _MEI temp layout is rejected, but setting PYSHELD_BINDING_FILE disables the volatile check, and a non-standard _MEIPASS (different parent or name) evades the heuristic. First-run binding remains resettable by deleting both records (known boundary).",
+      "root_cause": "_binding_paths_are_volatile returns False immediately when BINDING_FILE_ENV is set, then relies on sys._MEIPASS parent == tempfile.gettempdir() and name.startswith('_MEI'). This is a runtime heuristic, not a build-time restriction; _check_first_run_binding rebinds when both records are missing.",
+      "repro_steps": [
+        "Run state_tests.py section 8",
+        "Observe default temp _MEI path -> LicenseError; PYSHELD_BINDING_FILE set -> binding written; delete both -> rebinding succeeds; non-temp _MEIPASS -> volatile check false"
+      ],
+      "poc": "review/round3/poc/state_tests.py; logs/state-tests.log",
+      "impact": "Non-standard onefile deployments may silently not persist first-run binding (every start looks like a first run). A user controlling the env can bypass the onefile rejection. No new access beyond the known delete-both reset; fixed/any binding modes are unaffected.",
+      "evidence": [
+        "logs/state-tests.log: default _MEI temp is volatile=True; onefile first-run rejected; binding env disables volatile guard; deleting both records resets; non-temp _MEIPASS evades heuristic"
+      ],
+      "remediation": "Reject first-run + onefile at build time, or require a persistent PYSHELD_BINDING_FILE path; validate the chosen path is not under a temporary _MEI directory; document first-run binding as a soft boundary.",
+      "residual_risk": "First-run binding can always be reset by deleting both records; use fixed fingerprints or server-side binding for stronger enforcement."
+    },
+    {
+      "id": "PSH-R3-005",
+      "title": "构建机 %TEMP% 遗留挑战源码与构建密钥",
+      "severity": "low",
+      "cvss": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N",
+      "component": "build process (not a delivered artifact)",
+      "artifact_sha256": "N/A",
+      "source_commit": "08f400a",
+      "environment": "Windows 10 Pro 19045 x64",
+      "preconditions": "read access to the build machine's %TEMP% (local user, backup, or support bundle)",
+      "status": "new",
+      "summary": "The build machine's %TEMP% retains the challenge source with the plaintext flag, two diagnostic build secret files containing master_key/build_key/signing_key, and selfbuild staging/protected trees. The diagnostic build IDs do not appear in the delivered exes, so no delivered-artifact key reuse was found.",
+      "root_cause": "Build/diagnostic scripts use %TEMP% as the workspace and do not clean up on all paths; *.shield-secret.json files are left by diagnostic builds despite the selfbuild cleanup.",
+      "repro_steps": [
+        "Get-ChildItem $env:TEMP -Recurse -Filter '*.shield-secret.json'",
+        "Get-ChildItem $env:TEMP -Recurse -Filter hidden_flag.py",
+        "Inspect the JSON fields (do not print secret values); check build IDs against delivered exes"
+      ],
+      "poc": "The commands above; no separate script required. Redacted evidence is in the report.",
+      "impact": "Local users can read the flag and build keys; if diagnostic outputs are shared, the corresponding builds are decryptable. The flag challenge is undermined. No delivered-artifact key match was found.",
+      "evidence": [
+        "%TEMP%\\pyshield-round3-project-ybevj8q8\\review-demo\\demo\\hidden_flag.py contains the flag",
+        "%TEMP%\\psh-diag-out.shield-secret.json (build 23e2ef21346f4db1) and psh-diag2-out.shield-secret.json (build 4e126e1cdd6d3833) contain master/build/signing keys (40 chars each)",
+        "Both build IDs have 0 occurrences in PyShieldBuilder.exe and PyShieldBuilder-selfbuild.exe"
+      ],
+      "remediation": "Use a dedicated build workspace with restrictive ACL, clean on success/failure/cancel, unlink secrets on all paths, and scan %TEMP%/workspace for flag and secret files before publishing.",
+      "residual_risk": "A local administrator can read build memory/disk; this is the build-machine trust boundary."
+    },
+    {
+      "id": "PSH-R3-006",
+      "title": "原生 runtime 的 keyring 仍是可调用 oracle；strip/PDB 仅有源码级验证",
+      "severity": "informational",
+      "cvss": "N/A",
+      "component": "tools/diagnose_native_runtime.py, tools/check_native_build.py, pyshield/builder.py, .github/workflows/native-runtime.yml",
+      "artifact_sha256": "N/A (no native artifact provided)",
+      "source_commit": "08f400a",
+      "environment": "source/CI review; no local C toolchain",
+      "preconditions": "read access to a native artifact",
+      "status": "partial_verification",
+      "summary": "The native build strips symbols, removes PDB sidecars, and clears PE CodeView in source. However, the CI's own diagnose_native_runtime.py imports _shield_runtime._keyring and asserts master_key() == master, proving the native extension exposes the master via one call. The key scan only searches full key byte sequences, so masked parts pass. No native artifact was provided for independent verification.",
+      "root_cause": "Cython compiles _keyring.py; master_key remains a Python-callable module method. strip removes symbol names but not the Python method table; the CI check is a static full-key scan, not an extraction test.",
+      "repro_steps": [
+        "Inspect tools/diagnose_native_runtime.py:41-49",
+        "Inspect .github/workflows/native-runtime.yml:80-81",
+        "Inspect tools/check_native_build.py:78-89",
+        "With a native artifact: from _shield_runtime import _keyring; print(_keyring.master_key().hex()); then decrypt modules"
+      ],
+      "poc": "review/round3/poc/poc_keyring_decrypt.py can be pointed at a native runtime directory; the same oracle was proven on the selfbuild exe PYZ.",
+      "impact": "Native compilation raises static symbol/PDB cost but not master-key extraction cost. 'No full master key' is literally true but must not be presented as confidentiality.",
+      "evidence": [
+        "tools/diagnose_native_runtime.py:48 asserts _keyring.master_key() == master",
+        "native-runtime.yml:80-81 runs that diagnostic in CI",
+        "check_native_build.py:78-89 scans only full Base85/raw/hex master keys",
+        "No native artifact in review materials; local MSVC/LLVM strip unavailable"
+      ],
+      "remediation": "Document that native keeps the same key oracle; add explicit CI checks for the master_key export and for embedded CodeView strings; provide native artifacts for verification; use TPM/hardware/server unlock for a real boundary.",
+      "residual_risk": "Master extraction, runtime plaintext, client-side license checks, unsigned exe, and no TPM/server are accepted offline boundaries."
+    },
+    {
+      "id": "PSH-R3-007",
+      "title": "自保护样本残余属性复核（integrity=off / bundle 仅压缩 / 中间树明文）",
+      "severity": "informational",
+      "cvss": "N/A",
+      "component": "PyShieldBuilder-protected-sample-round3.zip; PyShieldBuilder-selfbuild.exe",
+      "artifact_sha256": "7a87d55eb55443c99019b0678a530833f8a7c5589c8ad40c6a8dcfefc9f00b23, 3a3d0ecfacd5fe2c02c0203f60ac6158ebe69ea85fae3a2526a86fd5f9adcd2a",
+      "source_commit": "08f400a",
+      "environment": "Windows 10 Pro 19045 x64, CPython 3.12.0, PyInstaller 6.22.3",
+      "preconditions": "read access to the sample/exe",
+      "status": "residual",
+      "summary": "The selfbuild sample has 28 stubs, no secret/pyc/runtime_template, license format 3, integrity=off, bundle only compression, and a plaintext intermediate runtime with masked keyring. The selfbuild exe has no plaintext runtime datas in the CArchive, but its PYZ keyring is executable offline and business modules decrypt. These match the documentation; no new issue beyond the accepted boundaries.",
+      "root_cause": "Selfbuild intentionally uses runtime_source=True with integrity=off and a base64+zlib+zip bundle; the runtime must contain key material to decrypt modules.",
+      "repro_steps": [
+        "Run verify_sample.py on the sample",
+        "Run sample_keyring.py (license format 3, no build_key, v1 rejected, decrypt a module)",
+        "Run poc_exe_extract.py on PyShieldBuilder-selfbuild.exe (master, builder, gui.backend)"
+      ],
+      "poc": "review/round3/poc/sample_keyring.py, poc_exe_extract.py; logs/sample-verify.log, sample-keyring.log, exe-poc.log",
+      "impact": "No new impact; confirms integrity=off, bundle compression, and intermediate plaintext are residual properties. Do not present the selfbuild exe as a confidentiality boundary.",
+      "evidence": [
+        "sample: 28 stubs, 48 files, 701139 bytes, no pyc/__pycache__/secret/runtime_template",
+        "license format 3, build_key absent, v1 rejected",
+        "selfbuild exe: PYZ contains _shield_runtime._keyring; master recovered; pyshield.builder and gui.backend decrypted offline"
+      ],
+      "remediation": "Keep the documented cost-only wording; optionally enable integrity for selfbuild; use native/Authenticode/TPM/server for stronger goals.",
+      "residual_risk": "Runtime plaintext, double-delete reset, client-side license checks, unsigned exe, no TPM/server."
+    }
+  ],
+  "fix_verification": [
+    {
+      "item": "format 3 runtime downgrade",
+      "verdict": "effective",
+      "evidence": "runtime v3 only; final/early license format=3 with no build_key; v1 key rejected; licensing.open_license has a v3->v2 compatibility fallback but it is builder/vendor-side only, not reachable from the runtime"
+    },
+    {
+      "item": "clock partial-write self-heal",
+      "verdict": "partial",
+      "evidence": "mismatch max/rewrite works; single write failure does not block; both-fail raises; new multi-process race PSH-R3-002; unreadable copy raises SecureStoreError"
+    },
+    {
+      "item": "keyed state MAC",
+      "verdict": "partial",
+      "evidence": "keyed MAC correct; legacy public-MAC migration PSH-R3-003; master extraction R-01"
+    },
+    {
+      "item": "300s revalidation / integrity",
+      "verdict": "documented_partial",
+      "evidence": "no TTL race found; integrity still cached once; docs accurate"
+    },
+    {
+      "item": "per-user state",
+      "verdict": "residual",
+      "evidence": "not fixed; documented; new OS user resets clock; PYSHELD_STATE_DIR collapses anchor separation"
+    },
+    {
+      "item": "selfbuild integrity=off / bundle compression",
+      "verdict": "residual_documented",
+      "evidence": "verified 28 stubs, integrity off, bundle base64+zlib+zip; intermediate tree plaintext"
+    },
+    {
+      "item": "onefile first-run binding",
+      "verdict": "partial",
+      "evidence": "default _MEI rejected; env override and heuristic bypass; first-run reset known"
+    },
+    {
+      "item": "DPAPI fallback",
+      "verdict": "residual_documented",
+      "evidence": "PLAIN1 fallback still accepted; docs state it"
+    },
+    {
+      "item": "_wipe best effort",
+      "verdict": "residual_documented",
+      "evidence": "only bytearrays wiped; bytes copies remain"
+    },
+    {
+      "item": "final exe delivery",
+      "verdict": "effective",
+      "evidence": "both exes provided; SHA-256 matches SHA256SUMS.txt"
+    },
+    {
+      "item": "_keyring replaces MASTER_KEY_B85",
+      "verdict": "limited",
+      "evidence": "no literal full key; master_key() one-call recovery; selfbuild exe PYZ recoverable"
+    },
+    {
+      "item": "native runtime hardening",
+      "verdict": "partial_verification",
+      "evidence": "strip/PDB source review; CI keyring oracle; no native artifact"
+    },
+    {
+      "item": "challenge flag recoverability",
+      "verdict": "ineffective",
+      "evidence": "final zip contains no flag; value recovered from build workspace/earlier build only"
+    }
+  ],
+  "residual_risks": [
+    {
+      "id": "R-01",
+      "title": "master key extraction",
+      "measurement": "pyc tree: 1.4 ms key recovery, ~52 ms including crypto import, 257 ms end-to-end process; 13 modules decrypted in 2.4 ms; selfbuild exe PYZ recovered offline (build 26a4b0cc151aa56b, master SHA-256 a0be8e2e...); native CI diagnostic asserts the same oracle",
+      "status": "accepted_boundary"
+    },
+    {
+      "id": "R-02",
+      "title": "runtime memory plaintext",
+      "status": "accepted_boundary"
+    },
+    {
+      "id": "R-03",
+      "title": "deleting both state copies resets history",
+      "status": "accepted_boundary"
+    },
+    {
+      "id": "R-04",
+      "title": "client-side license checks can be patched",
+      "status": "accepted_boundary"
+    },
+    {
+      "id": "R-05",
+      "title": "unsigned exe / no Authenticode",
+      "status": "accepted_boundary"
+    },
+    {
+      "id": "R-06",
+      "title": "no TPM/server unlock",
+      "status": "accepted_boundary"
+    },
+    {
+      "id": "R-07",
+      "title": "DPAPI failure falls back to PLAIN",
+      "status": "documented"
+    },
+    {
+      "id": "R-08",
+      "title": "integrity manifest not covered by 300s revalidation",
+      "status": "documented"
+    },
+    {
+      "id": "R-09",
+      "title": "per-user state / new OS user resets clock; PYSHELD_STATE_DIR collapses anchor separation",
+      "status": "documented"
+    },
+    {
+      "id": "R-10",
+      "title": "selfbuild intermediate tree plaintext, integrity=off, bundle compression-only",
+      "status": "documented"
+    },
+    {
+      "id": "R-11",
+      "title": "best-effort buffer wipe",
+      "status": "documented"
+    },
+    {
+      "id": "R-12",
+      "title": "SecureStoreError type / unreadable state copy blocks startup",
+      "status": "covered_in_PSH-R3-002"
+    },
+    {
+      "id": "R-13",
+      "title": "assert_no_master_key and CI key scan only find full key constants",
+      "status": "documented_limitation"
+    }
+  ]
+}

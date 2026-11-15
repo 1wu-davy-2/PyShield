@@ -11,8 +11,8 @@
 | --- | --- | --- | --- |
 | V1 | `master_key` 在发布目录的 `_core.py`，许可证携带 `build_key`，发布目录自包含 | 许可证升级为格式 3，**不再携带 `build_key`**；`build_key` 由 `master_key + build_id` 通过 HKDF 派生；主密钥改为拆分/XOR 掩码的 `_keyring`，不再以单个 Base85 常量出现；Pro/Enterprise 在工具链可用时默认原生 runtime | 主密钥仍在客户端（`_keyring` 模块或原生扩展中）；攻击者可调用 `_keyring.master_key()` 或 dump 内存后自行派生。真正修复需要服务端解锁或硬件密钥 |
 | V2 | 运行期 `marshal.loads` + `exec`，内存中必然出现明文 code object | `load_module` 使用 `bytearray` 解包并在 `finally` 中覆写中间缓冲；默认不再发布 runtime 源码；Pro/Enterprise 默认使用原生 runtime | code object 和运行时字符串仍在进程内存中，可被调试器/dump 获取。本轮只是缩短窗口，不是内存加密 |
-| V3 | 首次启动绑定只写 `.pyshield-binding.json`，删除即可重置 | 增加 `_shield_runtime/.pyshield-binding.json.anchor`；主记录与锚点都用 `build_key` 派生 MAC 校验，删除单份会从另一份恢复；两份不一致或损坏均拒绝启动；检测到 PyInstaller onefile 临时目录时明确拒绝首次绑定 | 同时删除主记录和锚点仍可重新绑定；能提取 master key 的攻击者可伪造 MAC。彻底修复需要服务端首绑登记或硬件绑定 |
-| V4 | 删除 `~/.pyshield/<build_id>.state` 即视为首次运行；只读部署静默跳过写入 | 时钟状态改用 `secure_store`：Windows DPAPI、其它平台 HMAC；MAC 密钥改为由 `build_key` 派生；写入主文件 + 独立锚点；单份写入失败不再砖化，下一次启动取较新日期并对齐两份；删除单份会恢复；旧公开-MAC 状态首次读取后自动迁移 | 同时删除两份状态仍可重置；本地时钟始终可被改；MAC 密钥仍可从 master 派生；状态目录按 OS 用户隔离（可用 `PYSHELD_STATE_ANCHOR_DIR` 指向机器级 ACL 目录） |
+| V3 | 首次启动绑定只写 `.pyshield-binding.json`，删除即可重置 | 增加 `_shield_runtime/.pyshield-binding.json.anchor`；主记录与锚点都用 `build_key` 派生 MAC 校验，删除单份会从另一份恢复；两份不一致或损坏均拒绝启动；任何非 onedir `_MEIPASS` 都拒绝首次绑定，设置 `PYSHELD_BINDING_FILE` 也不能关闭检查 | 同时删除主记录和锚点仍可重新绑定；能提取 master key 的攻击者可伪造 MAC。彻底修复需要服务端首绑登记或硬件绑定 |
+| V4 | 删除 `~/.pyshield/<build_id>.state` 即视为首次运行；只读部署静默跳过写入 | 时钟状态改用 `secure_store`：Windows DPAPI、其它平台 HMAC；MAC 密钥改为由 `build_key` 派生；写入主文件 + 独立锚点；单份写入失败不再砖化，下一次启动取较新日期并对齐两份；删除单份会恢复；写入使用唯一临时文件、共享冲突重试和跨进程锁；旧公开-MAC 状态默认拒绝，仅在显式 `PYSHELD_ALLOW_LEGACY_STATE=1` 时允许一次性迁移，未来日期超过 7 天拒绝 | 同时删除两份状态仍可重置；本地时钟始终可被改；MAC 密钥仍可从 master 派生；状态目录按 OS 用户隔离（可用 `PYSHELD_STATE_ANCHOR_DIR` 指向机器级 ACL 目录） |
 | V5 | 到期/宽限/绑定全部由客户端本地判断 | 每次加载受保护模块时，若许可证缓存超过 5 分钟会重新校验；长期运行的进程不会无限期沿用启动时的授权状态；所有状态校验集中到 `_load_state` | 客户端仍可修改 runtime 或绕过校验；**5 分钟重验只覆盖许可证/绑定/时钟，完整性清单仍只在进程首次加载时扫描一次** |
 | V6 | exe 未签名、明文 runtime 源码、PDB 路径 | 构建器不再把 `runtime_template`、`crypto.py`、`fingerprint.py`、`ed25519.py` 作为 PyInstaller 明文 `datas`；改为 `pyshield/_runtime_bundle.py` 压缩资源；原生 runtime 构建后执行 strip、删除 `.pdb`、清 PE CodeView 目录；PyInstaller 关闭 UPX | Authenticode 需要证书；PyInstaller 内置 CPython 扩展的 PDB 路径仍可能存在；`.pyc`/PYZ 仍可反编译 |
 | V7 | 纯 Python ChaCha 对整块数据做大整数 XOR | 改为 64 KiB 分块 XOR，限制临时整数大小；新增跨块边界的参考实现测试 | 纯 Python 仍然慢；需要性能时使用 `cryptography` 或 `--runtime-native` |
@@ -83,10 +83,11 @@ python tools/embed_runtime.py
 - 覆盖：`PYSHELD_STATE_DIR` / `PYSHELD_STATE_ANCHOR_DIR`
 - Windows 用 DPAPI 封装；其它平台用 HMAC；MAC 密钥由 `build_key` 派生，而不是公开的机器指纹。
 - 删除一份会从另一份恢复；两份不一致时取较新日期并重写两份，避免“主文件写成功、锚点写失败”导致永久拒绝启动。
-- 旧版本用公开 MAC 写入的状态会先尝试新密钥，失败后兼容读取一次，并立即用新密钥重写；攻击者仍可写两份旧格式状态，但这与“同时删除两份”属于同一残余风险。
+- 写入临时文件使用随机唯一文件名，写完 `fsync` 后原子替换；Windows 共享冲突会短时重试。主/锚点的读改写通过同目录 `.lock` 文件做跨进程串行化，避免多 worker 首次启动时互相覆盖或争用固定 `.tmp` 路径。
+- 旧版本用公开 MAC 写入的状态默认**拒绝**。只有显式设置 `PYSHELD_ALLOW_LEGACY_STATE=1` 才允许一次性迁移，并立即用新密钥重写；迁移开关不应在生产环境长期保留。`last_seen` 晚于今天 7 天以上会按损坏状态拒绝。
 - 两份都损坏/无法解密仍会拒绝启动；只读部署默认拒绝启动，`PYSHELD_ALLOW_VOLATILE_STATE=1` 是明确的风险接受开关。
 - 主状态与锚点默认按 OS 用户隔离。同一台机器新建 OS 用户会得到全新时钟；多用户场景应把 `PYSHELD_STATE_ANCHOR_DIR` 指向带 ACL 的机器级目录，或改用服务端时间。设置 `PYSHELD_STATE_DIR` 会让锚点退化为同目录 `.anchor`，分离度降低。
-- 状态 HMAC 防误损坏和单点修改，不防能提取 `build_key` 的攻击者；它不是“不可伪造”的安全边界。
+- 状态 HMAC 防误损坏和单点修改，不防能提取 `build_key` 的攻击者；它不是“不可伪造”的安全边界。拥有状态目录写权限的人仍可通过删除两份记录重置历史，旧格式 opt-in 迁移只是让这条路径更显式。
 
 首次启动绑定：
 
@@ -94,7 +95,7 @@ python tools/embed_runtime.py
 - 锚点：`<dist>/_shield_runtime/.pyshield-binding.json.anchor`
 - 删除单份会恢复；同时删除两份仍视为首次运行。
 - 绑定 MAC 使用 `build_key` 派生，能防止仅修改单份记录；提取 master key 后仍可伪造。
-- PyInstaller onefile 的 `_MEIPASS` 是临时目录：首次绑定记录会随进程退出消失。runtime 现在会检测临时 `_MEI*` 目录并拒绝首次绑定；应改用固定指纹、onedir，或把 `PYSHELD_BINDING_FILE` 指到持久路径。
+- PyInstaller onefile 的 `_MEIPASS` 是临时目录：首次绑定记录会随进程退出消失。runtime 现在把任何非 onedir `_MEIPASS` 都视为临时并拒绝首次绑定；即使设置 `PYSHELD_BINDING_FILE` 也不能关闭该检查，override 路径中包含 `_MEI*` 目录同样拒绝。应改用固定指纹、onedir，或把 `PYSHELD_BINDING_FILE` 指到持久路径。
 
 ### 2.5 已知残余风险（对外表述必须保留）
 
@@ -103,11 +104,13 @@ python tools/embed_runtime.py
 | 主密钥可提取 | `_keyring.master_key()` 可调用；`.pyc`/`.pyd`/内存都可被分析 | 能看到完整发布目录的攻击者仍可离线解密；keyring 只是去掉直接字符串常量 |
 | 状态 MAC 可伪造 | 时钟 MAC 由 `build_key` 派生，绑定 MAC 也是；提取 master 后可伪造 | “防篡改”不成立，正确表述是“防单点丢失/误损坏” |
 | 双删重置 | 删除主状态和锚点仍可重置时钟/绑定 | 纯离线方案无法彻底修复；需要服务端或硬件单调计数器 |
+| 旧状态迁移开关 | 默认拒绝；`PYSHELD_ALLOW_LEGACY_STATE=1` 允许一次性迁移 | 长期开启会把公开-MAC 伪造路径重新打开；迁移后应移除该变量 |
+| 状态锁不可用时 | 状态目录不可写时锁文件创建失败，退化为无锁读写 | 唯一临时文件与重试仍防止撕裂；真正不可写时按设计 fail-closed |
 | 每用户状态 | 默认状态目录按 OS 用户隔离 | 新 OS 用户可获得全新时钟；多用户场景需机器级锚点 |
 | TTL 不覆盖清单 | 300 秒重验只覆盖许可证/绑定/时钟 | 进程启动后替换、尚未导入的 stub 不会被重扫 |
 | 自保护 `integrity=off` | 自保护 exe 不做清单校验 | stub/runtime 被替换不会检测；只提高静态阅读成本 |
 | bundle 仅压缩 | `_runtime_bundle.py` 是 base64+zlib+zip | 解包成本约一次解压，不是机密容器 |
-| onefile 首次绑定 | 已增加 `_MEI*` 临时目录检测并拒绝 | 需用固定指纹、onedir 或持久 `PYSHELD_BINDING_FILE` |
+| onefile 首次绑定 | 非 onedir `_MEIPASS` 一律拒绝，`PYSHELD_BINDING_FILE` 不能关闭检查 | 首绑仍可双删重置；需用固定指纹、onedir 或持久路径 |
 | DPAPI 失败降级 | Windows DPAPI 失败时写 `PLAIN1` 状态 | 本地状态仍受 HMAC 保护，但可被伪造；没有静默提权 |
 | 内存清理有限 | `_wipe` 只清 `bytearray` 中间缓冲 | code object、`open_envelope`/`zlib` 返回的 `bytes` 仍可能驻留 |
 | PyInstaller PDB/符号 | 原生 runtime 已清理；PyInstaller 内置二进制未逐一审计 | 仍可能暴露构建路径/符号 |
@@ -116,7 +119,7 @@ python tools/embed_runtime.py
 ## 3. 如何验证
 
 ```bash
-# 全量测试（当前 170+ 个，原生 runtime 测试按工具链跳过）
+# 全量测试（当前 178 个，原生 runtime 测试按工具链跳过）
 python -m unittest discover -s tests -v
 
 # 检查 runtime bundle 是否过期

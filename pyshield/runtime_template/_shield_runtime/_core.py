@@ -9,6 +9,7 @@ detection.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import hmac
 import json
@@ -16,7 +17,6 @@ import marshal
 import os
 import platform
 import sys
-import tempfile
 import threading
 import time
 import types
@@ -50,7 +50,10 @@ STATE_PURPOSE = "pyshield-clock"
 STATE_DIR_ENV = "PYSHELD_STATE_DIR"
 STATE_ANCHOR_DIR_ENV = "PYSHELD_STATE_ANCHOR_DIR"
 VOLATILE_STATE_ENV = "PYSHELD_ALLOW_VOLATILE_STATE"
+ALLOW_LEGACY_STATE_ENV = "PYSHELD_ALLOW_LEGACY_STATE"
 CLOCK_SKEW_DAYS = 1
+STATE_MAX_FUTURE_DAYS = 7
+STATE_LOCK_TIMEOUT_SECONDS = 5.0
 STATE_TTL_SECONDS = 300
 
 BIND_ANY = "any"
@@ -301,21 +304,104 @@ def _allow_volatile_state() -> bool:
     return value in {"1", "true", "yes", "on"}
 
 
+def _allow_legacy_state() -> bool:
+    value = os.environ.get(ALLOW_LEGACY_STATE_ENV, "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+@contextlib.contextmanager
+def _state_lock(paths: tuple[Path, Path]):
+    """Serialize the clock read-modify-write across processes when possible.
+
+    The lock file is advisory. If the state directory is not writable, startup
+    continues unlocked; reads still retry transient sharing errors and the
+    subsequent state write fails closed unless volatile state was explicitly
+    allowed.
+    """
+    lock_path = paths[0].with_name(paths[0].name + ".lock")
+    handle = None
+    try:
+        try:
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+            handle = open(lock_path, "a+b")
+        except OSError:
+            yield
+            return
+        if os.name == "nt":
+            import msvcrt
+
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() == 0:
+                handle.write(b"\0")
+                handle.flush()
+                os.fsync(handle.fileno())
+            deadline = time.monotonic() + STATE_LOCK_TIMEOUT_SECONDS
+            while True:
+                try:
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError as exc:
+                    if time.monotonic() >= deadline:
+                        raise LicenseError(
+                            "PyShield could not lock clock state; "
+                            "another process is holding the state lock"
+                        ) from exc
+                    time.sleep(0.02)
+            try:
+                yield
+            finally:
+                try:
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                except OSError:
+                    pass
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                except OSError:
+                    pass
+    finally:
+        if handle is not None:
+            try:
+                handle.close()
+            except OSError:
+                pass
+
+
 def _clock_machine() -> str:
     return _machine.machine_fingerprint().lower()
 
 
 def _read_clock_file(path: Path, machine: str, secret: bytes) -> tuple[date | None, bool]:
-    data = _secure_store.read_private(path)
+    try:
+        data = _secure_store.read_private(path)
+    except _secure_store.SecureStoreError as exc:
+        raise LicenseError(
+            f"PyShield clock state {path} cannot be read; "
+            "restore the file or contact the vendor"
+        ) from exc
     if data is None:
         return None, False
     legacy = False
     try:
         record = _secure_store.open_state(data, machine, STATE_PURPOSE, secret)
     except _secure_store.SecureStoreError:
-        # State written before the keyed MAC was introduced is accepted once
-        # so an upgrade does not brick existing installs. The next write
-        # re-seals both copies with the per-build key.
+        # Legacy public-MAC state is a downgrade path: anyone who can write the
+        # state directory can forge a last_seen value and have it re-sealed
+        # with the keyed MAC. Migration is therefore opt-in only.
+        if not _allow_legacy_state():
+            raise LicenseError(
+                f"PyShield clock state {path} is damaged or belongs to another machine; "
+                f"rebuild the state or set {ALLOW_LEGACY_STATE_ENV}=1 only for a "
+                "one-time migration from an older build"
+            )
         try:
             record = _secure_store.open_state(data, machine, STATE_PURPOSE)
             legacy = True
@@ -333,11 +419,17 @@ def _read_clock_file(path: Path, machine: str, secret: bytes) -> tuple[date | No
             f"PyShield clock state {path} is invalid; restore the file or contact the vendor"
         )
     try:
-        return date.fromisoformat(str(record["last_seen"])), legacy
+        seen = date.fromisoformat(str(record["last_seen"]))
     except (KeyError, TypeError, ValueError) as exc:
         raise LicenseError(
             f"PyShield clock state {path} is damaged; restore the file or correct the system clock"
         ) from exc
+    if seen > date.today() + timedelta(days=STATE_MAX_FUTURE_DAYS):
+        raise LicenseError(
+            f"PyShield clock state {path} contains an implausible future date "
+            f"({seen.isoformat()}); correct the system clock or reset the state"
+        )
+    return seen, legacy
 
 
 def _write_clock(seen: date, paths: tuple[Path, Path], secret: bytes) -> None:
@@ -375,10 +467,10 @@ def _write_clock(seen: date, paths: tuple[Path, Path], secret: bytes) -> None:
     # read aligns both records to the newer date instead of bricking the app.
 
 
-def _read_clock(secret: bytes) -> tuple[date | None, tuple[Path, Path]]:
+def _read_clock_locked(
+    secret: bytes, paths: tuple[Path, Path], machine: str
+) -> tuple[date | None, tuple[Path, Path]]:
     global _clock_started
-    paths = _clock_paths()
-    machine = _clock_machine()
     primary_seen, primary_legacy = _read_clock_file(paths[0], machine, secret)
     anchor_seen, anchor_legacy = _read_clock_file(paths[1], machine, secret)
     if primary_seen is not None and anchor_seen is not None and primary_seen != anchor_seen:
@@ -405,6 +497,12 @@ def _read_clock(secret: bytes) -> tuple[date | None, tuple[Path, Path]]:
         # Restore a deleted copy or migrate the public-MAC state once.
         _write_clock(seen, paths, secret)
     return seen, paths
+
+
+def _read_clock(secret: bytes) -> tuple[date | None, tuple[Path, Path]]:
+    paths = _clock_paths()
+    with _state_lock(paths):
+        return _read_clock_locked(secret, paths, _clock_machine())
 
 
 def _binding_paths() -> tuple[Path, Path]:
@@ -486,18 +584,40 @@ def _read_binding_record(
     return record
 
 
-def _binding_paths_are_volatile() -> bool:
-    if os.environ.get(BINDING_FILE_ENV):
-        return False
-    base = getattr(sys, "_MEIPASS", None)
-    if not base:
-        return False
+def _is_onedir_meipass(path: Path) -> bool:
+    """Return True when ``_MEIPASS`` looks like a PyInstaller onedir layout."""
     try:
-        path = Path(base).resolve()
-        temp = Path(tempfile.gettempdir()).resolve()
-        return path.parent == temp and path.name.startswith("_MEI")
-    except OSError:
+        executable = Path(sys.executable).resolve()
+        return path in {executable.parent, executable.parent / "_internal"}
+    except (OSError, RuntimeError):
         return False
+
+
+def _binding_path_looks_volatile(path: Path) -> bool:
+    try:
+        resolved = path.resolve()
+    except OSError:
+        return True
+    return any(part.lower().startswith("_mei") for part in resolved.parts)
+
+
+def _binding_paths_are_volatile() -> bool:
+    base = getattr(sys, "_MEIPASS", None)
+    if base:
+        try:
+            extraction = Path(base).resolve()
+        except OSError:
+            return True
+        # Onefile and custom extraction directories are temporary by
+        # definition. An explicit binding path must not silently disable this
+        # check.
+        if not _is_onedir_meipass(extraction):
+            return True
+    override = os.environ.get(BINDING_FILE_ENV)
+    if override:
+        primary, anchor = _binding_paths()
+        return _binding_path_looks_volatile(primary) or _binding_path_looks_volatile(anchor)
+    return False
 
 
 def _check_first_run_binding(build_key: bytes) -> str:
@@ -565,20 +685,22 @@ def _check_binding(build_key: bytes, payload: dict) -> tuple[str, list[str], str
 def _check_clock(secret: bytes) -> str:
     global _clock_started
     today = date.today()
-    seen, paths = _read_clock(secret)
-    if seen is not None:
-        if today < seen - timedelta(days=CLOCK_SKEW_DAYS):
-            raise LicenseError(
-                "PyShield detected a system clock rollback "
-                f"(last seen {seen.isoformat()}, today {today.isoformat()}); "
-                "synchronize the system clock and retry"
-            )
-        if today <= seen:
-            _clock_started = True
-            return seen.isoformat()
-    _write_clock(today, paths, secret)
-    _clock_started = True
-    return today.isoformat()
+    paths = _clock_paths()
+    with _state_lock(paths):
+        seen, paths = _read_clock_locked(secret, paths, _clock_machine())
+        if seen is not None:
+            if today < seen - timedelta(days=CLOCK_SKEW_DAYS):
+                raise LicenseError(
+                    "PyShield detected a system clock rollback "
+                    f"(last seen {seen.isoformat()}, today {today.isoformat()}); "
+                    "synchronize the system clock and retry"
+                )
+            if today <= seen:
+                _clock_started = True
+                return seen.isoformat()
+        _write_clock(today, paths, secret)
+        _clock_started = True
+        return today.isoformat()
 
 
 def _load_state() -> dict:

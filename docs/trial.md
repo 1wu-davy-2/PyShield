@@ -96,7 +96,7 @@ events(id, at, serial, machine, action, remote, detail)
 
 深链在 Windows 上由 `HKCU\Software\Classes\pyshield` 注册，**仅在打包后的 exe** 中写入（`sys.frozen`），源码运行不会改注册表。可用 `PYSHELD_SKIP_PROTOCOL=1` 关闭。
 
-单实例：主进程监听 `127.0.0.1` 随机端口并把端口与令牌写进 `instance.json`；第二次启动（浏览器唤起）把链接转发过去后立刻退出，不会闪出第二个窗口。
+单实例：主进程先取得 Windows 命名互斥锁（POSIX 为 `flock`），再监听 `127.0.0.1` 随机端口并把端口与令牌写进 `instance.json`；第二次启动（浏览器唤起）把链接转发过去后立刻退出，不会闪出第二个窗口。锁与 `PYSHELD_GUI_CONFIG_DIR` 无关，因此主 exe 和自保护 exe 也不能同时运行。仅自动化并行 UI 测试可设置 `PYSHELD_ALLOW_MULTI_INSTANCE=1` 显式放开。
 
 ## 5. 试用授权的内容
 

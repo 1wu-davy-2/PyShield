@@ -18,7 +18,7 @@ Linux 还需要现有的 GTK/WebKit2GTK 依赖（见 `docs/desktop-builder.md`�
 
 产物默认在 `dist-selfbuild/PyShieldBuilder-selfbuild.exe`（Linux 无 `.exe` 后缀），同时生成 SHA256 文件。
 
-它与普通 `PyShieldBuilder.exe` 共用单实例指针：如果旧实例正在托盘运行，新 exe 会转发参数后退出。测试时先退出旧实例，或设置独立的 `PYSHELD_GUI_CONFIG_DIR`。
+它与普通 `PyShieldBuilder.exe` 共用全局单实例锁：如果旧实例正在托盘运行，新 exe 会转发参数后退出。`PYSHELD_GUI_CONFIG_DIR` 只切换配置目录，不再允许同时启动两个实例；并行 UI 测试请先退出旧实例，或显式设置 `PYSHELD_ALLOW_MULTI_INSTANCE=1`。
 
 只准备受保护源码、不运行 PyInstaller：
 

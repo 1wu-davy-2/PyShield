@@ -12,6 +12,7 @@ PyShield 是一套自研的 Python / Django 源码保护工具。构建期把业
 
 - **提高源码逆向成本**：模块编译为 code object 后经 zlib 压缩，再用每个模块独立的 AEAD 密钥加密；发布目录只保留 Base85 stub，runtime 默认发布 sourceless `.pyc`。这是提高攻击成本，不是“攻击者拿不到明文”的承诺。
 - **桌面构建器**：`PyShieldBuilder.exe` 是免安装的 Windows 单文件程序，选择 Django 目录、配置参数、点击一次即可完成加密；Web UI、runtime 模板与构建引擎全部内嵌，不依赖外部 Python 或 PyShield 源码。runtime 模板以压缩资源嵌入，不再作为明文 `.py` 随 exe 发布。
+- **单实例启动**：同一用户会话只允许一个构建器窗口；重复启动会转发深链并唤起已有窗口，不再出现两个实例。主 exe 与自保护 exe 共用同一把全局锁，切换 `PYSHELD_GUI_CONFIG_DIR` 也不能绕过；仅自动化并行 UI 测试可设置 `PYSHELD_ALLOW_MULTI_INSTANCE=1`。
 - **Django 友好**：保留正常导入、反射、模板、ORM、URL 路由与管理命令；迁移、测试和静态资源默认不加密。
 - **签名完整性清单**：构建时生成 Ed25519 签名的 `.pyshield-manifest.json`，首次加载先校验受保护代码与 runtime 的 SHA-256；许可证、配置、数据库、日志、媒体与 staticfiles 等现场可变文件不受影响。
 - **离线许可证**：支持到期日、宽限期、机器绑定和客户标识，可离线重新签发，无需重新构建。许可证格式 v3 只承载授权信息，不再携带模块解密密钥。
@@ -229,7 +230,7 @@ python shield.py issue --secret <output>.shield-secret.json -e 2027-12-31
 - `issue` 默认继承现有许可证的到期日、绑定模式、指纹和客户标识，只覆盖显式传入的参数；首次启动绑定的记录不随续期改变，客户机无需重新绑定；
 - 宽限期在到期后继续允许运行，默认 0 天；不传 `--grace-days` 时沿用原许可证的值；
 - 许可证带 `not_before` 签发日期；现场时钟早于签发日期超过 1 天会拒绝加载；
-- runtime 把 `last_seen` 用 DPAPI（Windows）或 HMAC（其它平台）封装后写入 `~/.pyshield/<build_id>.state`，并写入一个独立锚点（可用 `PYSHELD_STATE_DIR` / `PYSHELD_STATE_ANCHOR_DIR` 指定）；MAC 密钥由 `build_key` 派生；删除单个文件会从锚点恢复，两份日期不一致时取较新值对齐，发现时钟明显回拨时拒绝加载；
+- runtime 把 `last_seen` 用 DPAPI（Windows）或 HMAC（其它平台）封装后写入 `~/.pyshield/<build_id>.state`，并写入一个独立锚点（可用 `PYSHELD_STATE_DIR` / `PYSHELD_STATE_ANCHOR_DIR` 指定）；MAC 密钥由 `build_key` 派生；写入使用唯一临时文件、共享冲突重试和跨进程锁；删除单个文件会从锚点恢复，两份日期不一致时取较新值对齐，发现时钟明显回拨时拒绝加载；旧公开-MAC 状态默认拒绝，只有一次性升级时才临时设置 `PYSHELD_ALLOW_LEGACY_STATE=1`；
 - 只读部署默认会因无法持久化时钟状态而拒绝启动；如明确接受回拨检测失效，可设置 `PYSHELD_ALLOW_VOLATILE_STATE=1`；
 - runtime 在模块加载时每 5 分钟重新校验一次许可证与日期，长时间运行的进程不会跨过到期日继续解密；
 - 热重载：`from _shield_runtime import license_status; license_status(refresh=True)`，新导入的模块立即使用新许可证，已导入模块不受影响；
@@ -252,7 +253,7 @@ python shield.py issue --secret <output>.shield-secret.json -e 2027-12-31
 - Ed25519 签名可以阻止伪造许可证，但无法阻止攻击者绕过校验逻辑或 dump 已解密的代码。
 - 完整性清单由 runtime 自身执行校验，且**只在进程首次加载时扫描一次并缓存**；5 分钟重验只覆盖许可证/绑定/时钟。如果攻击者可以整体替换 `_shield_runtime/`，清单也会一起失效。它用于发现现场误改或局部篡改，不是二进制级防篡改。
 - 时钟回拨检测依赖本地状态与 DPAPI/HMAC；MAC 密钥由 `build_key` 派生，提取 master 后仍可伪造。删除主记录与锚点后仍可重置历史，服务端时间或硬件单调计数器才是可靠锚点。宽限期和到期日仍应通过合同与授权流程约束。
-- 首次启动绑定把 HMAC 记录写在部署目录，并增加独立锚点；能阻止直接复制整包到其他机器，也能阻止只删除主记录的重置；但拥有写权限且同时删除两份记录的人仍可重新绑定，这是纯离线方案的边界。PyInstaller onefile 的 `_MEIPASS` 会随进程消失，runtime 会拒绝在临时 `_MEI*` 目录中做首次绑定；请改用固定指纹、onedir 或持久 `PYSHELD_BINDING_FILE`。
+- 首次启动绑定把 HMAC 记录写在部署目录，并增加独立锚点；能阻止直接复制整包到其他机器，也能阻止只删除主记录的重置；但拥有写权限且同时删除两份记录的人仍可重新绑定，这是纯离线方案的边界。PyInstaller onefile 的 `_MEIPASS` 会随进程消失；runtime 把任何非 onedir `_MEIPASS` 视为临时目录并拒绝首次绑定，设置 `PYSHELD_BINDING_FILE` 也不会关闭该检查；请改用固定指纹、onedir 或真正的持久路径。
 - 状态 HMAC 和 DPAPI 用于防误损坏、单点修改和抬高伪造成本，不等于不可伪造；DPAPI 失败时会退化为 `PLAIN1` 状态（仍带 HMAC），需要在部署文档中说明。
 - `--integrity full` 会把模板与静态数据纳入校验，现场修改这些文件会阻止启动；需要现场可改的内容应使用 `--mutable` 声明。
 - 构建与部署必须使用相同的 Python 小版本；原生 runtime 还要求相同的操作系统和 CPU 架构。

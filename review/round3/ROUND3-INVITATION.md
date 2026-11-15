@@ -1,29 +1,30 @@
 # PyShield Round 3 安全评估邀请
 
-感谢第二轮复核。我们已按 `review/REVIEW-FINDINGS-round2.md` 修复可修复项，并把仍存在的边界写进文档。请进行第三轮独立评估。
+感谢第二轮复核。我们已按 `review/REVIEW-FINDINGS-round2.md` 修复可修复项，并在第三轮修复中处理挑战包 flag 可达性、时钟并发、旧状态迁移和 onefile 绑定问题；仍存在的边界已写入文档。请进行第三轮独立评估。
 
 ## 材料
 
 - 桌面构建器：`PyShieldBuilder.exe`
-  - SHA-256：`486fd67e4e23efd30c582529437076b6690d38232a4ff24662b96c334644b0f9`
+  - SHA-256：`23e9ea7dc25ee72f8000adf9e1502344027cb070f578cd96cd4290669983a37e`
 - 自保护构建器：`dist-selfbuild/PyShieldBuilder-selfbuild.exe`
-  - SHA-256：`3a3d0ecfacd5fe2c02c0203f60ac6158ebe69ea85fae3a2526a86fd5f9adcd2a`
+  - SHA-256：`4351f7d0a4c9cf9e64d3f662d3f495b3f714101892f4a1c4e70bf5f11a7d8f04`
 - 打包前受保护源码树：`review/round3/PyShieldBuilder-protected-sample-round3.zip`
-  - SHA-256：`7a87d55eb55443c99019b0678a530833f8a7c5589c8ad40c6a8dcfefc9f00b23`
+  - SHA-256：`ddb14d1b8403f4e0cb51afe7f5a02efc4ee8ad0a25a619ce67ccf6ad1c364320`
 - 受保护 Django 测试工程：`review/round3/round3-django-shielded.zip`
-  - SHA-256：`3ec82a849b58e126b660f4632f45c209a5571a943139753867b036bcb46304a2`
-- 源码：`develop @ 08f400a`（含 `2b5b16d` 的原生 runtime 加固）
+  - SHA-256：`03fd153b94028f6c0180dcb53584866da3a414fbaa3e96ebaadb5ea19117a2fa`
+- Challenge flag 的 SHA-256：`a036bf169f93cf499e7496082e3d088e5f3c453b3620cf8eed00941b2d96c4ce`
+- 源码：`develop @ 9bd4b9f` 加本轮修复工作树（提交后补记 commit；行为代码以本轮构建物为准）
 
 ## 请重点验证
 
 1. 从 `round3-django-shielded.zip` 中恢复 `demo.hidden_flag.FLAG`。
-   - flag 的 SHA-256：`46b5119e53dcb631ca73426deb23910af129b589c8a9f618da1663aa9448e3bc`
+   - flag 的 SHA-256：`a036bf169f93cf499e7496082e3d088e5f3c453b3620cf8eed00941b2d96c4ce`
    - 允许静态分析、反编译、动态调试、内存 dump、hook、patch 等任意手段。
    - 请给出可复现路径，而不是只给结果。
 2. 检查 `_keyring` 是否仍能以低成本恢复主密钥；记录从拿到发布目录到解出业务模块的步骤与耗时。
-3. 验证时钟双写自愈：主文件/锚点日期不一致时是否取较新值并重写两份；单份写入失败是否还会砖化。
-4. 验证状态 MAC 改为 `build_key` 派生后的影响；旧公开-MAC 状态迁移是否形成新的降级路径。
-5. 验证 onefile 首次启动绑定拒绝逻辑是否可绕过，以及 `PYSHELD_BINDING_FILE` 迁移路径。
+3. 用 8–16 个并发进程验证时钟双写：主文件/锚点日期不一致时是否取较新值并重写两份；首次运行、跨日首次启动和续期重验时是否还会出现 `.tmp` 冲突或启动失败。
+4. 验证旧公开-MAC 状态迁移：默认应拒绝；仅在显式 `PYSHELD_ALLOW_LEGACY_STATE=1` 时允许一次性迁移；未来日期状态应被限制。
+5. 验证 onefile 首次启动绑定拒绝逻辑：默认 `_MEI*` 目录拒绝；即使设置 `PYSHELD_BINDING_FILE`，onefile/非标准 `_MEIPASS` 也不得关闭检查；文档中的双删重置仍是已承认边界。
 6. 复核 `--runtime-native`：符号剥离、PDB/CodeView 清理、原生 keyring 是否仍留下完整主密钥常量或明显符号。
 7. 复核自保护样本：`integrity=off`、`_runtime_bundle.py` 仅压缩、中间树含明文 runtime/密钥。
 

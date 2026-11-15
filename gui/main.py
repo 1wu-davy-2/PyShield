@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sys
 import threading
+import time
 from pathlib import Path
 
 if __package__ in (None, ""):
@@ -91,6 +92,18 @@ def _run_embedded_setup(argv: list[str]) -> bool:
     os._exit(code)
 
 
+def _wait_for_primary(link: str, timeout: float = 5.0) -> bool:
+    """Wait for a starting primary to publish its loopback pointer."""
+    payload = {"link": link, "show": True}
+    deadline = time.monotonic() + timeout
+    while True:
+        if instance.send_to_primary(payload):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.1)
+
+
 def main() -> int:
     if _run_embedded_setup(sys.argv):
         return 0
@@ -102,55 +115,66 @@ def main() -> int:
         # takes over from here.
         return 0
 
-    index = resource_root() / "gui" / "web" / "index.html"
-    if not index.is_file():
-        raise SystemExit(f"界面资源缺失：{index}")
+    lock = instance.acquire_single_instance()
+    if lock is None:
+        # Another process is starting but has not written instance.json yet.
+        # Give it a short window to become reachable, then exit without opening
+        # a second window.
+        _wait_for_primary(link)
+        return 0
 
-    api = Api()
-    window = webview.create_window(
-        core.APP_TITLE,
-        url=index.as_uri(),
-        js_api=api,
-        width=1440,
-        height=920,
-        min_size=(1120, 760),
-        frameless=True,
-        easy_drag=False,
-        background_color="#f4f5f7",
-        text_select=True,
-    )
-    api.bind(window)
-    tray.install(
-        window,
-        resource_root() / "gui" / "assets" / "icon.ico",
-        can_quit=lambda: not api.manager.running(),
-    )
-
-    listener = instance.LinkServer(
-        lambda payload: _dispatch_message(api, window, payload)
-    )
-    listener.start()
-    instance.register_protocol()
-
-    if link:
-        def _consume() -> None:
-            _handle_link(api, window, link)
-
-        window.events.loaded += lambda: threading.Thread(target=_consume, daemon=True).start()
-
-    start_options = {
-        "debug": bool(os.environ.get("PYSHELD_GUI_DEBUG")),
-        "private_mode": False,
-    }
-    if sys.platform != "win32":
-        icon = resource_root() / "gui" / "assets" / "icon.png"
-        if icon.is_file():
-            start_options["icon"] = str(icon)
     try:
-        webview.start(**start_options)
+        index = resource_root() / "gui" / "web" / "index.html"
+        if not index.is_file():
+            raise SystemExit(f"界面资源缺失：{index}")
+
+        api = Api()
+        window = webview.create_window(
+            core.APP_TITLE,
+            url=index.as_uri(),
+            js_api=api,
+            width=1440,
+            height=920,
+            min_size=(1120, 760),
+            frameless=True,
+            easy_drag=False,
+            background_color="#f4f5f7",
+            text_select=True,
+        )
+        api.bind(window)
+        tray.install(
+            window,
+            resource_root() / "gui" / "assets" / "icon.ico",
+            can_quit=lambda: not api.manager.running(),
+        )
+
+        listener = instance.LinkServer(
+            lambda payload: _dispatch_message(api, window, payload)
+        )
+        listener.start()
+        instance.register_protocol()
+
+        if link:
+            def _consume() -> None:
+                _handle_link(api, window, link)
+
+            window.events.loaded += lambda: threading.Thread(target=_consume, daemon=True).start()
+
+        start_options = {
+            "debug": bool(os.environ.get("PYSHELD_GUI_DEBUG")),
+            "private_mode": False,
+        }
+        if sys.platform != "win32":
+            icon = resource_root() / "gui" / "assets" / "icon.png"
+            if icon.is_file():
+                start_options["icon"] = str(icon)
+        try:
+            webview.start(**start_options)
+        finally:
+            listener.stop()
+        return 0
     finally:
-        listener.stop()
-    return 0
+        lock.release()
 
 
 if __name__ == "__main__":

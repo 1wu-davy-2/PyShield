@@ -8,16 +8,22 @@ editing of the JSON files fails closed instead of silently granting builds.
 from __future__ import annotations
 
 import ctypes
+import errno
 import hashlib
 import hmac
 import json
 import os
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 _DPAPI_PREFIX = b"DPAPI1\n"
 _PLAIN_PREFIX = b"PLAIN1\n"
 _CRYPTPROTECT_UI_FORBIDDEN = 0x01
+_RETRY_ATTEMPTS = 20
+_RETRY_BASE_DELAY = 0.01
+_RETRY_MAX_DELAY = 0.15
 
 
 class SecureStoreError(Exception):
@@ -149,24 +155,62 @@ def open_state(
     return document["payload"]
 
 
+def _is_transient_oserror(exc: OSError) -> bool:
+    """Return True for sharing violations that can clear on retry."""
+    if getattr(exc, "winerror", None) in {5, 32, 33}:
+        return True
+    return exc.errno in {errno.EACCES, errno.EPERM, errno.EBUSY, errno.EAGAIN}
+
+
+def _retry_oserror(action):
+    last: OSError | None = None
+    for attempt in range(_RETRY_ATTEMPTS):
+        try:
+            return action()
+        except OSError as exc:
+            if not _is_transient_oserror(exc) or attempt + 1 >= _RETRY_ATTEMPTS:
+                raise
+            last = exc
+            time.sleep(min(_RETRY_BASE_DELAY * (attempt + 1), _RETRY_MAX_DELAY))
+    assert last is not None
+    raise last
+
+
 def write_private(path: Path | str, data: bytes) -> None:
+    """Atomically write a state file.
+
+    A unique temp file avoids two processes sharing a deterministic ``.tmp``
+    path. On Windows, ``os.replace`` can still hit a sharing violation while
+    another process is reading the target, so the replace is retried briefly.
+    """
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    temp = target.with_name(target.name + ".tmp")
-    with open(temp, "wb") as handle:
-        handle.write(data)
-        handle.flush()
-        os.fsync(handle.fileno())
+    fd, temp_name = tempfile.mkstemp(
+        prefix=target.name + ".", suffix=".tmp", dir=str(target.parent),
+    )
+    temp = Path(temp_name)
     try:
-        os.chmod(temp, 0o600)
-    except OSError:
-        pass
-    os.replace(temp, target)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            os.chmod(temp, 0o600)
+        except OSError:
+            pass
+        _retry_oserror(lambda: os.replace(temp, target))
+    finally:
+        try:
+            temp.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
 
 
 def read_private(path: Path | str) -> bytes | None:
     try:
-        return Path(path).read_bytes()
+        return _retry_oserror(lambda: Path(path).read_bytes())
     except FileNotFoundError:
         return None
     except OSError as exc:
@@ -175,7 +219,7 @@ def read_private(path: Path | str) -> bytes | None:
 
 def remove_private(path: Path | str) -> bool:
     try:
-        Path(path).unlink()
+        _retry_oserror(lambda: Path(path).unlink())
         return True
     except FileNotFoundError:
         return False

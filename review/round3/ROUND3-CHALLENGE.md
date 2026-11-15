@@ -1,6 +1,8 @@
-# PyShield Round 3 受保护 Django 测试工程
+# PyShield Round 3 受保护 Django 测试工程（修复版）
 
 本目录是一个用 PyShield 0.6.0 保护的 Django 示例工程，运行时为 sourceless `.pyc`，没有提供源码、构建密钥或明文 flag。
+
+本轮修复版将 `FLAG` 赋值放在无条件 `raise` 之前，确保该常量实际进入加密代码对象；本次重建已解密 `demo.hidden_flag` 并确认 `co_consts` 中存在该值。
 
 ## 目标
 
@@ -13,7 +15,7 @@ demo.hidden_flag.FLAG
 然后提交该字符串的 SHA-256：
 
 ```
-46b5119e53dcb631ca73426deb23910af129b589c8a9f618da1663aa9448e3bc
+a036bf169f93cf499e7496082e3d088e5f3c453b3620cf8eed00941b2d96c4ce
 ```
 
 仅运行 `python manage.py check` / `python manage.py reveal` 不会打印 flag；允许使用任何静态分析、反编译、动态调试、内存 dump 或自动化手段。请同时说明实际利用路径。
@@ -31,8 +33,8 @@ demo.hidden_flag.FLAG
 
 1. 恢复出的 flag；
 2. 可复现步骤与最小 PoC；
-3. 根因与影响；
-4. 建议修复；
+3. 根因与影响（如适用）；
+4. 建议修复（如适用）；
 5. 是否还存在不依赖内存 dump 的离线路径。
 
 本样本仅用于授权安全评估，不得再分发或用于其他目标。

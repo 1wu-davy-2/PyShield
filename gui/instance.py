@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import socket
 import sys
@@ -19,9 +20,108 @@ from pathlib import Path
 from . import core
 
 INSTANCE_FILE = "instance.json"
+INSTANCE_NAME = "PyShieldBuilder.SingleInstance"
+ENV_ALLOW_MULTI = "PYSHELD_ALLOW_MULTI_INSTANCE"
 PROTOCOL_SCHEME = "pyshield"
 ENV_SKIP_PROTOCOL = "PYSHELD_SKIP_PROTOCOL"
 MAX_MESSAGE = 64 * 1024
+
+
+class InstanceLock:
+    """Process-lifetime single-instance lock.
+
+    A named Windows mutex (or a POSIX flock) prevents a second process from
+    starting a second window even when the config directories differ. The
+    loopback pointer remains responsible only for forwarding deep links to the
+    elected primary.
+    """
+
+    def __init__(self, handle=None, file=None, bypassed: bool = False) -> None:
+        self._handle = handle
+        self._file = file
+        self._bypassed = bypassed
+
+    @property
+    def bypassed(self) -> bool:
+        return self._bypassed
+
+    def release(self) -> None:
+        if self._handle is not None:
+            try:
+                import ctypes
+
+                kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+                kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+                kernel32.CloseHandle.restype = ctypes.c_int
+                kernel32.CloseHandle(self._handle)
+            except (ImportError, OSError):
+                pass
+            self._handle = None
+        if self._file is not None:
+            try:
+                self._file.close()
+            except OSError:
+                pass
+            self._file = None
+
+
+def _acquire_windows_mutex(name: str) -> InstanceLock | None:
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateMutexW.argtypes = [
+            ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR,
+        ]
+        kernel32.CreateMutexW.restype = wintypes.HANDLE
+        handle = kernel32.CreateMutexW(None, False, f"Local\\{name}")
+        if not handle:
+            # A broken/restricted mutex must not make the GUI unusable.
+            return InstanceLock()
+        if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
+            kernel32.CloseHandle(handle)
+            return None
+        return InstanceLock(handle=handle)
+    except (ImportError, OSError):
+        return InstanceLock()
+
+
+def _acquire_posix_lock(name: str) -> InstanceLock | None:
+    try:
+        import fcntl
+
+        base = Path(os.environ.get("XDG_RUNTIME_DIR") or (Path.home() / ".pyshield"))
+        base.mkdir(parents=True, exist_ok=True)
+        safe = re.sub(r"[^A-Za-z0-9_.-]", "_", name)
+        handle = open(base / f"{safe}.lock", "a+b")
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            handle.close()
+            return None
+        handle.seek(0)
+        handle.truncate()
+        handle.write(f"{os.getpid()}\n".encode("ascii"))
+        handle.flush()
+        return InstanceLock(file=handle)
+    except (ImportError, OSError, RuntimeError):
+        return InstanceLock()
+
+
+def acquire_single_instance(name: str | None = None) -> InstanceLock | None:
+    """Elect one primary GUI process.
+
+    Returns ``None`` when another process owns the lock. Set
+    ``PYSHELD_ALLOW_MULTI_INSTANCE=1`` only for automated parallel UI tests.
+    """
+    value = os.environ.get(ENV_ALLOW_MULTI, "").strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return InstanceLock(bypassed=True)
+    instance_name = name or INSTANCE_NAME
+    if os.name == "nt":
+        return _acquire_windows_mutex(instance_name)
+    return _acquire_posix_lock(instance_name)
 
 
 def pointer_path() -> Path:
