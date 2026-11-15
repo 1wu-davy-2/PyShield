@@ -29,7 +29,7 @@ def main(argv: list[str] | None = None) -> int:
         help="call load_module on the package/module instead of only decrypting",
     )
     parser.add_argument(
-        "--target", choices=("mypkg", "mypkg.tools", "standalone"),
+        "--target", choices=("mypkg", "mypkg.tools"),
         help="check only one protected module",
     )
     parser.add_argument("output")
@@ -51,7 +51,6 @@ def main(argv: list[str] | None = None) -> int:
     targets = (
         (output / "mypkg" / "__init__.py", "mypkg"),
         (output / "mypkg" / "tools.py", "mypkg.tools"),
-        (output / "standalone.py", "standalone"),
     )
     if args.target:
         targets = tuple(item for item in targets if item[1] == args.target)
