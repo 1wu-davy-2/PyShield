@@ -695,7 +695,10 @@ def compile_runtime(runtime: Path) -> None:
         target = source.with_suffix(".pyc")
         try:
             py_compile.compile(
-                str(source), cfile=str(target), dfile=str(source), doraise=True,
+                # A relative dfile keeps tracebacks from exposing the build
+                # machine's temporary output path.
+                str(source), cfile=str(target),
+                dfile=f"{RUNTIME_PACKAGE}/{source.name}", doraise=True,
                 invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH,
             )
         except py_compile.PyCompileError as exc:
