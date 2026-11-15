@@ -51,7 +51,7 @@ jobs:
           Get-Command llvm-strip -ErrorAction SilentlyContinue | Format-List
 
       - name: Create demo project
-        run: python -c "from pathlib import Path; from tests.test_builder import make_project; make_project(Path('ci-native-project'))"
+        run: python tools/make_ci_demo.py ci-native-project
 
       - name: Build with --runtime-native
         run: >-
