@@ -264,7 +264,65 @@ Django 大量依赖导入、反射和代码内省，因此 PyShield 刻意避免
 | 反调试、反注入 | 维护成本高，收益有限 |
 | 预编译跨平台 runtime | 与平台和 Python ABI 强绑定，改为在目标环境用 Cython 现场编译 |
 
-## 8. 验证方式
+## 8. MCP 构建服务
+
+MCP 是构建引擎之上的本地 agent 适配层，不改变产物格式或 runtime：
+
+| 层 | 职责 |
+| --- | --- |
+| `pyshield/mcp_server/` | stdlib newline-delimited JSON-RPC 2.0；initialize、tools、resources、prompts、取消与 shutdown |
+| `pyshield/build_service/` | `BuildRequestV1`、严格预检、异步 job、失败分类、额度结算、日志/审计 |
+| `pyshield/build_spec.py` | 路径/reparse、output_name、expiry/grace/bind/pattern 等纯校验基元 |
+| `pyshield/tool_license.py` | 跨进程账本 `begin_build/refund_build/finalize_build`，trial/quota v2（pending/refunded/credits） |
+| `pyshield/builder.py` | `ProjectCodeError`、`console_log`、`require_absent_output`、`secret_path`、唯一临时目录 |
+
+关键取舍：
+
+- 构建默认 `no_verify`，不执行目标项目代码；只有 `pyshield_check_output` 在复制出的沙箱中运行 `manage.py check`。
+- 预检通过后才扣额度；只有 `PROJECT_CODE` 失败退款；预检失败不扣；取消/超时不退。
+- MCP 构建的 secret 写到独立 `--secret-dir`，不在输出目录同级；响应与日志不返回密钥。
+- stdout 只写 JSON-RPC；builder 用 `contextvars` 抑制所有构建日志到 stdout，日志进入 per-job 文件和 stderr。
+- 额度账本与 pending/refunded 状态一次原子写入，避免“扣了额度但没记幂等”或重复退款；跨月退款进入下月 credit。
+
+### 8.1 工具面
+
+| 工具 | 执行代码 | 扣额度 | 说明 |
+| --- | --- | --- | --- |
+| `pyshield_status` | 否 | 否 | 配置、授权、配额 |
+| `pyshield_inspect_project` | 否 | 否 | 项目结构、文件数/大小、敏感文件、语法检查 |
+| `pyshield_validate_build` | 否 | 否 | 严格预检，返回 `plan_hash` |
+| `pyshield_start_build` | 否 | 是（受理时） | 异步构建，返回 `job_id` |
+| `pyshield_build_status` / `pyshield_build_logs` | 否 | 否 | 状态与脱敏日志尾部 |
+| `pyshield_cancel_build` | 否 | 否 | 取消；已扣额度不退 |
+| `pyshield_verify_output` | 否 | 否 | 静态 manifest/发布卫生 |
+| `pyshield_check_output` | 是（沙箱） | 否 | 需 `--allow-project-execution` |
+
+### 8.2 额度状态机
+
+| 阶段 | 额度 |
+| --- | --- |
+| schema/路径/项目树/敏感文件/语法/授权预检失败 | 不扣 |
+| 预检通过，`begin_build` 原子扣减失败 | 不扣 |
+| 预检通过，扣减成功 | 扣 1 |
+| 构建成功 | 保持扣 1 |
+| 执行阶段 `PROJECT_CODE` | 退 1，写 `build.log` + `refund.json` + `refund.txt` |
+| 环境/工具链/权限/磁盘/取消/超时/内部错误 | 不退 |
+| 静态校验失败 | 不影响已发生额度 |
+
+### 8.3 入口与产物
+
+```bash
+python -m pyshield.mcp_server --project-root <projects> --output-root <outputs> --state-dir <state> --allow-build
+python -m PyInstaller --noconfirm --clean PyShieldMCP.spec
+python tools/mcp_smoke.py --server module
+```
+
+- 输出：`<state-dir>/jobs/<job_id>/`（请求、预检、日志、结果、退款）
+- secret：`<state-dir>/secrets/<job_id>/build.shield-secret.json`
+- 审计：`<state-dir>/audit/mcp.jsonl`
+- 协议：newline-delimited JSON-RPC 2.0，支持 `2025-06-18` / `2024-11-05`
+
+## 9. 验证方式
 
 - `python -m unittest discover -s tests -v`：覆盖算法向量、密钥隔离、许可证、构建器结构、stub 可执行与输出目录保护；
 - Ed25519 RFC 8032 标准向量，纯 Python 与 `cryptography` 实现交叉一致，篡改签名被拒绝；
@@ -278,9 +336,10 @@ Django 大量依赖导入、反射和代码内省，因此 PyShield 刻意避免
 - 许可证验证：格式 3 载荷不含 `build_key`；旧格式 2 仍可读取；过期拒绝、宽限期放行、换绑生效、重新签发无需重新构建、热重载生效；
 - 安全回归：runtime 压缩资源与源码逐字节一致；PyInstaller spec 不再包含 `runtime_template` 或 `crypto.py` / `fingerprint.py` / `ed25519.py` 明文 datas；默认产物不含 `_core.py`；纯 Python ChaCha 在分块边界与参考实现一致；
 - 现场验证：`python -m _shield_runtime verify` 与 `python shield.py verify` 覆盖清单、文件与许可证；
+- MCP 验证：stdio 握手、工具 schema 严格拒绝未知字段、路径/reparse 逃逸、并发扣额不超卖、代码错误退款且只退一次、默认不执行项目代码、`check_output` 沙箱、secret 不出现在响应/日志/审计；
 - Django 集成验证：模板、静态文件、迁移、ORM 与路由在加密产物中正常工作。
 
-## 9. 已知边界与演进方向
+## 10. 已知边界与演进方向
 
 - 服务端代码最终要在内存中解密，runtime 中的 `master_key` 也可能被提取；Ed25519 签名能阻止伪造许可证，但无法阻止攻击者绕过校验逻辑或 dump 已解密的代码。安全强度依赖攻击成本与配套授权手段。
 - **离线分发不存在绝对机密性**：格式 3 移除了许可证中的 `build_key`，默认 runtime 也不再发布 `.py`，但主密钥仍在客户机内存/扩展中。需要真正机密性时，应引入服务端解锁（许可证 + 机器指纹 + 短期密钥）、TPM/加密狗，或把密钥拆到独立的原生模块。

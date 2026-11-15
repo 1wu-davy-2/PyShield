@@ -118,10 +118,22 @@ python tools/embed_runtime.py
 | PyInstaller PDB/符号 | 原生 runtime 已清理；PyInstaller 内置二进制未逐一审计 | 仍可能暴露构建路径/符号 |
 | 未签名 | 无 Authenticode | SmartScreen 提示，exe 可被替换后二次打包 |
 
+### MCP 构建服务的额外边界
+
+`PyShieldMCP.exe` 是一个本地 stdio 服务，不是远程 API：
+
+- 只接受 stdio，不监听端口；测试会 mock `socket.socket` 断言无网络调用。
+- 项目根、输出根、secret/job/audit 根必须显式配置且互不包含；项目树中的 symlink/junction/reparse point 会被拒绝。
+- 输出目录必须不存在；MCP 不暴露 `force`，不会删除已有目录。
+- 构建密钥写到独立的 secret 根，不在输出目录同级；响应、日志、审计不会返回密钥。
+- 默认构建 `no_verify`，不执行目标项目代码；`pyshield_check_output` 需要在启动时显式开启，并在复制出的沙箱中用最小环境和白名单解释器运行。
+- MCP 的额度语义是“严格预检通过后扣减；只有 `PROJECT_CODE` 失败退还”；CLI/GUI 当前仍是“启动即扣、失败/取消不退”，Phase 3 再统一。
+- 残余风险：agent 若同时拥有 secret 根的文件读取权限，仍可读取构建密钥；应把 `--output-root` / `--secret-dir` 放在 agent 工作区之外。`check_output` 的沙箱是进程级隔离，不是容器/低权限用户隔离。硬链接不是 reparse point，当前扫描不会拒绝；项目来自不可信来源时应先清理或使用隔离副本。
+
 ## 3. 如何验证
 
 ```bash
-# 全量测试（当前 180 个，原生 runtime 测试按工具链跳过）
+# 全量测试（原生 runtime/符号链接等用例按环境跳过）
 python -m unittest discover -s tests -v
 
 # 检查 runtime bundle 是否过期
@@ -129,7 +141,12 @@ python tools/embed_runtime.py --check
 
 # 发布前扫描：flag、构建密钥、私钥和包内 secret 文件
 python tools/check_release.py dist-demo
+python tools/check_release.py dist
 python tools/check_release.py --temp
+
+# MCP 冒烟（源码或冻结产物）
+python tools/mcp_smoke.py --server module
+python tools/mcp_smoke.py --server dist/PyShieldMCP.exe
 
 # 在带 Cython + C 编译器 + strip 的环境验证原生 runtime
 python shield.py build -p <project> -o dist-native --runtime-native --no-verify --force

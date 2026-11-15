@@ -17,8 +17,12 @@ PyShield 是一套自研的 Python / Django 源码保护工具：构建期把 Py
 | `pyshield/fingerprint.py` | 跨平台机器指纹 |
 | `pyshield/runtime_template/` | 运行库模板源码（完整性校验、时钟状态、诊断入口与 Cython 原生 ChaCha）；构建器通过 `pyshield/_runtime_bundle.py` 的压缩资源使用，exe 中不再以明文 `.py` 发布 |
 | `gui/` | 桌面构建器：pywebview 窗口、JS 桥接、表单校验与内嵌 Web UI |
-| `PyShieldBuilder.spec` | PyInstaller 单文件打包配置 |
-| `tests/` | 加密、签名、许可证、构建流程与桌面构建器后端测试 |
+| `pyshield/build_spec.py` | 构建前置校验基元：路径/reparse、输出名、到期/绑定/模式 |
+| `pyshield/build_service/` | MCP 构建服务：严格预检、异步 job、额度结算、退款、审计 |
+| `pyshield/mcp_server/` | stdio JSON-RPC MCP 协议层、工具 schema、资源与提示词 |
+| `shield_mcp.py` | MCP console 入口（含冻结原生编译的隐藏 setup 入口） |
+| `PyShieldBuilder.spec` / `PyShieldMCP.spec` | PyInstaller 单文件打包配置 |
+| `tests/` | 加密、签名、许可证、构建流程、桌面构建器与 MCP 测试 |
 | `docs/` | 本手册与《实现思路》 |
 
 核心实现只依赖 Python 标准库；Ed25519 有纯 Python 实现；AES-256-GCM 和 ChaCha20-Poly1305 需要可选的 `cryptography`；原生 runtime 需要可选的 Cython、setuptools 和 C 编译器。
@@ -340,7 +344,26 @@ PYSHELD_LICENSE=/secure/pyshield.lic python manage.py check
 | 构建拒绝覆盖目录 | 输出目录不是 PyShield 构建 | 确认目录归属后再使用 `--force` |
 | 静态资源 404 | 生产模式未配置静态文件服务 | 执行 `collectstatic` 并配置 Web 服务器 |
 
-## 8. 测试
+## 8. MCP 构建服务
+
+```bash
+python -m pyshield.mcp_server \
+  --project-root /work \
+  --output-root /var/lib/pyshield-output \
+  --state-dir /var/lib/pyshield-state \
+  --allow-build
+```
+
+或使用 `PyShieldMCP.exe`（参数相同）。服务只使用 stdio，不监听端口。默认只注册只读工具；`--allow-build` 开启构建，`--allow-project-execution` + `--verify-python ID=PATH` 才开启 `pyshield_check_output`。
+
+- `pyshield_validate_build` 不写输出、不扣额度；先拿 `plan_hash`，再 `pyshield_start_build`。
+- 构建受理时扣 1 次额度；只有目标项目代码错误（`PROJECT_CODE`）退还，环境/取消/超时/内部错误不退。
+- 构建默认 `no_verify`，不执行目标项目代码；`check_output` 在沙箱复制中执行 `manage.py check`。
+- 构建密钥写到 `<state-dir>/secrets/<job_id>/`，不在输出目录同级；MCP 不返回密钥。
+- 日志/审计：`<state-dir>/jobs/<job_id>/` 与 `<state-dir>/audit/mcp.jsonl`。
+- 配置与工具细节见 [MCP 构建服务](mcp-server.md)。
+
+## 9. 测试
 
 ```bash
 python -m unittest discover -s tests -v
@@ -356,9 +379,10 @@ python -m unittest discover -s tests -v
 - 完整性模式：`protected` 允许数据修改、`full` 检测数据修改、`off` 不生成清单、`--mutable` 排除；
 - 时钟回拨检测、`verify` 命令、runtime `status` / `verify` 入口；
 - 桌面构建器：默认输出、表单校验、设置/历史持久化、后端探针与进程内构建；
+- MCP：stdio 握手、严格 schema、路径逃逸、并发扣额、代码错误退款、默认不执行项目代码、check_output 沙箱、secret 脱敏；
 - 原生 runtime 构建与 `--cipher chacha-pure` 快速解密（需要 Cython 与 C 编译器，否则跳过）。
 
-## 9. 安全事项
+## 10. 安全事项
 
 - `*.shield-secret.json` 同时包含 `master_key`、`build_key` 和 `signing_key`，是构建方最高权限密钥，**绝不能随包发布**；泄露后应重新构建并作废旧包。
 - 许可证格式 v3 使用 Ed25519 签名，修改到期日、机器指纹等字段会导致验签失败；格式 3 不含 `build_key`；旧格式 2 可由构建侧读取用于续期，但新 runtime 只接受格式 3。
@@ -366,5 +390,6 @@ python -m unittest discover -s tests -v
 - 时钟状态与回拨检测是尽力而为：MAC 密钥由 `build_key` 派生，提取 master 后仍可伪造；同时删除主记录与锚点仍会重置历史；默认状态按 OS 用户隔离。请结合 NTP、机器级锚点、服务端时间、合同和授权流程。
 - 原生 runtime 把主密钥、验签逻辑和快速 ChaCha 编译进 `.pyd`/`.so`，显著提高静态提取门槛，但无法阻止有能力的攻击者在运行时内存中提取。
 - 发布卫生（Authenticode、PDB 路径、发布暴露审计）见 [security-hardening.md](security-hardening.md)。`tools/check_release.py` 会扫描发布树中的挑战 flag、master/build key、私钥标记和包内 `*.shield-secret.json`；`--temp` 可检查构建机临时目录。
+- MCP 服务是本地 agent 接口，不是远程服务：只允许 stdio，不监听端口；`--output-root` 和 `--secret-dir` 应与 agent 工作区隔离；默认不执行目标项目代码；`check_output` 是显式高风险开关。MCP 的额度/退款规则与 CLI/GUI 的“启动即扣、失败不退”不同，详见 [MCP 构建服务](mcp-server.md)。
 - 迁移与测试默认保持明文；如包含敏感逻辑，使用 `--encrypt-migrations` / `--encrypt-tests`。
 - 加密提高的是逆向与源码泄露门槛，不是绝对不可破解的 DRM；服务端代码最终会在内存中还原，请配合合同、授权、SaaS 化等手段。

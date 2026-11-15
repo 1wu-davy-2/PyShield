@@ -237,6 +237,18 @@ python tools/build_commercial.py build --public-key root-keys/root.pub \
 - 商业版发布前执行：签名、哈希、病毒扫描、安装包完整性测试。
 - 保留授权签发和撤销日志，便于审计和纠纷处理。
 
+### MCP 自动化构建的授权与额度
+
+`PyShieldMCP.exe` 复用同一套工具授权与配额，不提供切换授权文件或开发模式的启动参数：
+
+- 启动时必须能通过 `tool_license.check()`；trial/Pro/Enterprise 的 feature 限制与 CLI/GUI 一致；`runtime=native` 需要 `native-runtime` feature，`--ci` 需要 `ci` feature。
+- `inspect`、`validate`、`status`、日志和静态校验不扣额度。
+- `pyshield_start_build` 在严格预检通过后原子扣 1 次；只有目标项目代码错误（`PROJECT_CODE`）退还 1 次，环境/取消/超时/内部错误不退。
+- 同一 `idempotency_key` / token 不重复扣；跨月退款以 credit 结转。
+- MCP 不接受根私钥、许可证签发、激活/心跳等参数；这些能力仍只在受控的 CLI/授权服务中使用。
+
+配额账本在 `tool_license.begin_build/refund_build`，使用跨进程锁和 sealed trial/quota 状态，避免并发超卖或重复退款。
+
 ## 10. 定价参考
 
 以下仅为区间参考，按客户规模和替代方案调整：
@@ -250,7 +262,9 @@ python tools/build_commercial.py build --public-key root-keys/root.pub \
 
 ## 11. 代码位置
 
-- `pyshield/tool_license.py`：授权解析、校验、试用、配额、撤销。
+- `pyshield/tool_license.py`：授权解析、校验、试用、配额、撤销、MCP 账本 `begin_build/refund_build`。
+- `pyshield/build_spec.py` / `pyshield/build_service/`：MCP 严格预检、异步 job、失败分类、退款与审计。
+- `pyshield/mcp_server/`：stdio MCP 协议、工具 schema、资源与提示词。
 - `pyshield/activation.py`：在线/离线激活与心跳客户端。
 - `pyshield/secure_store.py`：Windows DPAPI 与本地状态保护。
 - `pyshield/license_admin.py`：根密钥、签发、撤销、离线响应。
@@ -258,5 +272,6 @@ python tools/build_commercial.py build --public-key root-keys/root.pub \
 - `tools/build_commercial.py`：公钥注入、PyInstaller/Nuitka 打包、代码签名。
 - `gui/backend.py`、`gui/web`：桌面构建器授权状态与激活入口。
 - `tests/test_tool_license.py`、`tests/test_license_server.py`：授权、试用、配额、激活与撤销测试。
+- `tests/test_build_ledger.py`、`tests/test_build_service.py`、`tests/test_mcp_*.py`：MCP 账本、预检、退款、协议、安全和执行门控测试。
 
 后续运营能力（HSM/KMS 签发服务、托管构建、OEM 版税、客户门户与审计报表）的实施顺序与架构见 [Phase 3 路线图](phase3-roadmap.md)。

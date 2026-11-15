@@ -195,3 +195,4 @@ exe 冒烟测试建议：
 - 源码保护提高逆向成本，不构成绝对 DRM；离线分发下主密钥最终会进入客户环境，具备逆向能力的攻击者仍可能提取内存中的代码或主密钥；
 - Pro/Enterprise 在工具链可用时默认原生 runtime，Trial 或工具链缺失时回退字节码；`--runtime-source` 仅用于调试，会以明文发布解密逻辑；
 - 完整性清单只在进程首次加载时扫描一次，5 分钟重验不覆盖清单；它用于发现现场误改或局部篡改，不能阻止整体替换 runtime。状态 HMAC 由 `build_key` 派生，但提取 master 后仍可伪造，正确表述是“防单点丢失/误损坏”，不是绝对防篡改。发布卫生详见 [security-hardening.md](security-hardening.md)。
+- 桌面构建器不是 MCP 入口。agent 构建请使用独立的 console 产物 `PyShieldMCP.exe`；两者的额度账本最终会统一，但当前 MCP 的“代码错误退款”规则与桌面端“启动即扣、失败不退”不同，详见 [mcp-server.md](mcp-server.md)。
