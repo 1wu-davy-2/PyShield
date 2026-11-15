@@ -398,6 +398,36 @@ class BuilderTests(unittest.TestCase):
         self.assertIn("unsigned bytecode cache", completed.stderr)
         self.assertIn("mypkg/__pycache__", completed.stderr)
 
+    def test_package_entry_import_is_tolerated(self) -> None:
+        """CPython writes the entry package's cache before the stub runs."""
+        self.build()
+        env = os.environ.copy()
+        env["PYSHELD_LICENSE"] = str(self.output / "pyshield.lic")
+        env["PYSHELD_STATE_DIR"] = str(self.state_dir)
+        env.pop("PYTHONDONTWRITEBYTECODE", None)
+        script = "import mypkg; print('entry ok', mypkg.VALUE)"
+        first = subprocess.run(
+            [sys.executable, "-c", script], cwd=self.output, env=env,
+            capture_output=True, text=True,
+        )
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertIn("entry ok 42", first.stdout)
+        self.assertTrue(list(self.output.rglob("__pycache__")))
+        second = subprocess.run(
+            [sys.executable, "-c", script], cwd=self.output, env=env,
+            capture_output=True, text=True,
+        )
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertIn("entry ok 42", second.stdout)
+        # The entry cache is pruned, so a different entry point still passes.
+        self.assertFalse(
+            [path for path in self.output.rglob("*.pyc")
+             if "_shield_runtime" not in path.parts],
+            "imported caches must be pruned from the deployment",
+        )
+        third = self.run_project("check")
+        self.assertEqual(third.returncode, 0, third.stderr)
+
     def test_runtime_does_not_write_bytecode_into_dist(self) -> None:
         self.build()
         env = os.environ.copy()

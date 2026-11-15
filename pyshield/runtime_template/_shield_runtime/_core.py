@@ -182,9 +182,66 @@ def _isolate_bytecode() -> None:
 _isolate_bytecode()
 
 
+def _imported_bytecode_paths() -> set[str]:
+    """Cache files CPython itself loaded for modules imported so far.
+
+    When the entry point is a package (``python -c "import mypkg"``), CPython
+    writes ``mypkg/__pycache__`` before the stub body imports this runtime, so
+    that cache is legitimate even though the manifest cannot cover it. Only
+    caches for modules that are already imported are skipped; a cache planted
+    for a module that has not been imported yet is still rejected.
+    """
+    paths: set[str] = set()
+    for module in list(sys.modules.values()):
+        cached = getattr(module, "__cached__", None)
+        if not isinstance(cached, str) or not cached:
+            continue
+        try:
+            paths.add(os.path.normcase(os.path.abspath(cached)))
+        except (OSError, ValueError):
+            continue
+    return paths
+
+
+def _prune_imported_caches(root: Path) -> None:
+    """Remove the cache CPython wrote for an already-imported module.
+
+    ``python -c "import mypkg"`` makes CPython compile and cache
+    ``mypkg/__init__.py`` before the stub body imports this runtime. That file
+    is legitimate for this process, but leaving it in the deployment would make
+    the next start reject the tree. Delete only caches of modules that are
+    already in ``sys.modules``; a cache planted for a module that has not been
+    imported stays on disk and is reported by the integrity scan.
+    """
+    imported = _imported_bytecode_paths()
+    if not imported:
+        return
+    runtime_prefix = RUNTIME_PACKAGE_NAME + "/"
+    for path in root.rglob("*"):
+        if path.suffix.lower() not in BYTECODE_SUFFIXES:
+            continue
+        try:
+            relative = path.relative_to(root).as_posix()
+            current = os.path.normcase(os.path.abspath(path))
+        except (OSError, ValueError):
+            continue
+        if relative.startswith(runtime_prefix) or current not in imported:
+            continue
+        try:
+            path.unlink()
+        except OSError:
+            continue
+
+
+# A package entry point makes CPython cache the stub before this module runs;
+# remove that legitimate-but-unlisted cache so the next start still passes.
+_prune_imported_caches(_dist_dir())
+
+
 def _scan_bytecode_caches(root: Path) -> list[str]:
     """Report import caches that no signed manifest entry can cover."""
     failures: list[str] = []
+    imported = _imported_bytecode_paths()
     runtime_prefix = RUNTIME_PACKAGE_NAME + "/"
     for path in sorted(root.rglob("*")):
         try:
@@ -202,6 +259,12 @@ def _scan_bytecode_caches(root: Path) -> list[str]:
         except OSError:
             continue
         if is_file and path.suffix.lower() in BYTECODE_SUFFIXES:
+            try:
+                current = os.path.normcase(os.path.abspath(path))
+            except (OSError, ValueError):
+                current = ""
+            if current in imported:
+                continue
             failures.append(f"{relative}: unsigned bytecode cache")
         if len(failures) >= 20:
             failures.append("more bytecode caches were not listed")
