@@ -1,11 +1,11 @@
 # Round 3 审查材料
 
-本目录是第二轮复核后的第三轮材料（2026-11-15 第四轮修复版），对应源码 `develop`（本机未提交状态；修复绑定并发、legacy 一次性迁移、onefile 文案和发布卫生）。第三轮 CI 记录对应 `8adeccf`；第四轮修复提交后需重新运行 CI。所有样本只用于授权安全评估，不是正式发布链路。
+本目录是第二轮复核后的第三轮材料（2026-11-15 第四轮修复版），对应源码 `develop @ ae718c4`（修复绑定并发、legacy 一次性迁移、onefile 文案和发布卫生）。所有样本只用于授权安全评估，不是正式发布链路。
 
 | 文件 | 说明 |
 | --- | --- |
-| `PyShieldBuilder.exe`（仓库根目录，未纳入 git） | 第四轮本机构建的桌面构建器，49,244,740 B；CI 构建后以 GitHub artifact 的哈希为准 |
-| `dist-selfbuild/PyShieldBuilder-selfbuild.exe`（未纳入 git） | 第四轮本地自保护构建器，40,565,809 B |
+| `PyShieldBuilder.exe`（仓库根目录，未纳入 git） | 第四轮 CI 构建的桌面构建器，21,544,313 B，SHA-256 `a27a1d73a24e7c06c61a55d316b3de6fd8b14e5c770f04ac526732bf9991b3f9` |
+| `dist-selfbuild/PyShieldBuilder-selfbuild.exe`（未纳入 git） | 第四轮本地自保护构建器，40,565,809 B，SHA-256 `25b1089a1fe8e8db3570bcfa22222f0c938eeefd2b13d64f32d3161cd3612a89` |
 | `PyShieldBuilder-protected-sample-round3.zip` | PyInstaller 打包前的受保护源码树（28 个业务模块 stub），用于静态检查，433,055 B；build `0617618bfb042369` |
 | `round3-django-shielded.zip` | 可直接运行的受保护 Django 示例工程，用于 Crack Challenge，72,709 B；build `1cc98e4796b92436` |
 | `ROUND3-CHALLENGE.md` | Crack Challenge 目标、flag 哈希与规则 |
@@ -30,7 +30,7 @@ python manage.py reveal
 
 `.github/workflows/native-runtime.yml` 会在 `develop` push 时于 Windows 和 Ubuntu 上执行 `--runtime-native` 构建，验证原生扩展、无明文 runtime、无 PDB 侧车、无完整主密钥，并运行受保护应用。
 
-第三轮（`8adeccf`）通过记录：[native-runtime run 43675650384](https://github.com/1wu-davy-2/PyShield/actions/runs/43675650384)、[build-develop run 43675650496](https://github.com/1wu-davy-2/PyShield/actions/runs/43675650496)、[selfbuild-poc run 43675650448](https://github.com/1wu-davy-2/PyShield/actions/runs/43675650448)。第四轮修复当前尚未提交/推送，CI 需在提交后重新运行；本地 exe 为同源码构建，不能替代 CI 记录。
+第四轮（`ae718c4`）已通过：[native-runtime run 43697777107](https://github.com/1wu-davy-2/PyShield/actions/runs/43697777107)、[build-develop run 43697777144](https://github.com/1wu-davy-2/PyShield/actions/runs/43697777144)、[selfbuild-poc run 43697777044](https://github.com/1wu-davy-2/PyShield/actions/runs/43697777044)。桌面 exe 已用 `ci-develop-latest` 中对应本次代码提交的 Windows 产物替换本地文件。注意 `ci-develop-latest` 是移动快照；后续 docs-only commit 重新构建可能产生不同 exe 哈希，材料中的哈希固定对应 `ae718c4` 的 CI 构建。
 
 ## 校验
 

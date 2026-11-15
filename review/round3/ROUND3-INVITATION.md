@@ -5,7 +5,7 @@
 ## 材料
 
 - 桌面构建器：`PyShieldBuilder.exe`
-  - SHA-256：`5ac93799a918317a38f41d2b6996e9c6973bb8ab9e454dec99cf0d262c527d70`
+  - SHA-256：`a27a1d73a24e7c06c61a55d316b3de6fd8b14e5c770f04ac526732bf9991b3f9`
 - 自保护构建器：`dist-selfbuild/PyShieldBuilder-selfbuild.exe`
   - SHA-256：`25b1089a1fe8e8db3570bcfa22222f0c938eeefd2b13d64f32d3161cd3612a89`
 - 打包前受保护源码树：`review/round3/PyShieldBuilder-protected-sample-round3.zip`
@@ -13,8 +13,8 @@
 - 受保护 Django 测试工程：`review/round3/round3-django-shielded.zip`
   - SHA-256：`34c5e49f5cb5b23b4ea1a5f0e62514311e93a068377d4399701c8f85d9cb7954`
 - Challenge flag 的 SHA-256：`a036bf169f93cf499e7496082e3d088e5f3c453b3620cf8eed00941b2d96c4ce`
-- 源码：`develop`（第四轮修复，待提交）
-- CI：第四轮修复提交后重新运行；第三轮 `8adeccf` 的记录为 native-runtime `43675650384`、build-develop `43675650496`、selfbuild-poc `43675650448`，均通过
+- 源码：`develop @ ae718c4`
+- CI：第四轮 `ae718c4` 的 native-runtime `43697777107`、build-develop `43697777144`、selfbuild-poc `43697777044`，均通过
 
 ## 请重点验证
 

@@ -1,6 +1,6 @@
 # Round 3 修复说明与自评
 
-- 源码：`develop`（第四轮修复未提交版本）
+- 源码：`develop @ ae718c4`
 - 日期：2026-11-15
 - 性质：**开发方自评，不是独立审计报告**。独立结论以审查方按 `VULNERABILITY-REPORT-FORMAT.md` 提交的报告为准。
 - 测试：`python -m unittest discover -s tests` → **180 tests OK (skipped=1)**；原生 runtime 测试因当前机器缺少 C 编译器和 strip 工具被跳过。
@@ -67,12 +67,12 @@
 - legacy 一次性迁移：首次 opt-in 迁移成功并生成 marker；同一 env 下再次注入旧格式被拒绝；进程运行中删除状态后注入 legacy 也被拒绝。
 - 发布卫生：`python tools/check_release.py --temp` 检查 0 个遗留 `pyshield*`/`psh*` 项；`python tools/check_release.py review/round3/PyShieldBuilder-protected-sample-round3.zip` 无敏感命中。
 - 单实例启动：主 exe 与自保护 exe 同时启动时，第二个进程退出并尝试转发深链；任务管理器只保留一个应用实例（PyInstaller onefile 的 bootloader/子进程除外）。`PYSHELD_ALLOW_MULTI_INSTANCE=1` 仅为自动化并行测试入口。
-- 原生 runtime 端到端构建：已由 GitHub Actions `native-runtime` 矩阵在 Windows 和 Ubuntu 上通过（提交 `8adeccf`，run `43675650384`；上一轮 `9bd4b9f` run `43666681749`）：
+- 原生 runtime 端到端构建：已由 GitHub Actions `native-runtime` 矩阵在 Windows 和 Ubuntu 上通过（提交 `ae718c4`，run `43697777107`；第三轮 `8adeccf` run `43675650384`）：
   - Windows 使用 Cython + MSVC + LLVM strip，验证 `.pyd` 导入、无 `.py` runtime、无 PDB 侧车、无完整主密钥；
   - Ubuntu 使用 Cython + gcc + binutils strip，验证 `.so` 导入、无 `.py` runtime、无完整主密钥；
   - 两个平台都运行了受保护 `manage.py check` 和 `_shield_runtime verify --json`，并上传原生产物。
   - 本机仍无 C 编译器/strip，因此本地不能重复该端到端构建；以 CI 结果作为本轮证据。
-- 桌面构建器 CI（第三轮 `8adeccf`）：`build-develop` run `43675650496` 通过；自保护 exe 由 `selfbuild-poc` run `43675650448` 通过。第四轮修复当前尚未提交/推送，本地 `PyShieldBuilder.exe`、`PyShieldBuilder-selfbuild.exe`、两个 zip 均由第四轮源码本机构建，哈希见 `SHA256SUMS.txt`；CI 需在提交后重新运行，正式对外材料应以 CI artifact 为准。
+- 桌面构建器 CI（第四轮 `ae718c4`）：`build-develop` run `43697777144` 通过；`selfbuild-poc` run `43697777044` 通过；`native-runtime` run `43697777107` 通过。本地 `PyShieldBuilder.exe` 已用 `ci-develop-latest` 中对应 `ae718c4` 的 Windows CI 产物替换，哈希见 `SHA256SUMS.txt`；自保护 exe 与两个 zip 由第四轮源码本机构建。`ci-develop-latest` 是移动快照，后续 docs-only commit 重建可能产生不同 exe 哈希。
 
 ## 4. 仍需审查方重点挑战的点
 
