@@ -77,15 +77,20 @@ jobs:
           python -c "import _shield_runtime._core as core; print('core ok', core.BUILD_ID)"
           python -c "import _shield_runtime._crypto, _shield_runtime._ed25519, _shield_runtime._keyring, _shield_runtime._chacha_fast; print('extensions ok')"
 
-      - name: Check keyring matches build secret
-        run: |
-          python -c "import sys; from pathlib import Path; sys.path.insert(0, 'dist-native'); from _shield_runtime import _keyring; from pyshield import crypto, licensing; s=licensing.read_secret(Path('dist-native.shield-secret.json')); assert _keyring.master_key() == crypto.b85decode(s['master_key']); print('keyring matches')"
+      - name: Check keyring and decrypt path
+        run: python tools/diagnose_native_runtime.py dist-native
 
       - name: Check protected license state
         working-directory: dist-native
         env:
           PYSHELD_STATE_DIR: ${{ github.workspace }}/native-state
         run: python -c "from _shield_runtime import license_status; print(license_status())"
+
+      - name: Check protected package init
+        working-directory: dist-native
+        env:
+          PYSHELD_STATE_DIR: ${{ github.workspace }}/native-state
+        run: python -c "import mypkg; print('package init ok')"
 
       - name: Check protected module load
         working-directory: dist-native
