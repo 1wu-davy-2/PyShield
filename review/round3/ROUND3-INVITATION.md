@@ -5,14 +5,14 @@
 ## 材料
 
 - 桌面构建器：`PyShieldBuilder.exe`
-  - SHA-256：`1560efc99f1558a5207c0a6e10dd2ce6cc05f0643f531583109c0fcecc917e1c`
+  - SHA-256：`486fd67e4e23efd30c582529437076b6690d38232a4ff24662b96c334644b0f9`
 - 自保护构建器：`dist-selfbuild/PyShieldBuilder-selfbuild.exe`
-  - SHA-256：`bd18a6a7d1c7a272a51bc0527c30820e89846c748de2f20ee2bfffc7f7cd7126`
+  - SHA-256：`3a3d0ecfacd5fe2c02c0203f60ac6158ebe69ea85fae3a2526a86fd5f9adcd2a`
 - 打包前受保护源码树：`review/round3/PyShieldBuilder-protected-sample-round3.zip`
-  - SHA-256：`1e05ca031cdb9b4b8350f74fcc741494e5c8cf23259a57650ab1c9a6c131f835`
+  - SHA-256：`7a87d55eb55443c99019b0678a530833f8a7c5589c8ad40c6a8dcfefc9f00b23`
 - 受保护 Django 测试工程：`review/round3/round3-django-shielded.zip`
-  - SHA-256：`cecfe77a6e04baa311a73041ef68f5f0476c5b0f736e357eaf16f4e130423384`
-- 源码：`develop @ 749ca3d`（含 `2b5b16d` 的原生 runtime 加固）
+  - SHA-256：`3ec82a849b58e126b660f4632f45c209a5571a943139753867b036bcb46304a2`
+- 源码：`develop @ 08f400a`（含 `2b5b16d` 的原生 runtime 加固）
 
 ## 请重点验证
 

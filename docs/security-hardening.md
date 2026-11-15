@@ -122,6 +122,10 @@ python -m unittest discover -s tests -v
 # 检查 runtime bundle 是否过期
 python tools/embed_runtime.py --check
 
+# 在带 Cython + C 编译器 + strip 的环境验证原生 runtime
+python shield.py build -p <project> -o dist-native --runtime-native --no-verify --force
+python tools/check_native_build.py dist-native
+
 # 构建一个默认产物
 python shield.py build -p <django-project> -o dist-test --cipher chacha-pure
 

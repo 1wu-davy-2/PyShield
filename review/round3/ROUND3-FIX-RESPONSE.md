@@ -1,6 +1,6 @@
 # Round 3 修复说明与自评
 
-- 源码：`develop @ 749ca3d`（前一项 P0 提交 `2b5b16d`）
+- 源码：`develop @ 08f400a`（前一项 P0 提交 `2b5b16d`）
 - 日期：2026-11-15
 - 性质：**开发方自评，不是独立审计报告**。独立结论以审查方按 `VULNERABILITY-REPORT-FORMAT.md` 提交的报告为准。
 - 测试：`python -m unittest discover -s tests` → **172 tests OK (skipped=1)**；原生 runtime 测试因当前机器缺少 C 编译器和 strip 工具被跳过。
@@ -41,7 +41,11 @@
 - 主 exe 冒烟：启动后存活 12 秒；自保护 exe 同样存活 12 秒。
 - 受保护 Django 示例：`manage.py check` 通过，`manage.py reveal` 输出 `protected demo command OK`；`demo.hidden_flag` 直接导入按设计抛出 `RuntimeError`，发布物中未发现明文 flag；flag 哈希见 `SHA256SUMS.txt`。
 - 受保护源码样本：28 个业务模块全部为 stub；无构建 secret、无 `.pyc`、无 `runtime_template`；`_core.py` 不含 `MASTER_KEY_B85`；`_keyring.py` 存在。
-- 原生 runtime 端到端构建：**未完成**（当前机器无 C 编译器和 strip），因此 strip/CodeView 逻辑有单元测试和代码检查，但没有本机原生 `.pyd` 的 `strings` 实测；需要 CI/审查方在带 MinGW 或 MSVC+LLVM 的环境复核。
+- 原生 runtime 端到端构建：已由 GitHub Actions `native-runtime` 矩阵在 Windows 和 Ubuntu 上通过（提交 `08f400a`，run `43665646763`）：
+  - Windows 使用 Cython + MSVC + LLVM strip，验证 `.pyd` 导入、无 `.py` runtime、无 PDB 侧车、无完整主密钥；
+  - Ubuntu 使用 Cython + gcc + binutils strip，验证 `.so` 导入、无 `.py` runtime、无完整主密钥；
+  - 两个平台都运行了受保护 `manage.py check` 和 `_shield_runtime verify --json`，并上传原生产物。
+  - 本机仍无 C 编译器/strip，因此本地不能重复该端到端构建；以 CI 结果作为本轮证据。
 
 ## 4. 仍需审查方重点挑战的点
 
