@@ -198,6 +198,16 @@ class BuilderTests(unittest.TestCase):
             record["bound_at"],
         )
 
+        # The reverse direction must heal too: deleting the anchor must not
+        # turn the deployment into a first run or change the bound timestamp.
+        anchor_path.unlink()
+        completed = self.run_project("check")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(
+            json.loads(anchor_path.read_text(encoding="utf-8"))["bound_at"],
+            record["bound_at"],
+        )
+
         completed = self.run_project("check")
         self.assertEqual(completed.returncode, 0, completed.stderr)
 
@@ -496,6 +506,64 @@ class BuilderTests(unittest.TestCase):
             )
             self.assertEqual(record["last_seen"], date.today().isoformat())
 
+        markers = [path.with_name(path.name + ".legacy-migrated") for path in paths]
+        marker_path = next(marker for marker in markers if marker.is_file())
+        marker = secure_store.open_state(
+            secure_store.read_private(marker_path),
+            machine, "pyshield-legacy-migration", build_key,
+        )
+        self.assertEqual(marker["format"], 1)
+        self.assertEqual(marker["build_id"], build_id)
+
+        # The opt-in is one-time: re-injecting legacy state while the env is
+        # still set must fail instead of migrating again.
+        for path in paths:
+            secure_store.write_private(path, legacy)
+        with mock.patch.dict(os.environ, {"PYSHELD_ALLOW_LEGACY_STATE": "1"}):
+            completed = self.run_project("check")
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("one-time legacy migration", completed.stderr)
+
+    def test_legacy_state_cannot_reset_running_process(self) -> None:
+        result = self.build(expire="2035-01-01")
+        secret = licensing.read_secret(result.secret)
+        build_key = crypto.b85decode(secret["build_key"])
+        script = (
+            "import os\n"
+            "from datetime import date, timedelta\n"
+            "from _shield_runtime import _core, _secure_store\n"
+            "key = bytes.fromhex(os.environ['PYSHELD_TEST_BUILD_KEY'])\n"
+            "_core._check_clock(key)\n"
+            "paths = _core._clock_paths()\n"
+            "for path in paths:\n"
+            "    path.unlink()\n"
+            "payload = {'format': 2, 'build_id': _core.BUILD_ID, "
+            "'last_seen': (date.today() - timedelta(days=1)).isoformat()}\n"
+            "legacy = _secure_store.seal_state("
+            "payload, _core._clock_machine(), 'pyshield-clock')\n"
+            "for path in paths:\n"
+            "    _secure_store.write_private(path, legacy)\n"
+            "os.environ['PYSHELD_ALLOW_LEGACY_STATE'] = '1'\n"
+            "try:\n"
+            "    _core._check_clock(key)\n"
+            "    print('RESET_OK')\n"
+            "except _core.LicenseError as exc:\n"
+            "    print('RESET_REJECTED', exc)\n"
+        )
+        env = os.environ.copy()
+        env["PYSHELD_LICENSE"] = str(self.output / "pyshield.lic")
+        env["PYSHELD_STATE_DIR"] = str(self.state_dir)
+        env["PYSHELD_TEST_BUILD_KEY"] = build_key.hex()
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
+        env.pop("PYSHELD_ALLOW_LEGACY_STATE", None)
+        completed = subprocess.run(
+            [sys.executable, "-c", script], cwd=self.output, env=env,
+            capture_output=True, text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("RESET_REJECTED", completed.stdout)
+        self.assertNotIn("RESET_OK", completed.stdout)
+
     def test_implausible_future_clock_state_is_rejected(self) -> None:
         result = self.build(expire="2035-01-01")
         secret = licensing.read_secret(result.secret)
@@ -562,6 +630,54 @@ class BuilderTests(unittest.TestCase):
                 records.append(record["last_seen"])
             self.assertEqual(records[0], records[1])
 
+    def test_concurrent_first_run_binding_does_not_fail(self) -> None:
+        result = self.build(bind_first_run=True)
+        secret = licensing.read_secret(result.secret)
+        build_key = crypto.b85decode(secret["build_key"])
+        script = (
+            "import os\n"
+            "from _shield_runtime import _core\n"
+            "_core._check_first_run_binding(bytes.fromhex(os.environ['PYSHELD_TEST_BUILD_KEY']))\n"
+        )
+        for round_no in range(10):
+            binding_dir = Path(self.temp.name) / f"binding-concurrent-{round_no}"
+            binding_dir.mkdir()
+            binding = binding_dir / "binding.json"
+            env = os.environ.copy()
+            env["PYSHELD_BINDING_FILE"] = str(binding)
+            env["PYSHELD_TEST_BUILD_KEY"] = build_key.hex()
+            for key in (
+                "PYSHELD_STATE_DIR",
+                "PYSHELD_STATE_ANCHOR_DIR",
+                "PYSHELD_ALLOW_VOLATILE_STATE",
+                "PYSHELD_ALLOW_LEGACY_STATE",
+            ):
+                env.pop(key, None)
+            workers = [
+                subprocess.Popen(
+                    [sys.executable, "-c", script],
+                    cwd=self.output, env=env,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True,
+                )
+                for _ in range(16)
+            ]
+            outputs = [worker.communicate(timeout=60) for worker in workers]
+            failures = [
+                f"#{index}: {(out or '').strip()[:300]}"
+                for index, (worker, (out, _)) in enumerate(zip(workers, outputs))
+                if worker.returncode != 0
+            ]
+            self.assertEqual(failures, [], f"round {round_no}")
+            self.assertFalse(list(binding_dir.glob("*.tmp")))
+            primary = json.loads(binding.read_text(encoding="utf-8"))
+            anchor = json.loads(
+                (binding_dir / "binding.json.anchor").read_text(encoding="utf-8")
+            )
+            self.assertEqual(primary["bound_at"], anchor["bound_at"])
+            self.assertEqual(primary["fingerprint"], anchor["fingerprint"])
+            self.assertEqual(primary["build_id"], secret["build_id"])
+
     def test_binding_override_does_not_disable_onefile_guard(self) -> None:
         result = self.build(bind_first_run=True)
         secret = licensing.read_secret(result.secret)
@@ -573,18 +689,21 @@ class BuilderTests(unittest.TestCase):
             "sys._MEIPASS = os.environ['FAKE_MEI']\n"
             "os.environ['PYSHELD_BINDING_FILE'] = os.environ['BINDING_PATH']\n"
             "onefile = _core._binding_paths_are_volatile()\n"
+            "message = ''\n"
             "try:\n"
             "    _core._check_first_run_binding(bytes.fromhex(os.environ['BUILD_KEY']))\n"
             "    rejected = False\n"
-            "except _core.LicenseError:\n"
+            "except _core.LicenseError as exc:\n"
             "    rejected = True\n"
+            "    message = str(exc)\n"
             "del sys._MEIPASS\n"
             "os.environ['PYSHELD_BINDING_FILE'] = os.environ['BINDING_MEI_PATH']\n"
             "override_mei = _core._binding_paths_are_volatile()\n"
             "os.environ['PYSHELD_BINDING_FILE'] = os.environ['BINDING_PERSISTENT']\n"
             "persistent = _core._binding_paths_are_volatile()\n"
             "print(json.dumps({'onefile': onefile, 'rejected': rejected, "
-            "'override_mei': override_mei, 'persistent': persistent}))\n"
+            "'message': message, 'override_mei': override_mei, "
+            "'persistent': persistent}))\n"
         )
         env = os.environ.copy()
         env["PYSHELD_LICENSE"] = str(self.output / "pyshield.lic")
@@ -602,6 +721,9 @@ class BuilderTests(unittest.TestCase):
         result_data = json.loads(completed.stdout.strip().splitlines()[-1])
         self.assertTrue(result_data["onefile"])
         self.assertTrue(result_data["rejected"])
+        self.assertIn("fixed fingerprint", result_data["message"])
+        self.assertIn("onedir", result_data["message"])
+        self.assertNotIn("set PYSHELD_BINDING_FILE", result_data["message"])
         self.assertTrue(result_data["override_mei"])
         self.assertFalse(result_data["persistent"])
 

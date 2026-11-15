@@ -36,6 +36,9 @@ jobs:
       - name: Build self-protected PyShieldBuilder
         run: python tools/selfbuild.py --outdir dist-selfbuild
 
+      - name: Release hygiene scan
+        run: python tools/check_release.py dist-selfbuild
+
       - name: Verify artifact
         shell: pwsh
         run: |

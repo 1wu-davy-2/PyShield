@@ -120,6 +120,9 @@ jobs:
           PYSHELD_STATE_DIR: ${{ github.workspace }}/native-state
         run: python -m _shield_runtime verify --json
 
+      - name: Release hygiene scan
+        run: python tools/check_release.py dist-native
+
       - name: Checksum native sample
         shell: pwsh
         if: runner.os == 'Windows'

@@ -64,6 +64,9 @@ BINDING_FILE_ENV = "PYSHELD_BINDING_FILE"
 BINDING_ANCHOR_SUFFIX = ".anchor"
 BINDING_FORMAT = 1
 BINDING_SALT = b"pyshield-binding-v1"
+LEGACY_MARKER_PURPOSE = "pyshield-legacy-migration"
+LEGACY_MARKER_SUFFIX = ".legacy-migrated"
+LEGACY_MARKER_FORMAT = 1
 
 _lock = threading.RLock()
 _state: dict | None = None
@@ -309,9 +312,82 @@ def _allow_legacy_state() -> bool:
     return value in {"1", "true", "yes", "on"}
 
 
+def _legacy_marker_paths(paths: tuple[Path, Path]) -> tuple[Path, ...]:
+    markers: list[Path] = []
+    for path in paths:
+        marker = path.with_name(path.name + LEGACY_MARKER_SUFFIX)
+        if marker not in markers:
+            markers.append(marker)
+    return tuple(markers)
+
+
+def _legacy_migration_done(paths: tuple[Path, Path]) -> bool:
+    """Return True once the one-time legacy migration has been consumed.
+
+    The marker's presence is authoritative. A corrupt, foreign or unreadable
+    marker is treated as consumed so it cannot reopen the public-MAC downgrade
+    path; a marker created by an attacker only disables legacy migration, which
+    fails closed.
+    """
+    for marker in _legacy_marker_paths(paths):
+        try:
+            if _secure_store.read_private(marker) is not None:
+                return True
+        except _secure_store.SecureStoreError:
+            return True
+    return False
+
+
+def _write_legacy_migration_marker(
+    paths: tuple[Path, Path], machine: str, secret: bytes
+) -> None:
+    record = {
+        "format": LEGACY_MARKER_FORMAT,
+        "build_id": BUILD_ID,
+        "migrated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    try:
+        data = _secure_store.seal_state(
+            record, machine, LEGACY_MARKER_PURPOSE, secret,
+        )
+    except (OSError, ValueError) as exc:
+        raise LicenseError(
+            f"PyShield cannot protect the one-time legacy migration marker: {exc}"
+        ) from exc
+    failures: list[tuple[Path, OSError]] = []
+    written = 0
+    for marker in _legacy_marker_paths(paths):
+        try:
+            _secure_store.write_private(marker, data)
+            written += 1
+        except OSError as exc:
+            failures.append((marker, exc))
+    if written == 0:
+        marker, exc = failures[0]
+        raise LicenseError(
+            "PyShield cannot record the one-time legacy migration marker "
+            f"in {marker} ({exc}); remove {ALLOW_LEGACY_STATE_ENV} and restore "
+            "a keyed state file"
+        ) from exc
+
+
+def _legacy_state_policy(
+    paths: tuple[Path, Path],
+) -> tuple[bool, str, bool]:
+    """Return (allow_legacy, block_reason, marker_seen)."""
+    if not _allow_legacy_state():
+        return False, "disabled", False
+    done = _legacy_migration_done(paths)
+    if _clock_started:
+        return False, "running", done
+    if done:
+        return False, "consumed", True
+    return True, "", False
+
+
 @contextlib.contextmanager
-def _state_lock(paths: tuple[Path, Path]):
-    """Serialize the clock read-modify-write across processes when possible.
+def _state_lock(paths: tuple[Path, Path], label: str = "clock state"):
+    """Serialize a state read-modify-write across processes when possible.
 
     The lock file is advisory. If the state directory is not writable, startup
     continues unlocked; reads still retry transient sharing errors and the
@@ -344,8 +420,8 @@ def _state_lock(paths: tuple[Path, Path]):
                 except OSError as exc:
                     if time.monotonic() >= deadline:
                         raise LicenseError(
-                            "PyShield could not lock clock state; "
-                            "another process is holding the state lock"
+                            f"PyShield could not lock {label}; "
+                            "another process is holding the lock"
                         ) from exc
                     time.sleep(0.02)
             try:
@@ -379,7 +455,13 @@ def _clock_machine() -> str:
     return _machine.machine_fingerprint().lower()
 
 
-def _read_clock_file(path: Path, machine: str, secret: bytes) -> tuple[date | None, bool]:
+def _read_clock_file(
+    path: Path,
+    machine: str,
+    secret: bytes,
+    allow_legacy: bool,
+    legacy_block: str,
+) -> tuple[date | None, bool]:
     try:
         data = _secure_store.read_private(path)
     except _secure_store.SecureStoreError as exc:
@@ -395,12 +477,27 @@ def _read_clock_file(path: Path, machine: str, secret: bytes) -> tuple[date | No
     except _secure_store.SecureStoreError:
         # Legacy public-MAC state is a downgrade path: anyone who can write the
         # state directory can forge a last_seen value and have it re-sealed
-        # with the keyed MAC. Migration is therefore opt-in only.
-        if not _allow_legacy_state():
+        # with the keyed MAC. Migration is opt-in and one-time only.
+        if not allow_legacy:
+            if legacy_block == "running":
+                reason = (
+                    "legacy public-MAC state was introduced while the program "
+                    "was running; restore the keyed state file or contact the vendor"
+                )
+            elif legacy_block == "consumed":
+                reason = (
+                    "the one-time legacy migration was already consumed; "
+                    "restore the keyed state file or contact the vendor"
+                )
+            else:
+                reason = (
+                    "rebuild the state or set "
+                    f"{ALLOW_LEGACY_STATE_ENV}=1 only for a one-time migration "
+                    "from an older build"
+                )
             raise LicenseError(
-                f"PyShield clock state {path} is damaged or belongs to another machine; "
-                f"rebuild the state or set {ALLOW_LEGACY_STATE_ENV}=1 only for a "
-                "one-time migration from an older build"
+                f"PyShield clock state {path} is damaged or belongs to another "
+                f"machine; {reason}"
             )
         try:
             record = _secure_store.open_state(data, machine, STATE_PURPOSE)
@@ -424,6 +521,12 @@ def _read_clock_file(path: Path, machine: str, secret: bytes) -> tuple[date | No
         raise LicenseError(
             f"PyShield clock state {path} is damaged; restore the file or correct the system clock"
         ) from exc
+    if legacy and seen > date.today():
+        raise LicenseError(
+            f"PyShield legacy clock state {path} contains a future date "
+            f"({seen.isoformat()}); restore a keyed state file or correct the "
+            "system clock"
+        )
     if seen > date.today() + timedelta(days=STATE_MAX_FUTURE_DAYS):
         raise LicenseError(
             f"PyShield clock state {path} contains an implausible future date "
@@ -471,14 +574,32 @@ def _read_clock_locked(
     secret: bytes, paths: tuple[Path, Path], machine: str
 ) -> tuple[date | None, tuple[Path, Path]]:
     global _clock_started
-    primary_seen, primary_legacy = _read_clock_file(paths[0], machine, secret)
-    anchor_seen, anchor_legacy = _read_clock_file(paths[1], machine, secret)
+    allow_legacy, legacy_block, legacy_done = _legacy_state_policy(paths)
+    primary_seen, primary_legacy = _read_clock_file(
+        paths[0], machine, secret, allow_legacy, legacy_block,
+    )
+    anchor_seen, anchor_legacy = _read_clock_file(
+        paths[1], machine, secret, allow_legacy, legacy_block,
+    )
+    migrated = primary_legacy or anchor_legacy
+
+    def consume_legacy_opt_in() -> None:
+        # A successful keyed read while the explicit opt-in is set also
+        # consumes the opt-in. This prevents a permanently exported
+        # PYSHELD_ALLOW_LEGACY_STATE=1 from reopening the public-MAC path
+        # after the keyed state has already been established.
+        if migrated or (
+            _allow_legacy_state() and not legacy_done and not _clock_started
+        ):
+            _write_legacy_migration_marker(paths, machine, secret)
+
     if primary_seen is not None and anchor_seen is not None and primary_seen != anchor_seen:
         # A transient failure between the two writes must not brick the
         # installation. Taking the newer date preserves rollback detection and
         # rewrites both copies to the same value.
         seen = max(primary_seen, anchor_seen)
         _write_clock(seen, paths, secret)
+        consume_legacy_opt_in()
         return seen, paths
     seen = primary_seen if primary_seen is not None else anchor_seen
     if seen is None:
@@ -496,6 +617,9 @@ def _read_clock_locked(
     ):
         # Restore a deleted copy or migrate the public-MAC state once.
         _write_clock(seen, paths, secret)
+        consume_legacy_opt_in()
+    elif _allow_legacy_state() and not legacy_done and not _clock_started:
+        consume_legacy_opt_in()
     return seen, paths
 
 
@@ -536,13 +660,14 @@ def _write_binding_record(
         "bound_at": bound_at,
         "mac": _binding_mac(key, fingerprint, bound_at),
     }
+    data = (
+        json.dumps(record, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_name(path.name + ".tmp")
-        temporary.write_text(
-            json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-        )
-        os.replace(temporary, path)
+        # Reuse the same unique-temp-file + sharing-violation retry path as the
+        # clock state. A deterministic ``.tmp`` name races when many workers
+        # start for the first time at once.
+        _secure_store.write_private(path, data)
     except OSError as exc:
         raise LicenseError(
             f"PyShield cannot record the first-run binding in {path} ({exc}); "
@@ -550,21 +675,44 @@ def _write_binding_record(
         ) from exc
 
 
+def _write_binding_records(
+    key: bytes, paths: tuple[Path, ...], fingerprint: str, bound_at: str
+) -> None:
+    """Write binding copies, tolerating one transient failure.
+
+    A single surviving record is enough to keep the binding authoritative; the
+    next startup restores the missing copy. Only a total write failure is
+    fatal, matching the clock state's dual-copy behavior.
+    """
+    failures: list[LicenseError] = []
+    written = 0
+    for path in paths:
+        try:
+            _write_binding_record(key, path, fingerprint, bound_at)
+            written += 1
+        except LicenseError as exc:
+            failures.append(exc)
+    if written == 0 and failures:
+        raise failures[0]
+
+
 def _read_binding_record(
     key: bytes, path: Path, current: str
 ) -> dict | None:
     try:
-        raw = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
+        raw = _secure_store.read_private(path)
+    except _secure_store.SecureStoreError as exc:
+        raise LicenseError(
+            f"PyShield binding file {path} cannot be read: {exc}"
+        ) from exc
+    if raw is None:
         return None
-    except OSError as exc:
-        raise LicenseError(f"PyShield binding file {path} cannot be read: {exc}") from exc
     try:
-        record = json.loads(raw)
+        record = json.loads(raw.decode("utf-8"))
         fingerprint = str(record["fingerprint"]).lower()
         bound_at = str(record["bound_at"])
         mac = str(record["mac"])
-    except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+    except (ValueError, KeyError, TypeError, UnicodeDecodeError) as exc:
         raise LicenseError(
             f"PyShield binding file {path} is damaged; restore it from backup "
             "or contact the vendor"
@@ -625,41 +773,50 @@ def _check_first_run_binding(build_key: bytes) -> str:
     if _binding_paths_are_volatile():
         raise LicenseError(
             "first-run binding is not supported inside a PyInstaller onefile bundle; "
-            "use a fixed fingerprint, build onedir, or set "
-            f"{BINDING_FILE_ENV} to a persistent path"
+            "use a fixed fingerprint or build the application as onedir. "
+            f"{BINDING_FILE_ENV} cannot make an extraction directory persistent."
         )
     primary_path, anchor_path = _binding_paths()
     key = _binding_key(build_key)
     current = _machine.machine_fingerprint().lower()
-    primary = _read_binding_record(key, primary_path, current)
-    anchor = _read_binding_record(key, anchor_path, current)
+    # The whole read-modify-write must be serialized: otherwise two workers can
+    # both see "no records", choose different bound_at values, and leave the
+    # primary and anchor disagreeing.
+    with _state_lock((primary_path, anchor_path), "binding state"):
+        primary = _read_binding_record(key, primary_path, current)
+        anchor = _read_binding_record(key, anchor_path, current)
 
-    if primary is None and anchor is None:
-        if _binding_started:
-            raise LicenseError(
-                "PyShield binding records disappeared while the program was running; "
-                "restore them from backup or contact the vendor"
+        if primary is None and anchor is None:
+            if _binding_started:
+                raise LicenseError(
+                    "PyShield binding records disappeared while the program was running; "
+                    "restore them from backup or contact the vendor"
+                )
+            bound_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            _write_binding_records(
+                key, (primary_path, anchor_path), current, bound_at,
             )
-        bound_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        _write_binding_record(key, primary_path, current, bound_at)
-        _write_binding_record(key, anchor_path, current, bound_at)
+            _binding_started = True
+            return current
+
+        if primary is None:
+            # Deleting the visible binding file must not turn this into a first run.
+            _write_binding_records(
+                key, (primary_path,), current, str(anchor["bound_at"]),
+            )
+            primary = anchor
+        elif anchor is None:
+            _write_binding_records(
+                key, (anchor_path,), current, str(primary["bound_at"]),
+            )
+            anchor = primary
+
+        if str(primary["bound_at"]) != str(anchor["bound_at"]):
+            raise LicenseError(
+                "PyShield binding records disagree; restore them from backup or contact the vendor"
+            )
         _binding_started = True
         return current
-
-    if primary is None:
-        # Deleting the visible binding file must not turn this into a first run.
-        _write_binding_record(key, primary_path, current, str(anchor["bound_at"]))
-        primary = anchor
-    elif anchor is None:
-        _write_binding_record(key, anchor_path, current, str(primary["bound_at"]))
-        anchor = primary
-
-    if str(primary["bound_at"]) != str(anchor["bound_at"]):
-        raise LicenseError(
-            "PyShield binding records disagree; restore them from backup or contact the vendor"
-        )
-    _binding_started = True
-    return current
 
 
 def _check_binding(build_key: bytes, payload: dict) -> tuple[str, list[str], str | None]:

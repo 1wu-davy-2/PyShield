@@ -115,6 +115,9 @@ jobs:
           ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           "$hash  PyShieldBuilder.exe" | Out-File -FilePath dist\SHA256SUMS-windows.txt -Encoding utf8
 
+      - name: Release hygiene scan
+        run: python tools/check_release.py dist
+
       - uses: actions/upload-artifact@v7
         with:
           name: PyShieldBuilder-windows-x64
@@ -236,6 +239,9 @@ jobs:
           python -m _shield_runtime status --json
           python manage.py check
           cd ..
+
+      - name: Release hygiene scan
+        run: python tools/check_release.py dist-demo
 
       - name: Show what changed
         run: |
