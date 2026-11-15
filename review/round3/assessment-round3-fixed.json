@@ -49,7 +49,7 @@
     "integrity": "protected",
     "license_format": 3,
     "build_key_in_license": false,
-    "flag": "PSH-ROUND3-e3b2caa377c88630",
+    "flag": "PSH-ROUND3-****(旧值已轮换)",
     "flag_sha256": "a036bf169f93cf499e7496082e3d088e5f3c453b3620cf8eed00941b2d96c4ce",
     "flag_hash_matches": true,
     "raw_zip_flag_hits": 0,
@@ -194,7 +194,7 @@
       "id": "PSH-R3-001",
       "title": "Challenge flag absent from final zip",
       "status": "effective",
-      "evidence": "Flag PSH-ROUND3-e3b2caa377c88630 recovered offline; co_consts contains it; SHA-256 matches flag-sha256.txt; raw zip scan 0 hits; logs/recover-flag.log, logs/artifact-scan.log"
+      "evidence": "Flag PSH-ROUND3-****(旧值已轮换) recovered offline; co_consts contains it; SHA-256 matches flag-sha256.txt; raw zip scan 0 hits; logs/recover-flag.log, logs/artifact-scan.log"
     },
     {
       "id": "PSH-R3-002",

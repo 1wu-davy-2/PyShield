@@ -1,0 +1,345 @@
+{
+  "temp": "C:\\Users\\ww\\AppData\\Local\\Temp",
+  "matching_entries": [
+    {
+      "name": "psh-actions.html",
+      "type": "file",
+      "bytes": 318698
+    },
+    {
+      "name": "psh-checks-docs.html",
+      "type": "file",
+      "bytes": 165648
+    },
+    {
+      "name": "psh-checks-final.html",
+      "type": "file",
+      "bytes": 165613
+    },
+    {
+      "name": "psh-checks-full.html",
+      "type": "file",
+      "bytes": 173411
+    },
+    {
+      "name": "psh-checks-new.html",
+      "type": "file",
+      "bytes": 159021
+    },
+    {
+      "name": "psh-checks-poll.html",
+      "type": "file",
+      "bytes": 164565
+    },
+    {
+      "name": "psh-checks.html",
+      "type": "file",
+      "bytes": 9
+    },
+    {
+      "name": "psh-ci-status.log",
+      "type": "file",
+      "bytes": 57
+    },
+    {
+      "name": "psh-jobs.json",
+      "type": "file",
+      "bytes": 9445
+    },
+    {
+      "name": "psh-release-exe.exe",
+      "type": "file",
+      "bytes": 21541926
+    },
+    {
+      "name": "psh-release-sums.txt",
+      "type": "file",
+      "bytes": 253
+    },
+    {
+      "name": "psh-release.html",
+      "type": "file",
+      "bytes": 145567
+    },
+    {
+      "name": "psh-run-43666681734.html",
+      "type": "file",
+      "bytes": 152205
+    },
+    {
+      "name": "psh-run-43666681742.html",
+      "type": "file",
+      "bytes": 166561
+    },
+    {
+      "name": "psh-run-43666681749.html",
+      "type": "file",
+      "bytes": 151338
+    },
+    {
+      "name": "psh-run-43675650384.html",
+      "type": "file",
+      "bytes": 159142
+    },
+    {
+      "name": "psh-run-43675650448.html",
+      "type": "file",
+      "bytes": 156416
+    },
+    {
+      "name": "psh-run-43675650496.html",
+      "type": "file",
+      "bytes": 180792
+    },
+    {
+      "name": "psh-run-final-43676490706.html",
+      "type": "file",
+      "bytes": 158931
+    },
+    {
+      "name": "psh-run-final-43676490729.html",
+      "type": "file",
+      "bytes": 179813
+    },
+    {
+      "name": "psh-run-final-43676490789.html",
+      "type": "file",
+      "bytes": 156205
+    },
+    {
+      "name": "psh-run.html",
+      "type": "file",
+      "bytes": 155277
+    },
+    {
+      "name": "psh-run2.html",
+      "type": "file",
+      "bytes": 159091
+    },
+    {
+      "name": "psh-run3.html",
+      "type": "file",
+      "bytes": 159229
+    },
+    {
+      "name": "psh-run4.html",
+      "type": "file",
+      "bytes": 158944
+    },
+    {
+      "name": "psh-runs-api.json",
+      "type": "file",
+      "bytes": 280
+    },
+    {
+      "name": "psh-try.html",
+      "type": "file",
+      "bytes": 9
+    },
+    {
+      "name": "psh-wf.html",
+      "type": "file",
+      "bytes": 219338
+    },
+    {
+      "name": "psh-wf2.html",
+      "type": "file",
+      "bytes": 225762
+    },
+    {
+      "name": "psh-wf3.html",
+      "type": "file",
+      "bytes": 232330
+    },
+    {
+      "name": "pyshield-console-probe-v64gysnr",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-frozen-build-ext-65e680k3",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-frozen-cy-10z_z_12",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-frozen-cy2-gheuxt_c",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-frozen-cythonize_one-ti445txn",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-frozen-failure-l1mwkp9v",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-frozen-fixed-j9is4mlv",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-frozen-imports-4nq8hh3k",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-frozen-imports-ik9z0j2j",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-frozen-nativesetup-1u9lvyj8",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-frozen-probe-2aq6tp88",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-frozen-redirect-4gvmgnpl",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-frozen-setup-vo8jqrlb",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-frozen-simple0-nh3t4t2y",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-frozen-simple1-iybc055h",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-frozen-slow-493iblj0",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-frozen-stages-pvifkl4v",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-frozen-success-1slb2iq6",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-frozen-trace-x1cgqfxi",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-release-check",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-review-state",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-review-state2",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-sample-check-_beg5jcf",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-sample-final-62ewxuxb",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-sample-recheck-efi2bqst",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-sample-verify",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-si2-a-_rkz_5ed",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-si2-b-qd5bz0r1",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-single2-a-073to_of",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-single2-b-n75scmuw",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-smoke-g974e_80",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-smoke-nbj7b9jh",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-smoke-sj6gm257",
+      "type": "dir",
+      "bytes": null
+    },
+    {
+      "name": "pyshield-smoke-znmvzqab",
+      "type": "dir",
+      "bytes": null
+    }
+  ],
+  "sensitive_hits": [],
+  "state_or_secret_samples": [
+    {
+      "path": "C:\\Users\\ww\\AppData\\Local\\Temp\\pyshield-review-state\\1d39fa1523ef46b0.state",
+      "bytes": 397
+    },
+    {
+      "path": "C:\\Users\\ww\\AppData\\Local\\Temp\\pyshield-review-state\\1d39fa1523ef46b0.state.anchor",
+      "bytes": 397
+    },
+    {
+      "path": "C:\\Users\\ww\\AppData\\Local\\Temp\\pyshield-review-state2\\8532e5b47032c3fe.state",
+      "bytes": 397
+    },
+    {
+      "path": "C:\\Users\\ww\\AppData\\Local\\Temp\\pyshield-review-state2\\8532e5b47032c3fe.state.anchor",
+      "bytes": 397
+    }
+  ],
+  "real_secret_files": []
+}

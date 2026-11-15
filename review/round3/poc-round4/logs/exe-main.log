@@ -1,0 +1,22 @@
+{
+  "exe": "E:\\tmp\\workbuild\\code\\PyShield\\PyShieldBuilder.exe",
+  "bytes": 21544313,
+  "carchive_entries": 436,
+  "py_entries": [],
+  "shield_entries": [],
+  "pyz": [
+    "PYZ.pyz"
+  ],
+  "license_entry": false,
+  "pyz_modules": 643,
+  "control_entries": [],
+  "has_keyring": false,
+  "has_core": false,
+  "builder_present": true,
+  "builder_const_scan": {
+    "MASTER_KEY_B85": false,
+    "shield_secret": false,
+    "private_key": false,
+    "flag": false
+  }
+}

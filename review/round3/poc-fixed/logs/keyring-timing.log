@@ -1,0 +1,81 @@
+{
+  "runs": [
+    {
+      "build_id": "719368cb21d3fce0",
+      "master_sha256": "bb2d279ef00ee63e25061beee49f61435bc31cc043aa57fbe869253c3c007291",
+      "master_len": 32,
+      "build_key_sha256": "266141dd08bb3b24daf698d26ea036c003234591efa3d9717c6e7047f8f43ea7",
+      "modules": 13,
+      "flag": "PSH-ROUND3-e3b2caa377c88630",
+      "flag_sha256": "a036bf169f93cf499e7496082e3d088e5f3c453b3620cf8eed00941b2d96c4ce",
+      "key_ms": 1.401,
+      "derive_ms": 50.866,
+      "decrypt_all_ms": 38.181,
+      "decrypt_median_ms": 0.106,
+      "total_ms": 90.447
+    },
+    {
+      "build_id": "719368cb21d3fce0",
+      "master_sha256": "bb2d279ef00ee63e25061beee49f61435bc31cc043aa57fbe869253c3c007291",
+      "master_len": 32,
+      "build_key_sha256": "266141dd08bb3b24daf698d26ea036c003234591efa3d9717c6e7047f8f43ea7",
+      "modules": 13,
+      "flag": "PSH-ROUND3-e3b2caa377c88630",
+      "flag_sha256": "a036bf169f93cf499e7496082e3d088e5f3c453b3620cf8eed00941b2d96c4ce",
+      "key_ms": 0.407,
+      "derive_ms": 0.024,
+      "decrypt_all_ms": 5.067,
+      "decrypt_median_ms": 0.105,
+      "total_ms": 5.499
+    },
+    {
+      "build_id": "719368cb21d3fce0",
+      "master_sha256": "bb2d279ef00ee63e25061beee49f61435bc31cc043aa57fbe869253c3c007291",
+      "master_len": 32,
+      "build_key_sha256": "266141dd08bb3b24daf698d26ea036c003234591efa3d9717c6e7047f8f43ea7",
+      "modules": 13,
+      "flag": "PSH-ROUND3-e3b2caa377c88630",
+      "flag_sha256": "a036bf169f93cf499e7496082e3d088e5f3c453b3620cf8eed00941b2d96c4ce",
+      "key_ms": 0.363,
+      "derive_ms": 0.021,
+      "decrypt_all_ms": 6.076,
+      "decrypt_median_ms": 0.108,
+      "total_ms": 6.46
+    },
+    {
+      "build_id": "719368cb21d3fce0",
+      "master_sha256": "bb2d279ef00ee63e25061beee49f61435bc31cc043aa57fbe869253c3c007291",
+      "master_len": 32,
+      "build_key_sha256": "266141dd08bb3b24daf698d26ea036c003234591efa3d9717c6e7047f8f43ea7",
+      "modules": 13,
+      "flag": "PSH-ROUND3-e3b2caa377c88630",
+      "flag_sha256": "a036bf169f93cf499e7496082e3d088e5f3c453b3620cf8eed00941b2d96c4ce",
+      "key_ms": 0.395,
+      "derive_ms": 0.023,
+      "decrypt_all_ms": 5.261,
+      "decrypt_median_ms": 0.113,
+      "total_ms": 5.679
+    },
+    {
+      "build_id": "719368cb21d3fce0",
+      "master_sha256": "bb2d279ef00ee63e25061beee49f61435bc31cc043aa57fbe869253c3c007291",
+      "master_len": 32,
+      "build_key_sha256": "266141dd08bb3b24daf698d26ea036c003234591efa3d9717c6e7047f8f43ea7",
+      "modules": 13,
+      "flag": "PSH-ROUND3-e3b2caa377c88630",
+      "flag_sha256": "a036bf169f93cf499e7496082e3d088e5f3c453b3620cf8eed00941b2d96c4ce",
+      "key_ms": 0.363,
+      "derive_ms": 0.021,
+      "decrypt_all_ms": 5.474,
+      "decrypt_median_ms": 0.111,
+      "total_ms": 5.859
+    }
+  ],
+  "median": {
+    "key_ms": 0.395,
+    "derive_ms": 0.023,
+    "decrypt_all_ms": 5.474,
+    "decrypt_median_ms": 0.108,
+    "total_ms": 5.859
+  }
+}

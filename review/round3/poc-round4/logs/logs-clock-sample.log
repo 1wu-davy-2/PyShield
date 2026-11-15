@@ -1,0 +1,6 @@
+{"round": 0, "workers": 16, "failures": 0, "elapsed_s": 1.561, "tmp_leftovers": [], "state": "records=['2026-11-15', '2026-11-15']", "failure_samples": []}
+{"round": 1, "workers": 16, "failures": 0, "elapsed_s": 2.07, "tmp_leftovers": [], "state": "records=['2026-11-15', '2026-11-15']", "failure_samples": []}
+{"round": 2, "workers": 16, "failures": 0, "elapsed_s": 1.417, "tmp_leftovers": [], "state": "records=['2026-11-15', '2026-11-15']", "failure_samples": []}
+{"round": 3, "workers": 16, "failures": 0, "elapsed_s": 1.243, "tmp_leftovers": [], "state": "records=['2026-11-15', '2026-11-15']", "failure_samples": []}
+{"round": 4, "workers": 16, "failures": 0, "elapsed_s": 0.803, "tmp_leftovers": [], "state": "records=['2026-11-15', '2026-11-15']", "failure_samples": []}
+TOTAL_FAILURES 0

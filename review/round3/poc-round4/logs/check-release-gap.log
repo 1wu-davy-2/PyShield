@@ -1,0 +1,6 @@
+TEMP result: 0
+TEMP scan: checked 2 pyshield*/psh* entries
+release check OK: no challenge flag, build secret or private key material found
+ZIP result: 0
+release check OK: no challenge flag, build secret or private key material found
+GAP CONFIRMED: a real test master/build key in a pyshield* TEMP entry and a zip without a sibling secret is not detected

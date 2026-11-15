@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "E:\tmp\workbuild\code\·ÖÎö\round4_new\dst\round3-django-shielded\demo\hidden_flag.py", line 5, in <module>
+    _pyshield_load_module(
+  File "C:\Users\ww\AppData\Local\Temp\.pyshield-round4-build.tmp\_shield_runtime\_core.py", line 1029, in load_module
+  File "E:\tmp\workbuild\code\·ÖÎö\round4_new\dst\round3-django-shielded\demo\hidden_flag.py", line 3, in <module>
+    from _shield_runtime import load_module as _pyshield_load_module
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: demo.hidden_flag cannot be imported directly

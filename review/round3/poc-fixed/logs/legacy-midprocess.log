@@ -1,0 +1,3 @@
+initial 2026-11-15
+after_delete_error LicenseError PyShield clock state disappeared while the program was running; restore it from backup or contact the vendor
+legacy_after_delete 2026-11-15

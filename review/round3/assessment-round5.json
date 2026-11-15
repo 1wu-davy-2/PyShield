@@ -9,8 +9,8 @@
     "django": "5.2.8",
     "pyinstaller": "6.22.3"
   },
-  "verdict": "fixed_pending_ci",
-  "verdict_reason": "PSH-R5-001 is closed by three independent layers (release tree without caches, import-time cache isolation, manifest rejection of unsigned bytecode) and reproduces as rc=1 with no marker. The first push (0e18ad5) failed CI because a package entry point makes CPython write the stub's own cache before the stub runs; 5ca70cf skips caches of already-imported modules and prunes them, with a regression test. PSH-R5-002 now fails closed without key needles and rejects __pycache__ in trees and zips; a random key in a bare zip without --secret remains undecidable by design. No new exploitable issue was found; one informational build-path leak was fixed in the same series. Both executables are local builds; CI for 5ca70cf was re-triggered. The challenge flag was rotated because the previous value leaked into public git history.",
+  "verdict": "fixed_verified",
+  "verdict_reason": "PSH-R5-001 is closed by three independent layers (release tree without caches, import-time cache isolation, manifest rejection of unsigned bytecode) and reproduces as rc=1 with no marker. The first push (0e18ad5) failed CI because a package entry point makes CPython write the stub's own cache before the stub runs; 5ca70cf skips caches of already-imported modules and prunes them, with a regression test. PSH-R5-002 now fails closed without key needles and rejects __pycache__ in trees and zips; a random key in a bare zip without --secret remains undecidable by design. No new exploitable issue was found; one informational build-path leak was fixed in the same series. Both executables are local builds; CI for 130f1d7 is green (native-runtime 43733768015, build-develop 43733768023, selfbuild-poc 43733768104). The challenge flag was rotated because the previous value leaked into public git history.",
   "artifacts": {
     "PyShieldBuilder-r5.exe": {
       "bytes": 49307453,
@@ -71,8 +71,13 @@
     },
     {
       "commit": "130f1d7",
-      "status": "re_triggered",
-      "detail": "short-path canonicalization fix pushed; results pending at report time"
+      "status": "success",
+      "detail": "native-runtime 43733768015 / build-develop 43733768023 / selfbuild-poc 43733768104 all passed"
+    },
+    {
+      "commit": "ae718c4",
+      "status": "previous round",
+      "detail": "native-runtime 43697777107 / build-develop 43697777144 / selfbuild-poc 43697777044"
     },
     {
       "commit": "ae718c4",
@@ -229,8 +234,8 @@
     },
     {
       "item": "CI for 130f1d7",
-      "result": "re_triggered",
-      "evidence": "two prior failures diagnosed via annotations; fix pushed; results pending"
+      "result": "pass",
+      "evidence": "native-runtime 43733768015 / build-develop 43733768023 / selfbuild-poc 43733768104"
     },
     {
       "item": "binding 16x10 rerun",
@@ -291,8 +296,8 @@
     },
     {
       "claim": "CI passed",
-      "result": "re_triggered",
-      "note": "0e18ad5 and 5ca70cf failed (entry cache, short path); 130f1d7 fixes both"
+      "result": "match",
+      "note": "130f1d7: three runs green; two earlier failures documented in section 1.1"
     },
     {
       "claim": "check_release scans master/build keys",
@@ -395,7 +400,7 @@
   "notes": [
     "This round adds three regression scripts and logs under review/round3/poc-round5/.",
     "The challenge flag was rotated after its value leaked into public git history (0e18ad5); the new value lives only in the gitignored review/round3/flag-value.txt and rebuild_demo.py reads it from there.",
-    "CI history: 0e18ad5 failed (entry-package cache false positive), 5ca70cf failed (8.3 short-path canonicalization), 130f1d7 fixes both and re-triggers; update invitation run numbers when green.",
+    "CI history: 0e18ad5 failed (entry-package cache false positive), 5ca70cf failed (8.3 short-path canonicalization), 130f1d7 is green (43733768015/43733768023/43733768104).",
     "tools/run_tests.py re-emits unittest failures as ::error:: annotations so remote CI diagnosis works without repository log access."
   ]
 }

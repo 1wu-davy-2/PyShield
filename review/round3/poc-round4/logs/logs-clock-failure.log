@@ -1,0 +1,52 @@
+[
+  {
+    "case": "anchor_readonly_missing_primary",
+    "first": {
+      "ok": true,
+      "value": "2026-11-15"
+    },
+    "second": {
+      "ok": true,
+      "value": "2026-11-15"
+    }
+  },
+  {
+    "case": "anchor_readonly_state",
+    "primary": "2026-11-15"
+  },
+  {
+    "case": "both_readonly",
+    "result": {
+      "ok": false,
+      "error": "LicenseError",
+      "message": "PyShield cannot record clock state in E:\\tmp\\workbuild\\code\\分析\\round4_new\\poc\\run\\clock-failure\\both-readonly\\0617618bfb042369.state ([WinError 5] 拒绝访问。: 'E:\\\\tmp\\\\workbuild\\\\code\\\\分析\\\\round4_new\\\\poc\\\\run\\\\clock-failure\\\\both-readonly\\\\0617618bfb042369.state.awzki7bh.tmp' -> 'E:\\\\tmp\\\\workbuild\\\\code\\\\分析\\\\round4_new\\\\poc\\\\run\\\\clock-failure\\\\both-readonly\\\\0617618bfb042369.state'); make the direc"
+    }
+  },
+  {
+    "case": "both_readonly_volatile",
+    "result": {
+      "ok": true,
+      "value": "2026-11-15"
+    }
+  },
+  {
+    "case": "anchor_directory",
+    "result": {
+      "ok": false,
+      "error": "LicenseError",
+      "message": "PyShield clock state E:\\tmp\\workbuild\\code\\分析\\round4_new\\poc\\run\\clock-failure\\anchor-directory\\0617618bfb042369.state.anchor cannot be read; restore the file or contact the vendor"
+    }
+  },
+  {
+    "case": "anchor_deleted",
+    "result": {
+      "ok": true,
+      "value": "2026-11-15"
+    }
+  },
+  {
+    "case": "anchor_deleted_state",
+    "anchor_exists": true,
+    "primary": "2026-11-15"
+  }
+]

@@ -1,0 +1,93 @@
+[
+  {
+    "case": "onefile_custom_mei_override_normal",
+    "volatile": true,
+    "binding": {
+      "ok": false,
+      "error": "LicenseError",
+      "message": "first-run binding is not supported inside a PyInstaller onefile bundle; use a fixed fingerprint or build the application as onedir. PYSHELD_BINDING_FILE cannot make an extraction directory persistent."
+    }
+  },
+  {
+    "case": "onefile_custom_mei_override_mei_path",
+    "volatile": true,
+    "binding": {
+      "ok": false,
+      "error": "LicenseError",
+      "message": "first-run binding is not supported inside a PyInstaller onefile bundle; use a fixed fingerprint or build the application as onedir. PYSHELD_BINDING_FILE cannot make an extraction directory persistent."
+    }
+  },
+  {
+    "case": "custom_extract_dir_not_named_mei",
+    "volatile": true,
+    "binding": {
+      "ok": false,
+      "error": "LicenseError",
+      "message": "first-run binding is not supported inside a PyInstaller onefile bundle; use a fixed fingerprint or build the application as onedir. PYSHELD_BINDING_FILE cannot make an extraction directory persistent."
+    }
+  },
+  {
+    "case": "onedir_meipass_override_normal",
+    "volatile": false,
+    "binding": {
+      "ok": true,
+      "value": "7deb975ff9da8cc85e90b9ab1ddb0a64"
+    }
+  },
+  {
+    "case": "onedir_internal_override_normal",
+    "volatile": false,
+    "binding": {
+      "ok": true,
+      "value": "7deb975ff9da8cc85e90b9ab1ddb0a64"
+    }
+  },
+  {
+    "case": "no_meipass_override_mei_path",
+    "volatile": true,
+    "binding": {
+      "ok": false,
+      "error": "LicenseError",
+      "message": "first-run binding is not supported inside a PyInstaller onefile bundle; use a fixed fingerprint or build the application as onedir. PYSHELD_BINDING_FILE cannot make an extraction directory persistent."
+    }
+  },
+  {
+    "case": "no_meipass_override_normal",
+    "volatile": false,
+    "binding": {
+      "ok": true,
+      "value": "7deb975ff9da8cc85e90b9ab1ddb0a64"
+    }
+  },
+  {
+    "case": "relocate_a",
+    "volatile": false,
+    "binding": {
+      "ok": true,
+      "value": "7deb975ff9da8cc85e90b9ab1ddb0a64"
+    }
+  },
+  {
+    "case": "relocate_b",
+    "volatile": false,
+    "binding": {
+      "ok": true,
+      "value": "7deb975ff9da8cc85e90b9ab1ddb0a64"
+    }
+  },
+  {
+    "case": "relocate_records",
+    "a": {
+      "bound_at": "2026-11-15T09:37:10+00:00",
+      "build_id": "0617618bfb042369",
+      "fingerprint": "7deb975ff9da8cc85e90b9ab1ddb0a64",
+      "format": 1
+    },
+    "b": {
+      "bound_at": "2026-11-15T09:37:10+00:00",
+      "build_id": "0617618bfb042369",
+      "fingerprint": "7deb975ff9da8cc85e90b9ab1ddb0a64",
+      "format": 1
+    }
+  }
+]

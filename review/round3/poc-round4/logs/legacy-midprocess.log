@@ -1,0 +1,3 @@
+initial 2026-11-15
+after_delete_error LicenseError PyShield clock state disappeared while the program was running; restore it from backup or contact the vendor
+legacy_after_delete_error LicenseError PyShield clock state run\legacy-midprocess-new\0617618bfb042369.state is damaged or belongs to another machine; legacy public-MAC state was introduced while the program was running; restore the keyed 

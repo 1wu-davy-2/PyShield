@@ -1,0 +1,30 @@
+[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  E:\tmp\workbuild\code\分析\round4_new\poc\run\firstrun\project
+[pyshield] output:   E:\tmp\workbuild\code\分析\round4_new\poc\run\firstrun\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   never
+[pyshield] bound to: first machine at first launch
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: E:\tmp\workbuild\code\分析\round4_new\poc\run\firstrun\dist
+[pyshield] license:  E:\tmp\workbuild\code\分析\round4_new\poc\run\firstrun\dist\pyshield.lic
+[pyshield] secret:   E:\tmp\workbuild\code\分析\round4_new\poc\run\firstrun\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: E:\tmp\workbuild\code\分析\round4_new\poc\run\firstrun\dist
+[pyshield] build complete in 0.1s
+{'output': 'E:\\tmp\\workbuild\\code\\分析\\round4_new\\poc\\run\\firstrun\\dist', 'build_id': '5f2c9b0e27ece9cd', 'license': 'E:\\tmp\\workbuild\\code\\分析\\round4_new\\poc\\run\\firstrun\\dist\\pyshield.lic', 'bind_mode': 3, 'secret': 'E:\\tmp\\workbuild\\code\\分析\\round4_new\\poc\\run\\firstrun\\dist.shield-secret.json'}

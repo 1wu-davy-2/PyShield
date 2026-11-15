@@ -38,7 +38,7 @@
 **恢复出的 flag**：
 
 ```text
-PSH-ROUND3-e3b2caa377c88630
+PSH-ROUND3-****(旧值已轮换)
 SHA-256 = a036bf169f93cf499e7496082e3d088e5f3c453b3620cf8eed00941b2d96c4ce
 ```
 
@@ -48,7 +48,7 @@ SHA-256 = a036bf169f93cf499e7496082e3d088e5f3c453b3620cf8eed00941b2d96c4ce
 
 | 第三轮问题 | 验证结论 | 证据/备注 |
 | --- | --- | --- |
-| PSH-R3-001 最终挑战包不含 flag | **有效** | `recover_flag.py` 从 `_keyring.pyc` 恢复 master，HKDF 派生 build key，解密 `demo.hidden_flag`；`co_consts` 含 `PSH-ROUND3-e3b2caa377c88630`；哈希匹配；zip 原始字节 0 命中（`logs/recover-flag.log`、`logs/keyring-timing.log`、`logs/artifact-scan.log`） |
+| PSH-R3-001 最终挑战包不含 flag | **有效** | `recover_flag.py` 从 `_keyring.pyc` 恢复 master，HKDF 派生 build key，解密 `demo.hidden_flag`；`co_consts` 含 `PSH-ROUND3-****(旧值已轮换)`；哈希匹配；zip 原始字节 0 命中（`logs/recover-flag.log`、`logs/keyring-timing.log`、`logs/artifact-scan.log`） |
 | PSH-R3-002 并发时钟写入失败 | **有效（时钟）** | 16 进程 × 5 轮（sample 与 challenge 两套 runtime）均 0 失败；16 进程完整启动/续期/TTL 各 3 轮 0 失败；无 `.tmp` 残留；单份 read-only 写失败两次调用均成功；两份 read-only fail-closed；anchor 删除可重建（`logs/clock-concurrency-*.log`、`logs/startup-concurrency-challenge.log`、`logs/clock-failure-tests.log`）。**注意**：绑定写入仍存在同类竞态，见 PSH-R4-001 |
 | PSH-R3-003 旧公开-MAC 迁移降级 | **部分有效** | 无 env 时旧格式被拒绝；`PYSHELD_ALLOW_LEGACY_STATE=1` 可迁移并把两份改为 keyed；未来 >7 天拒绝；但同一 env 下可重复迁移，未实现“一次性”；运行中还可绕过“状态消失”检查（PSH-R4-002，`logs/legacy-state-tests.log`） |
 | PSH-R3-004 onefile 绑定可绕过 | **有效（守卫）** | 非 onedir `_MEIPASS`、自定义解压目录、override 含 `_MEI` 均被拒绝；设置 `PYSHELD_BINDING_FILE` 不能关闭 onefile 检查；onedir `_MEIPASS`/`_internal` 正常；env 换路径仍可重置绑定（等价双删，已承认）。拒绝文案建议设 `PYSHELD_BINDING_FILE`，在 onefile 下无效（PSH-R4-003，`logs/binding-guard-tests.log`） |

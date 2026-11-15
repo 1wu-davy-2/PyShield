@@ -1,0 +1,26 @@
+workspace source:
+"""This module deliberately refuses to run; the flag is encrypted in the stub payload."""
+
+raise RuntimeError("hidden_flag is not an executable module")
+
+FLAG = "PSH-ROUND3-c32ae3df08a0237b95d472b8413c54f8"
+
+compiled-from-source names: ('__doc__', 'RuntimeError', 'FLAG')
+compiled-from-source consts: ('This module deliberately refuses to run; the flag is encrypted in the stub payload.', 'hidden_flag is not an executable module')
+payload code object names: ('__doc__', 'RuntimeError', 'FLAG')
+payload code object consts: ('This module deliberately refuses to run; the flag is encrypted in the stub payload.', 'hidden_flag is not an executable module')
+co_code equal: True
+co_linetable equal: True
+FLAG in names: True
+flag string in consts: False
+disassembly of payload:
+  0           0 RESUME                   0
+
+  1           2 LOAD_CONST               0 ('This module deliberately refuses to run; the flag is encrypted in the stub payload.')
+              4 STORE_NAME               0 (__doc__)
+
+  3           6 PUSH_NULL
+              8 LOAD_NAME                1 (RuntimeError)
+             10 LOAD_CONST               1 ('hidden_flag is not an executable module')
+             12 CALL                     1
+             20 RAISE_VARARGS            1

@@ -1,0 +1,176 @@
+{
+  "report": "PyShield Round 3 fourth-material review (invitation + fix response)",
+  "date": "2026-11-15",
+  "target_code_commit": "ae718c4",
+  "materials_head": "53f2b50",
+  "environment": {
+    "os": "Windows 10 Pro 10.0.19045 x64",
+    "python": "CPython 3.12.0",
+    "django": "5.2.8",
+    "pyinstaller": "6.22.3"
+  },
+  "verdict": "not_ready_to_send",
+  "verdict_reason": "The invitation is structurally accurate and the main R4 fixes verify, but the current challenge zip ships __pycache__ entries outside the signed manifest and check_release.py neither rejects them nor scans master/build keys in --temp or archives without a sibling secret.",
+  "artifacts": {
+    "PyShieldBuilder.exe": {
+      "bytes": 21544313,
+      "sha256": "a27a1d73a24e7c06c61a55d316b3de6fd8b14e5c770f04ac526732bf9991b3f9",
+      "verified": true
+    },
+    "PyShieldBuilder-selfbuild.exe": {
+      "bytes": 40565809,
+      "sha256": "25b1089a1fe8e8db3570bcfa22222f0c938eeefd2b13d64f32d3161cd3612a89",
+      "verified": true
+    },
+    "PyShieldBuilder-protected-sample-round3.zip": {
+      "bytes": 433055,
+      "sha256": "39ddf6587abc087bb97e8d98c949b341549fcc80a6c1d2f3a39e12aadbc4e521",
+      "verified": true,
+      "build_id": "0617618bfb042369"
+    },
+    "round3-django-shielded.zip": {
+      "bytes": 72709,
+      "sha256": "34c5e49f5cb5b23b4ea1a5f0e62514311e93a068377d4399701c8f85d9cb7954",
+      "verified": true,
+      "build_id": "1cc98e4796b92436"
+    }
+  },
+  "challenge": {
+    "flag": "PSH-ROUND3-e3b2caa377c88630",
+    "flag_sha256": "a036bf169f93cf499e7496082e3d088e5f3c453b3620cf8eed00941b2d96c4ce",
+    "flag_value_hits_in_zip": 0,
+    "flag_hash_hits_in_zip": 1,
+    "flag_hash_location": "ROUND3-CHALLENGE.md (documented challenge hash, expected)",
+    "master_sha256": "e17bfac6d4c5a3587ad8ffa062044c9afb3a570ba1d62d51e28778a7a3a9ead9",
+    "build_key_sha256": "424f3315b61d65eb0b2b04ae3baba429d6ee92ef616f1b5eccad5ab08f256f84",
+    "keyring_ms": 0.397,
+    "decrypt_all_ms_warm": 6.076,
+    "cold_recovery_ms": 99.195
+  },
+  "ci_runs": [
+    {"id": 43697777107, "name": "native-runtime", "conclusion": "success", "head_sha": "ae718c4b1fb8d1fb1af88183565c984be11678f8"},
+    {"id": 43697777144, "name": "build-develop", "conclusion": "success", "head_sha": "ae718c4b1fb8d1fb1af88183565c984be11678f8"},
+    {"id": 43697777044, "name": "selfbuild-poc", "conclusion": "success", "head_sha": "ae718c4b1fb8d1fb1af88183565c984be11678f8"}
+  ],
+  "findings": [
+    {
+      "id": "PSH-R5-001",
+      "title": "Challenge zip ships __pycache__ outside the signed manifest; a tampered pyc executes while the manifest passes",
+      "severity": "high",
+      "cvss": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H",
+      "cvss_score": 7.8,
+      "component": "round3-django-shielded.zip demo/__pycache__ + _scan_integrity manifest scope",
+      "artifact_sha256": "34c5e49f5cb5b23b4ea1a5f0e62514311e93a068377d4399701c8f85d9cb7954",
+      "source_commit": "ae718c4",
+      "environment": "Windows 10 Pro 19045 x64; CPython 3.12.0; Django 5.2.8",
+      "preconditions": "local write access to the deployment directory; challenge zip already contains __pycache__; no admin/debugger/memory dump required",
+      "status": "new",
+      "summary": "The challenge zip contains demo/__pycache__ and related caches. demo/__init__.py is in the signed manifest, but its pycache is not. Replacing the pyc with code that matches the source mtime/size executes the marker while manage.py check and the signed manifest still pass.",
+      "root_cause": "The zip includes demo/__pycache__/__init__.cpython-312.pyc (and apps/urls/views/management/sampleproj caches). .pyshield-manifest.json has 23 entries and lists demo/__init__.py, but no pycache. _core.py:190-235 only hashes manifest entries; Python 3.12 trusts the pyc timestamp header. builder.py:1004 calls clean_pycache after verify, but the challenge zip was created after a post-build manage.py check, and check_release.py has no pycache rule.",
+      "repro_steps": [
+        "Extract round3-django-shielded.zip and confirm demo/__pycache__/__init__.cpython-312.pyc exists.",
+        "Read demo/__init__.py mtime/size and build a pyc header with those values.",
+        "Write header + marshal.dumps(compile(\"print('PYSHELD_PYC_BYPASS')\", 'demo/__init__.py', 'exec')) over the pycache entry.",
+        "Run python manage.py check."
+      ],
+      "poc": "review/round3/poc-round4/pycache_tamper.py <extracted-challenge-tree>",
+      "impact": "Arbitrary code execution in the app process and a bypass of the manifest's tamper-detection claim; the code can patch runtime/license/clock state after startup. It is not necessarily a cold-start license bypass for an already-expired license, because the initial license check may run before demo/__init__.py is imported.",
+      "evidence": [
+        "logs/pycache-tamper.log: PYSHELD_PYC_BYPASS printed; System check identified no issues; returncode 0",
+        "logs/challenge-zip-list.log: demo/__pycache__ and management/sampleproj __pycache__ entries present",
+        "manifest: 23 entries, demo/__init__.py listed, zero pycache entries"
+      ],
+      "remediation": "Remove all __pycache__/non-runtime pyc from the challenge zip and every release; reject unexpected pycache in check_release.py and at runtime; add pycache paths to the signed manifest or reject them; set sys.pycache_prefix to a temp dir before importing protected modules; add a tamper regression test.",
+      "post_fix_verification": "pycache_tamper.py must fail closed (LicenseError/integrity failure) and check_release.py must reject a zip containing __pycache__; flag recovery and manage.py check must still pass after cache removal.",
+      "residual_risk": "A local user who can write the release tree can still replace unprotected files or the whole runtime; this fix removes the accidental executable cache path."
+    },
+    {
+      "id": "PSH-R5-002",
+      "title": "check_release.py does not scan master/build keys in --temp or archives without a sibling secret, and does not reject pycache",
+      "severity": "low",
+      "cvss": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N",
+      "cvss_score": 3.3,
+      "component": "tools/check_release.py; ROUND3-FIX-RESPONSE.md release-hygiene claim",
+      "artifact_sha256": "34c5e49f5cb5b23b4ea1a5f0e62514311e93a068377d4399701c8f85d9cb7954",
+      "source_commit": "ae718c4",
+      "environment": "Windows 10 Pro 19045 x64; CPython 3.12.0",
+      "preconditions": "release/build process relies on check_release.py; local user; no active secret leak required to demonstrate the false negative",
+      "status": "partial",
+      "summary": "--temp passes an empty key-needle tuple for ordinary files; a zip without a sibling *.shield-secret.json has no key needles; __pycache__ is not rejected. A test master/build key in a pyshield* TEMP dir and in a zip both passed, and the current pycache-containing challenge zip also passed.",
+      "root_cause": "tools/check_release.py: _scan_temp calls _scan_bytes(..., needles=()) at :132ff; _scan_target derives needles only from licensing.secret_path_for(target) at :104ff; _scan_zip at :84ff scans bytes and .shield-secret.json names but has no pycache rule; _scan_bytes checks flag/PEM/needles only.",
+      "repro_steps": [
+        "Derive the authorized sample's master/build key (test key) and write a pyshield-check-gap-* TEMP directory containing master.txt with the key hex.",
+        "Run python tools/check_release.py --temp: exit 0, no key detection.",
+        "Create a zip without a sibling secret containing master.txt; run check_release.py <zip>: exit 0.",
+        "Run check_release.py on the current challenge zip with __pycache__: exit 0."
+      ],
+      "poc": "review/round3/poc-round4/check_release_gap.py <extracted-sample-tree>",
+      "impact": "False assurance: a real master/build key in TEMP or in an archive without a sibling secret can pass; current artifacts/temp had no such leak, so this is a coverage/claim defect, not an observed compromise. It also allows PSH-R5-001's pycache zip to pass release hygiene.",
+      "evidence": [
+        "logs/check-release-gap.log: TEMP result 0 and ZIP result 0 with a real test master/build key",
+        "logs/check-release-challenge.log: current challenge zip returns release check OK despite __pycache__",
+        "tools/check_release.py: --temp uses needles=(); zip needles require sibling secret"
+      ],
+      "remediation": "Add --secret <path> and discover siblings for archives; scan all TEMP entries, not only pyshield*/psh*; derive/test key needles for --temp; reject __pycache__ and unexpected .pyc; add regression tests for key files and pycache; qualify documentation.",
+      "post_fix_verification": "check_release_gap.py must exit non-zero in both TEMP and zip cases; check_release.py must fail on the pycache challenge zip; --temp must not claim master/build-key coverage without a provided secret.",
+      "residual_risk": "Release hygiene is process control; a specialized build account/machine is still recommended."
+    }
+  ],
+  "fix_verification": [
+    {"id": "PSH-R4-001", "title": "first-run binding concurrency", "status": "effective", "evidence": "direct 16x10 and full manage.py 16x10: 0/160 failures, no tmp leftovers, primary/anchor bound_at equal; logs/logs-binding-direct.log, logs/logs-firstrun-concurrency.log"},
+    {"id": "PSH-R4-002", "title": "legacy one-time migration", "status": "effective", "evidence": "default reject; first opt-in migrates; marker written; second legacy injection rejected; mid-process reset rejected; legacy future rejected; keyed +1 skew remains; logs/logs-legacy-state.log, logs/legacy-midprocess.log"},
+    {"id": "PSH-R4-003", "title": "onefile error message", "status": "effective", "evidence": "message now says fixed fingerprint/onedir; PYSHELD_BINDING_FILE cannot make extraction persistent; onefile still rejected; logs/logs-binding-guard.log"},
+    {"id": "PSH-R4-004", "title": "release hygiene", "status": "partial", "evidence": "--temp is 0 and sensitive temp data is clean, but challenge zip contains __pycache__ and check_release.py has key/pycache gaps: PSH-R5-001/002"},
+    {"id": "PSH-R3-001", "title": "flag absent from final zip", "status": "effective", "evidence": "flag PSH-ROUND3-e3b2caa377c88630 recovered offline; hash matches; flag value 0 hits; hash only in ROUND3-CHALLENGE.md; logs/recover-flag.log, logs/zip-flag-scan.log"},
+    {"id": "PSH-R3-002", "title": "clock concurrency", "status": "effective", "evidence": "16x5 0 failures; startup/reload/TTL 16x3 0; single-copy read-only tolerated; both read-only fail-closed; logs/logs-clock-*.log, logs/logs-startup.log, logs/logs-clock-failure.log"},
+    {"id": "PSH-R3-003", "title": "legacy public-MAC migration", "status": "effective", "evidence": "default reject; marker survives env; repeat migration rejected; running reset rejected; legacy future rejected; keyed +1 residual"},
+    {"id": "PSH-R3-004", "title": "onefile binding guard", "status": "effective", "evidence": "onefile/custom _MEIPASS/override _MEI rejected; onedir accepted; override cannot disable; logs/logs-binding-guard.log"},
+    {"id": "PSH-R3-005", "title": "temp flag/secrets", "status": "partial", "evidence": "no current sensitive hits and --temp 0, but checker coverage is insufficient (PSH-R5-002); logs/check-release-temp.log, logs/artifact-scan.log"},
+    {"id": "PSH-R3-006", "title": "native keyring oracle", "status": "partial", "evidence": "source still exports master_key(); CI 43697777107 success at ae718c4; no local native artifact; strip/PDB not independently verified"},
+    {"id": "PSH-R3-007", "title": "self-build residual properties", "status": "residual", "evidence": "sample 28 stubs, no pycache, bundle 8 templates without _keyring; selfbuild exe no .py/runtime datas; PYZ keyring/master/business recoverable; logs/sample-audit.log, logs/exe-selfbuild.log"},
+    {"id": "FORMAT-3", "title": "license format 3 runtime downgrade", "status": "effective", "evidence": "new license format 3, bind any, no build_key; v1 rejected with CryptoError; logs/license-format.log"},
+    {"id": "KEYRING", "title": "keyring recovery cost", "status": "residual", "evidence": "key 0.397 ms; 13 modules 6.076 ms warm; cold recovery 99.195 ms; selfbuild exe PYZ same"},
+    {"id": "SINGLE-INSTANCE", "title": "single-instance behavior", "status": "effective", "evidence": "new main and selfbuild exes: second process exits 0, one app tree; logs/single-instance-new.log"},
+    {"id": "TESTS-CI", "title": "unit tests and CI", "status": "effective", "evidence": "180 tests OK (skipped=1); three runs success at ae718c4; logs/tests.log, logs/ci-runs.json"}
+  ],
+  "document_review": [
+    {"claim": "four artifact SHA-256 values", "status": "verified", "note": "all match SHA256SUMS.txt"},
+    {"claim": "flag recoverable / hash matches", "status": "verified", "note": "flag recovered; raw flag value 0 hits; hash in ROUND3-CHALLENGE.md expected"},
+    {"claim": "develop @ ae718c4", "status": "verified", "note": "code at ae718c4; review materials/docs HEAD 53f2b50; adding the materials commit would improve reproducibility"},
+    {"claim": "CI runs 43697777107/44/044 pass", "status": "verified", "note": "GitHub API: conclusion success, head ae718c4 for all three"},
+    {"claim": "180 tests OK (skipped=1)", "status": "verified", "note": "full run"},
+    {"claim": "16 processes x 10 rounds first-run binding", "status": "verified", "note": "direct and end-to-end 0/160"},
+    {"claim": "8 processes x 2 rounds clock", "status": "partially_verified", "note": "not rerun at exactly 8x2; 16x5 and 16x3 startup/TTL were 0 failures, stronger evidence"},
+    {"claim": "legacy one-time marker", "status": "verified", "note": "repeat and mid-process injection rejected; marker deletion residual"},
+    {"claim": "onefile message", "status": "verified", "note": "no longer suggests PYSHELD_BINDING_FILE; guard effective"},
+    {"claim": "check_release scans master/build key", "status": "overclaim", "note": "--temp has no key needles; zips without sibling secret have no key needles; see PSH-R5-002"},
+    {"claim": "check_release --temp 0", "status": "verified_count_only", "note": "count is 0, but this is not proof of no master/build key"},
+    {"claim": "sample has no .pyc", "status": "verified", "note": "sample zip has no __pycache__; verify_sample.py passes"},
+    {"claim": "challenge zip has no plaintext flag", "status": "verified", "note": "flag value 0 hits; but the zip contains __pycache__ (PSH-R5-001)"},
+    {"claim": "selfbuild exe has no .py/runtime datas", "status": "verified", "note": "CArchive 0 .py, 0 _shield_runtime entries; PYZ keyring/business still recoverable"},
+    {"claim": "native CI pass; no local artifact", "status": "verified_ci_only", "note": "CI success; strip/PDB/CodeView not independently verified"},
+    {"claim": "single-instance", "status": "verified", "note": "new exes re-tested; second exits 0"},
+    {"claim": "release hygiene handled", "status": "partial", "note": "temp sensitive data clean, but challenge zip pycache and checker gaps remain"}
+  ],
+  "residual_risks": [
+    {"id": "R-01", "risk": "pycache outside manifest permits tampered pyc execution", "type": "new"},
+    {"id": "R-02", "risk": "check_release key/pycache coverage is incomplete", "type": "new"},
+    {"id": "R-03", "risk": "master key recoverable via _keyring.master_key()", "type": "accepted"},
+    {"id": "R-04", "risk": "runtime memory plaintext code objects", "type": "accepted"},
+    {"id": "R-05", "risk": "delete both state/binding records or marker resets history", "type": "accepted"},
+    {"id": "R-06", "risk": "keyed last_seen=today+1 is accepted by one-day skew", "type": "design"},
+    {"id": "R-07", "risk": "one unreadable state copy fails closed", "type": "accepted"},
+    {"id": "R-08", "risk": "POSIX state lock has no timeout", "type": "accepted"},
+    {"id": "R-09", "risk": "DPAPI failure degrades to PLAIN1", "type": "accepted"},
+    {"id": "R-10", "risk": "self-build integrity=off, bundle compression, intermediate plaintext", "type": "accepted"},
+    {"id": "R-11", "risk": "native keyring oracle; strip/PDB best effort; no Authenticode/TPM/server", "type": "accepted"},
+    {"id": "R-12", "risk": "300-second revalidation does not rescan integrity", "type": "documented"},
+    {"id": "R-13", "risk": "source deployment in %TEMP% without _MEIPASS is not detected", "type": "residual"},
+    {"id": "R-14", "risk": "build-machine TEMP still requires process hygiene", "type": "hygiene"}
+  ],
+  "notes": [
+    "The current invitation can be used as a template after the hash, pycache and check_release issues are corrected.",
+    "The current challenge zip is not recommended for sending as-is because it contains __pycache__ outside the signed manifest.",
+    "No git commit or push was performed; the report and PoCs are working-tree artifacts."
+  ]
+}

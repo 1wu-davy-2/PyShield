@@ -1,25 +1,25 @@
-[safe-delete][SAFE_DELETE_FAIL_CLOSED] {"target": "E:\\tmp\\workbuild\\code\\PyShield\\build\\pyshield-r5-check-4pgcb2c4", "reason": "trash-failed", "detail": "[safe-delete] 操作失败: ERROR E:\\tmp\\workbuild\\code\\PyShield\\build\\pyshield-r5-check-4pgcb2c4: Error during a `trash` operation: Unknown { description: \"Some operations were aborted\" }"}
+[safe-delete][SAFE_DELETE_FAIL_CLOSED] {"target": "E:\\tmp\\workbuild\\code\\PyShield\\build\\pyshield-r5-check-7t0o_a0n", "reason": "trash-failed", "detail": "[safe-delete] 操作失败: ERROR E:\\tmp\\workbuild\\code\\PyShield\\build\\pyshield-r5-check-7t0o_a0n: Error during a `trash` operation: Unknown { description: \"Some operations were aborted\" }"}
 --- TEMP without key source: rc=1 detected=False
-TEMP scan: checked 12 pyshield*/psh* entries, key needles: 0
+TEMP scan: checked 13 pyshield*/psh* entries, key needles: 0
 release check failed:
   - cannot verify master/build key leakage in TEMP: no --secret and no real *.shield-secret.json found (pass --secret <build secret>)
 --- TEMP with --secret: rc=1 detected=True
-TEMP scan: checked 12 pyshield*/psh* entries, key needles: 6
+TEMP scan: checked 13 pyshield*/psh* entries, key needles: 6
 TEMP scan: derived needles from 1 build secret file(s)
 release check failed:
-  - build key material in C:\Users\ww\AppData\Local\Temp\pyshield-check-gap-r5-vzd3jg2j\master.txt
+  - build key material in C:\Users\ww\AppData\Local\Temp\pyshield-check-gap-r5-hbpmqth7\master.txt
 --- zip without sibling secret: rc=1 detected=False
 release check failed:
-  - cannot verify master/build key leakage for E:\tmp\workbuild\code\PyShield\build\pyshield-r5-check-4pgcb2c4\pyshield-check-gap-r5.zip: no --secret and no sibling *.shield-secret.json (pass --secret <path>, or --skip-key-scan to accept the gap)
+  - cannot verify master/build key leakage for E:\tmp\workbuild\code\PyShield\build\pyshield-r5-check-7t0o_a0n\pyshield-check-gap-r5.zip: no --secret and no sibling *.shield-secret.json (pass --secret <path>, or --skip-key-scan to accept the gap)
 --- zip with --secret: rc=1 detected=True
-key needles: 6 from E:\tmp\workbuild\code\PyShield\build\pyshield-r5-check-4pgcb2c4\test-build.shield-secret.json
+key needles: 6 from E:\tmp\workbuild\code\PyShield\build\pyshield-r5-check-7t0o_a0n\test-build.shield-secret.json
 release check failed:
-  - build key material in E:\tmp\workbuild\code\PyShield\build\pyshield-r5-check-4pgcb2c4\pyshield-check-gap-r5.zip!/master.txt
+  - build key material in E:\tmp\workbuild\code\PyShield\build\pyshield-r5-check-7t0o_a0n\pyshield-check-gap-r5.zip!/master.txt
 --- challenge zip: rc=0
 release check OK: no challenge flag, build secret, private key marker or unsigned bytecode found (master/build key scan skipped)
 note: E:\tmp\workbuild\code\PyShield\review\round3\round3-django-shielded.zip: master/build key scan skipped (no --secret or sibling build secret)
 --- challenge zip + pycache: rc=1
-note: E:\tmp\workbuild\code\PyShield\build\pyshield-r5-check-4pgcb2c4\pyshield-pycache-r5.zip: master/build key scan skipped (no --secret or sibling build secret)
+note: E:\tmp\workbuild\code\PyShield\build\pyshield-r5-check-7t0o_a0n\pyshield-pycache-r5.zip: master/build key scan skipped (no --secret or sibling build secret)
 release check failed:
   - bytecode cache directory inside release: round3-django-shielded/demo/__pycache__/__init__.cpython-312.pyc
 OK: key coverage fails closed, --secret detects planted keys, pycache zip rejected

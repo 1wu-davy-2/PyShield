@@ -1,10 +1,7 @@
-build_id: 1defa4a6e5e8df9c
-keyring: _keyring.pyc
-master_key: 32 bytes sha256=fec3a28084cbc215f04ed104f3ec1bb937f3c177bd4d1c0e58471e3f63312279
-build_key: 32 bytes sha256=4ed30b0dc5f4dcb0867a55b234b08eac66bebba61ab09d56ae5b19d5dc18f6ce
+build_id: 60650120c0d42ab3
+master_key: 32 bytes sha256=de9a0729666b4d917578b4bee705f7c3480458de4110030be1fdc2d14a9678f5
+build_key: 32 bytes sha256=25ee2f35e9483a831830c72c92cb09b566f2528aa53f9a16db7ffecff532fc4d
 names: ('__doc__', 'FLAG', 'RuntimeError')
-consts: ["'This module deliberately refuses to run; the flag is encrypted in the stub payload.'", "'PSH-ROUND3-****'", "'hidden_flag is not an executable module'"]
-flag: PSH-ROUND3-**** (value withheld; sha256 below)
-flag_value_sha256: 4d2b771c90f071e8f1602c00d9d5e4d7f998658873a1c353d9a81b2efbe66e37
+flag: flag: PSH-ROUND3-**** (value withheld)
 flag_sha256: 4d2b771c90f071e8f1602c00d9d5e4d7f998658873a1c353d9a81b2efbe66e37
-timing_ms: key=2.435 derive=26.291 decrypt=47.964 total=76.690
+timing_ms: key=2.039 derive=57.516 decrypt=36.070 total=95.624

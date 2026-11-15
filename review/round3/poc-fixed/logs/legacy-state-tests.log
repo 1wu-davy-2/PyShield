@@ -1,0 +1,160 @@
+[
+  {
+    "case": "default_reject_legacy",
+    "result": {
+      "ok": false,
+      "error": "LicenseError",
+      "message": "PyShield clock state E:\\tmp\\workbuild\\code\\分析\\round4\\poc\\run\\legacy\\default-reject\\c23d7b22eb46f938.state is damaged or belongs to another machine; rebuild the state or set PYSHELD_ALLOW_LEGACY_STATE=1 only for a one-time migration from an older build"
+    },
+    "state": {
+      "primary": {
+        "keyed": false,
+        "last_seen": "2026-11-14"
+      },
+      "anchor": {
+        "keyed": false,
+        "last_seen": "2026-11-14"
+      }
+    }
+  },
+  {
+    "case": "opt_in_migrate",
+    "result": {
+      "ok": true,
+      "value": "2026-11-15"
+    },
+    "state": {
+      "primary": {
+        "keyed": true,
+        "last_seen": "2026-11-15"
+      },
+      "anchor": {
+        "keyed": true,
+        "last_seen": "2026-11-15"
+      }
+    }
+  },
+  {
+    "case": "opt_in_repeat",
+    "result": {
+      "ok": true,
+      "value": "2026-11-15"
+    },
+    "state": {
+      "primary": {
+        "keyed": true,
+        "last_seen": "2026-11-15"
+      },
+      "anchor": {
+        "keyed": true,
+        "last_seen": "2026-11-15"
+      }
+    }
+  },
+  {
+    "case": "after_env_unset",
+    "result": {
+      "ok": false,
+      "error": "LicenseError",
+      "message": "PyShield clock state E:\\tmp\\workbuild\\code\\分析\\round4\\poc\\run\\legacy\\opt-in-migrate\\c23d7b22eb46f938.state is damaged or belongs to another machine; rebuild the state or set PYSHELD_ALLOW_LEGACY_STATE=1 only for a one-time migration from an older build"
+    },
+    "state": {
+      "primary": {
+        "keyed": false,
+        "last_seen": "2026-11-05"
+      },
+      "anchor": {
+        "keyed": false,
+        "last_seen": "2026-11-05"
+      }
+    }
+  },
+  {
+    "case": "future_keyed_30",
+    "result": {
+      "ok": false,
+      "error": "LicenseError",
+      "message": "PyShield clock state E:\\tmp\\workbuild\\code\\分析\\round4\\poc\\run\\legacy\\future-keyed-30\\c23d7b22eb46f938.state contains an implausible future date (2026-12-15); correct the system clock or reset the state"
+    },
+    "state": {
+      "primary": {
+        "keyed": true,
+        "last_seen": "2026-12-15"
+      },
+      "anchor": {
+        "keyed": true,
+        "last_seen": "2026-12-15"
+      }
+    }
+  },
+  {
+    "case": "future_legacy_30",
+    "result": {
+      "ok": false,
+      "error": "LicenseError",
+      "message": "PyShield clock state E:\\tmp\\workbuild\\code\\分析\\round4\\poc\\run\\legacy\\future-legacy-30\\c23d7b22eb46f938.state contains an implausible future date (2026-12-15); correct the system clock or reset the state"
+    },
+    "state": {
+      "primary": {
+        "keyed": false,
+        "last_seen": "2026-12-15"
+      },
+      "anchor": {
+        "keyed": false,
+        "last_seen": "2026-12-15"
+      }
+    }
+  },
+  {
+    "case": "future_keyed_1",
+    "result": {
+      "ok": true,
+      "value": "2026-11-16"
+    },
+    "state": {
+      "primary": {
+        "keyed": true,
+        "last_seen": "2026-11-16"
+      },
+      "anchor": {
+        "keyed": true,
+        "last_seen": "2026-11-16"
+      }
+    }
+  },
+  {
+    "case": "mixed_default",
+    "result": {
+      "ok": false,
+      "error": "LicenseError",
+      "message": "PyShield clock state E:\\tmp\\workbuild\\code\\分析\\round4\\poc\\run\\legacy\\mixed\\c23d7b22eb46f938.state is damaged or belongs to another machine; rebuild the state or set PYSHELD_ALLOW_LEGACY_STATE=1 only for a one-time migration from an older build"
+    },
+    "state": {
+      "primary": {
+        "keyed": false,
+        "last_seen": "2026-11-14"
+      },
+      "anchor": {
+        "keyed": true,
+        "last_seen": "2026-11-14"
+      }
+    }
+  },
+  {
+    "case": "mixed_opt_in",
+    "result": {
+      "ok": true,
+      "value": "2026-11-15"
+    },
+    "state": {
+      "primary": {
+        "keyed": true,
+        "last_seen": "2026-11-15"
+      },
+      "anchor": {
+        "keyed": true,
+        "last_seen": "2026-11-15"
+      }
+    }
+  }
+]

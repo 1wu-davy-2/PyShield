@@ -1,0 +1,10 @@
+exe: PyShieldBuilder-selfbuild.exe pyz: PYZ.pyz license entry: True
+has keyring: True
+master recovered: a9598001bf84f1fb988e6c4254b7beebd1d53f0f934950e65744edc6c36c0099
+build_id: 26a4b0cc151aa56b
+build_key: d4169821a7c380a5b418623c7d52da17d30cc40560d433279cecd5d4b640e090
+decrypted pyshield.builder: co_filename=pyshield/builder.py names=('__doc__', '__future__', 'annotations', 'fnmatch', 'importlib.machinery', 'importlib', 'importlib.util', 'json', 'marshal', 'os', 'py_compile', 'shutil')
+  first consts: ["'Build a PyShield-protected distribution of a Python/Django project.'", '0', "('annotations',)", 'None', "('Callable',)", "('dataclass', 'field')"]
+decrypted gui.backend: co_filename=gui/backend.py names=('__doc__', '__future__', 'annotations', 'os', 'subprocess', 'sys', 'threading', 'time', 'datetime', 'pathlib', 'Path', 'pyshield')
+  first consts: ['"pywebview backend for the PyShield desktop builder.\\n\\nThe build engine runs in-process so the pack', '0', "('annotations',)", 'None', "('datetime',)", "('Path',)"]
+license: {'format': 3, 'bind_mode': 'any', 'expires': None, 'customer': None} build_key_present= False

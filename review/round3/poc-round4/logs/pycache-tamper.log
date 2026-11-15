@@ -1,0 +1,4 @@
+PYSHELD_PYC_BYPASS
+System check identified no issues (0 silenced).
+returncode: 0
+OK: tampered __pycache__ executed while the signed manifest passed

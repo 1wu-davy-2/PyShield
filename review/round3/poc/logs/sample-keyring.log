@@ -1,0 +1,3 @@
+build_id: ce91e97cfd39c34e master_sha256: c9fe5baadd294d3c735665bcfe57dd4ac55647518977adf065f93b43e23ea514
+license format: 3 build_key_present: False v1_accepted: False
+decrypted: pyshield.builder co_filename: pyshield/builder.py names: ('__doc__', '__future__', 'annotations', 'fnmatch', 'importlib.machinery', 'importlib', 'importlib.util', 'json')

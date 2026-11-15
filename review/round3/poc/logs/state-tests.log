@@ -1,0 +1,29 @@
+PASS keyed MAC verifies with secret
+PASS keyed state rejected without secret
+PASS legacy state rejected with secret
+PASS legacy state still accepted without secret
+PASS mismatch returns max  [2026-02-01]
+PASS mismatch rewrites primary  [2026-02-01]
+PASS mismatch rewrites anchor  [2026-02-01]
+PASS single write failure does not raise
+PASS single write failure returns max  [2026-02-01]
+PASS primary got newer value
+PASS anchor stayed old
+PASS second read heals both copies
+PASS both writes failing raises
+PASS volatile opt-in allows read-only deployment
+PASS unreadable copy raises  [SecureStoreError]
+PASS legacy state accepted once  [2020-01-01]
+PASS legacy state rewritten keyed  [keyed MAC ok]
+FAIL concurrent reads do not raise  [LicenseError("PyShield cannot record clock state in C:\\Users\\ww\\AppData\\Local\\Temp\\tmp453_lxle\\primary\\ce91e97cfd39c34e.state ([WinError 32] 另一个程序正在使用此文件，进程无法访问。: 'C:\\\\Users\\\\ww\\\\AppData\\\\Local\\\\Temp\\\\tmp453_lxle\\\\primary\\\\ce91e97cfd39c34e.state.tmp' -> 'C:\\\\Users\\\\ww\\\\AppData\\\\Local\\\\Temp\\\\tmp453_lxle\\\\primary\\\\ce91e97cfd39c34e.state'); make the directory writable or set PYSHELD_ALLOW_VOLATILE_STATE=1 for a read-only deployment"); LicenseError("PyShield cannot record clock state in C:\\Users\\ww\\AppData\\Local\\Temp\\tmp453_lxle\\primary\\ce91e97cfd39c34e.state ([WinError 32] 另一个程序正在使用此文件，进程无法访问。: 'C:\\\\Users\\\\ww\\\\AppData\\\\Local\\\\Temp\\\\tmp453_lxle\\\\primary\\\\ce91e97cfd39c34e.state.tmp' -> 'C:\\\\Users\\\\ww\\\\AppData\\\\Local\\\\Temp\\\\tmp453_lxle\\\\primary\\\\ce91e97cfd39c34e.state'); make the directory writable or set PYSHELD_ALLOW_VOLATILE_STATE=1 for a read-only deployment")]
+PASS concurrent reads converge
+PASS default _MEI temp is volatile
+PASS onefile first-run binding rejected
+PASS binding env disables volatile guard
+PASS binding env writes primary
+PASS binding env writes anchor
+PASS deleted anchor is restored
+PASS deleting both records resets first-run binding
+PASS non-temp _MEIPASS evades heuristic
+
+summary: 26 / 27 passed

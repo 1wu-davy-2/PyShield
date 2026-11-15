@@ -1,0 +1,10 @@
+{"label": "startup", "mode": "startup", "workers": 16, "failures": 0, "elapsed_s": 1.012, "tmp_leftovers": [], "failure_samples": [], "ok_sample": "OK 2026-11-15 any 3"}
+{"label": "startup", "mode": "startup", "workers": 16, "failures": 0, "elapsed_s": 1.271, "tmp_leftovers": [], "failure_samples": [], "ok_sample": "OK 2026-11-15 any 3"}
+{"label": "startup", "mode": "startup", "workers": 16, "failures": 0, "elapsed_s": 1.797, "tmp_leftovers": [], "failure_samples": [], "ok_sample": "OK 2026-11-15 any 3"}
+{"label": "reload", "mode": "reload", "workers": 16, "failures": 0, "elapsed_s": 1.397, "tmp_leftovers": [], "failure_samples": [], "ok_sample": "OK 2026-11-15 any 3"}
+{"label": "reload", "mode": "reload", "workers": 16, "failures": 0, "elapsed_s": 1.27, "tmp_leftovers": [], "failure_samples": [], "ok_sample": "OK 2026-11-15 any 3"}
+{"label": "reload", "mode": "reload", "workers": 16, "failures": 0, "elapsed_s": 0.859, "tmp_leftovers": [], "failure_samples": [], "ok_sample": "OK 2026-11-15 any 3"}
+{"label": "ttl", "mode": "ttl", "workers": 16, "failures": 0, "elapsed_s": 0.915, "tmp_leftovers": [], "failure_samples": [], "ok_sample": "OK 2026-11-15 any 3"}
+{"label": "ttl", "mode": "ttl", "workers": 16, "failures": 0, "elapsed_s": 0.958, "tmp_leftovers": [], "failure_samples": [], "ok_sample": "OK 2026-11-15 any 3"}
+{"label": "ttl", "mode": "ttl", "workers": 16, "failures": 0, "elapsed_s": 0.837, "tmp_leftovers": [], "failure_samples": [], "ok_sample": "OK 2026-11-15 any 3"}
+TOTAL_FAILURES 0

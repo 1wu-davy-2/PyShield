@@ -5,22 +5,22 @@
 ## 材料
 
 - 桌面构建器（本轮本机构建，含字节码修复）：`PyShieldBuilder-r5.exe`
-  - SHA-256：`e8008dacc43b7a120f5ffd27f64eccd6de2cb298eeebd59278934e2df2eb6e22`
-  - 大小：49,307,490 B；与第四轮 CI 产物（`PyShieldBuilder.exe`，`a27a1d73…b3f9`）不是同一构建
+  - SHA-256：`db212b615ef77ec085913701a9bb944aa093c796978a41c68357613737ca9ce6`
+  - 大小：49,307,453 B；与第四轮 CI 产物（`PyShieldBuilder.exe`，`a27a1d73…b3f9`）不是同一构建
 - 自保护构建器（本轮重建）：`dist-selfbuild/PyShieldBuilder-selfbuild.exe`
-  - SHA-256：`3ec1ac4780dfbd84ad71bfda9673ad1f7ecbeac5b82ac3baa013d3d02ca08f5c`
-  - 大小：40,712,974 B
+  - SHA-256：`684e88c7b38195a2c9ea1b23406892751a1b65eec4a8eb89e174f8d5eb970b9b`
+  - 大小：40,711,405 B
 - 打包前受保护源码树：`review/round3/PyShieldBuilder-protected-sample-round3.zip`
-  - SHA-256：`b82a5a96c8ff7e178177910b1a880ca30960fda01258a5fa98f219100e192528`
-  - 41 个业务模块 stub，build `3740d1b3b0e4fae9`，548,599 B
+  - SHA-256：`6f628ef1d3c682671fff4523b1fc0a9075ae436078614b73433a5c7602fba136`
+  - 41 个业务模块 stub，build `ef3bb96a41a169b5`，548,749 B
 - 受保护 Django 测试工程：`review/round3/round3-django-shielded.zip`
-  - SHA-256：`8319a62be298a779ece6ade424addec1d47ba62602ce8fe750f9d17e511793d4`
-  - build `1defa4a6e5e8df9c`，68,103 B，zip 内 `__pycache__` 条目为 0
+  - SHA-256：`1be02ace3a2f8b8e161f41b8488dc545537bae20930566f880326086fcda9742`
+  - build `60650120c0d42ab3`，68,116 B，zip 内 `__pycache__` 条目为 0
 - Challenge flag 的 SHA-256：`4d2b771c90f071e8f1602c00d9d5e4d7f998658873a1c353d9a81b2efbe66e37`
   - 旧值 `a036bf16…c4ce` 因明文进入公开仓库历史已作废轮换；flag 明文不进 git
   - 与第四轮相同，flag 常量位置调整后重新构建仍可离线解出
-- 源码：`develop @ 5ca70cf`（PSH-R5-001/002 主提交 `9365307`，路径卫生 `d98b48e`，入口包缓存容错 `5ca70cf`；材料/文档提交另计）
-- CI：首次推送 `0e18ad5` 在 CI 暴露了入口包缓存误报，`5ca70cf` 修复后重新触发；请以最新 run 为准（native-runtime / build-develop / selfbuild-poc）
+- 源码：`develop @ 130f1d7`（主提交 `9365307`、路径卫生 `d98b48e`、入口包容错 `5ca70cf`、短路径规范化 `130f1d7`；材料/文档提交另计）
+- CI：`130f1d7` 三个 run 全部通过——[native-runtime `43733768015`](https://github.com/1wu-davy-2/PyShield/actions/runs/43733768015)、[build-develop `43733768023`](https://github.com/1wu-davy-2/PyShield/actions/runs/43733768023)、[selfbuild-poc `43733768104`](https://github.com/1wu-davy-2/PyShield/actions/runs/43733768104)；此前 `0e18ad5`/`5ca70cf` 的两次失败与修复见 `ASSESSMENT-round5.md` §1.1
 - 自查报告：`ASSESSMENT-round5.md` / `assessment-round5.json`（开发方复核，不是独立审计）
 
 ## 请重点验证

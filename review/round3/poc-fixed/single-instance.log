@@ -1,0 +1,15 @@
+Manual single-instance observations (2026-11-15, Windows 10 19045, CPython 3.12.0)
+
+PyShieldBuilder.exe (SHA-256 e3f85e630daa0fecf04d90b54c0ac80d50dc8140c3856ce4d25a732e66c416c1)
+  first_pid=61176 first_exited=False (running)
+  second_pid=42176 second_exited=True second_code=0
+  process tree: 61176 -> 60396 (PyInstaller child) + msedgewebview2 children
+  second instance did not create a second GUI process tree
+
+PyShieldBuilder-selfbuild.exe (SHA-256 4351f7d0a4c9cf9e64d3f662d3f495b3f714101892f4a1c4e70bf5f11a7d8f04)
+  first_pid=60020 first_exited=False (running)
+  second_pid=16932 second_exited=True second_code=0
+  one application process tree remained
+
+Both runs used PYSHELD_SKIP_PROTOCOL=1 to avoid writing the pyshield:// protocol
+registration during the test. PYSHELD_ALLOW_MULTI_INSTANCE was unset.

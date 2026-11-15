@@ -1,0 +1,5 @@
+protected modules: 28
+sample files:      48
+sample bytes:      701139
+build id:          ce91e97cfd39c34e
+OK: all business modules are stubs; no direct master-key constant, secret or bytecode cache

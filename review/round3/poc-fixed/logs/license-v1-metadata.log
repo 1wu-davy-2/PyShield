@@ -1,0 +1,4 @@
+build_id 719368cb21d3fce0
+license {"format": 3, "bind_mode": "any", "fingerprints": [], "expires": null, "not_before": "2026-11-15", "grace_days": 0}
+build_key_in_license False
+v1 REJECTED CryptoError: invalid or corrupted data

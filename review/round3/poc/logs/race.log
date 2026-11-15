@@ -1,0 +1,8 @@
+﻿round 1: 8/8 ok
+round 2: 8/8 ok
+round 3: 8/8 ok
+round 4: 7/8 ok
+   #2: SecureStoreError cannot read C:\Users\ww\AppData\Local\Temp\pyshield-race-eznhbmkx\primary\ce91e97cfd39c34e.state: [Errno 13] Permission denied: 'C:\\Users\\ww\\AppData\\Local\\Temp\\pyshield-race-ezn
+round 5: 7/8 ok
+   #1: LicenseError PyShield cannot record clock state in C:\Users\ww\AppData\Local\Temp\pyshield-race-s5f6udgb\primary\ce91e97cfd39c34e.state ([Errno 13] Permission denied: 'C:\\Users\\ww\\AppData\\Local\\T
+total failed workers: 2 / 40

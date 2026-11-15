@@ -1,0 +1,9 @@
+build_id: 719368cb21d3fce0
+keyring: _keyring.pyc
+master_key: 32 bytes sha256=bb2d279ef00ee63e25061beee49f61435bc31cc043aa57fbe869253c3c007291
+build_key: 32 bytes sha256=266141dd08bb3b24daf698d26ea036c003234591efa3d9717c6e7047f8f43ea7
+names: ('__doc__', 'FLAG', 'RuntimeError')
+consts: ["'This module deliberately refuses to run; the flag is encrypted in the stub payload.'", "'PSH-ROUND3-e3b2caa377c88630'", "'hidden_flag is not an executable module'"]
+flag: PSH-ROUND3-e3b2caa377c88630
+flag_sha256: a036bf169f93cf499e7496082e3d088e5f3c453b3620cf8eed00941b2d96c4ce
+timing_ms: key=2.345 derive=66.708 decrypt=38.090 total=107.143

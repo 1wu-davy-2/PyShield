@@ -1,13 +1,13 @@
 # Round 3 审查材料
 
-本目录是第二轮复核后的第三轮材料（2026-11-15 第五轮修复版），对应源码 `develop @ 5ca70cf`（PSH-R5 主提交 `9365307`、路径卫生 `d98b48e`、入口包缓存容错 `5ca70cf`）。所有样本只用于授权安全评估，不是正式发布链路。
+本目录是第二轮复核后的第三轮材料（2026-11-15 第五轮修复版），对应源码 `develop @ 130f1d7`（主提交 `9365307`、路径卫生 `d98b48e`、入口包缓存容错 `5ca70cf`、短路径规范化 `130f1d7`）。所有样本只用于授权安全评估，不是正式发布链路。
 
 | 文件 | 说明 |
 | --- | --- |
 | `PyShieldBuilder-r5.exe`（仓库根目录，未纳入 git） | 第五轮本机构建的桌面构建器，49,305,274 B，含本轮 runtime 修复；仓库根的 `PyShieldBuilder.exe` 是第四轮 CI 旧产物，不含修复，不要混发 |
 | `dist-selfbuild/PyShieldBuilder-selfbuild.exe`（未纳入 git） | 本轮重建的自保护构建器，40,711,334 B；`integrity=off` 为设计边界 |
-| `PyShieldBuilder-protected-sample-round3.zip` | PyInstaller 打包前的受保护源码树（41 个业务模块 stub），用于静态检查；build `3740d1b3b0e4fae9`，548,599 B |
-| `round3-django-shielded.zip` | 可直接运行的受保护 Django 示例工程，用于 Crack Challenge；build `1defa4a6e5e8df9c`，已移除 `__pycache__` |
+| `PyShieldBuilder-protected-sample-round3.zip` | PyInstaller 打包前的受保护源码树（41 个业务模块 stub），用于静态检查；build `ef3bb96a41a169b5`，548,749 B |
+| `round3-django-shielded.zip` | 可直接运行的受保护 Django 示例工程，用于 Crack Challenge；build `60650120c0d42ab3`，已移除 `__pycache__` |
 | `ROUND3-CHALLENGE.md` | Crack Challenge 目标、flag 哈希与规则 |
 | `ROUND3-INVITATION.md` | 可直接发给审查方的邀请话术 |
 | `VULNERABILITY-REPORT-FORMAT.md` | 要求审查方使用的漏洞报告格式 |
@@ -52,7 +52,7 @@ python tools\check_release.py --skip-key-scan review\round3\PyShieldBuilder-prot
 
 第四轮（`ae718c4`）已通过：[native-runtime run 43697777107](https://github.com/1wu-davy-2/PyShield/actions/runs/43697777107)、[build-develop run 43697777144](https://github.com/1wu-davy-2/PyShield/actions/runs/43697777144)、[selfbuild-poc run 43697777044](https://github.com/1wu-davy-2/PyShield/actions/runs/43697777044)。
 
-第五轮修复提交（最新 `5ca70cf`）目前只有本地测试结果（246 tests OK / skipped=5）；首次推送 `0e18ad5` 的 CI 暴露了入口包缓存误报，已在 `5ca70cf` 修复并重新推送。
+第五轮修复提交（最新 `5ca70cf`）目前只有本地测试结果（246 tests OK / skipped=5）；CI 曾两次暴露真问题：`0e18ad5` 的入口包缓存误报（`5ca70cf` 修复）、短路径 8.3 规范化误报（`130f1d7` 修复）。 `130f1d7` 的三个 run 已全部通过：[native-runtime](https://github.com/1wu-davy-2/PyShield/actions/runs/43733768015)、[build-develop](https://github.com/1wu-davy-2/PyShield/actions/runs/43733768023)、[selfbuild-poc](https://github.com/1wu-davy-2/PyShield/actions/runs/43733768104)。
 
 ## 校验
 

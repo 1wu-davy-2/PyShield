@@ -1,0 +1,1234 @@
+[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmp_4soyddd\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmp_4soyddd\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   never
+[pyshield] bound to: first machine at first launch
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmp_4soyddd\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmp_4soyddd\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmp_4soyddd\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmp_4soyddd\dist
+[pyshield] build complete in 0.3s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmp2gwm9sgn\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmp2gwm9sgn\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   never
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmp2gwm9sgn\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmp2gwm9sgn\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmp2gwm9sgn\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmp2gwm9sgn\dist
+[pyshield] build complete in 0.1s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmpgm8b2q69\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmpgm8b2q69\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   never
+[pyshield] bound to: first machine at first launch
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] verifying protected output
+[pyshield] running manage.py check with C:\Users\ww\AppData\Local\Programs\Python\Python312\python.exe
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmpgm8b2q69\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmpgm8b2q69\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmpgm8b2q69\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmpgm8b2q69\dist
+[pyshield] build complete in 0.5s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmpln7e1gju\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmpln7e1gju\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   2035-01-01
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmpln7e1gju\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmpln7e1gju\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmpln7e1gju\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmpln7e1gju\dist
+[pyshield] build complete in 0.1s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmp54qxez3t\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmp54qxez3t\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   2035-01-01
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmp54qxez3t\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmp54qxez3t\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmp54qxez3t\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmp54qxez3t\dist
+[pyshield] build complete in 0.3s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmpev0i1j_4\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmpev0i1j_4\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   2035-01-01
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmpev0i1j_4\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmpev0i1j_4\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmpev0i1j_4\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmpev0i1j_4\dist
+[pyshield] build complete in 0.2s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmp2b824ulk\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmp2b824ulk\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   never
+[pyshield] bound to: first machine at first launch
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmp2b824ulk\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmp2b824ulk\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmp2b824ulk\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmp2b824ulk\dist
+[pyshield] build complete in 0.1s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmpzsmpfpn5\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmpzsmpfpn5\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   never
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmpzsmpfpn5\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmpzsmpfpn5\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmpzsmpfpn5\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmpzsmpfpn5\dist
+[pyshield] build complete in 0.2s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmp1ek9pvil\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmp1ek9pvil\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   never
+[pyshield] bound to: 00000000000000000000000000000000
+[pyshield] note: this machine's fingerprint is 7deb975ff9da8cc85e90b9ab1ddb0a64
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmp1ek9pvil\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmp1ek9pvil\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmp1ek9pvil\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmp1ek9pvil\dist
+[pyshield] build complete in 0.2s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmpbiqxo98d\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmpbiqxo98d\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   never
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield]   would protect manage.py as manage
+[pyshield]   would protect mypkg/__init__.py as mypkg
+[pyshield]   would protect mypkg/boom.py as mypkg.boom
+[pyshield]   would protect mypkg/tools.py as mypkg.tools
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmpn40aui71\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmpn40aui71\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   2000-01-01
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmpn40aui71\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmpn40aui71\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmpn40aui71\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmpn40aui71\dist
+[pyshield] build complete in 0.2s
+[pyshield] license written: C:\Users\ww\AppData\Local\Temp\tmpn40aui71\dist\pyshield.lic
+[pyshield] replace only this license file on site; the protected package stays as it is
+[pyshield] build id:    cfa107242cdbd009
+cipher:      chacha20poly1305
+python:      3.12
+created:     2026-11-15T09:35:00+00:00
+not before:  2026-11-15
+expires:     2035-01-01
+grace days:  0
+customer:    -
+binding:     any machine
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmpv5eugk4z\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmpv5eugk4z\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   never
+[pyshield] bound to: first machine at first launch
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmpv5eugk4z\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmpv5eugk4z\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmpv5eugk4z\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmpv5eugk4z\dist
+[pyshield] build complete in 0.4s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmpb3dans0e\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmpb3dans0e\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   never
+[pyshield] bound to: first machine at first launch
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmpb3dans0e\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmpb3dans0e\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmpb3dans0e\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmpb3dans0e\dist
+[pyshield] build complete in 0.2s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmp0p8l5sg7\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmp0p8l5sg7\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   never
+[pyshield] bound to: first machine at first launch
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmp0p8l5sg7\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmp0p8l5sg7\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmp0p8l5sg7\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmp0p8l5sg7\dist
+[pyshield] build complete in 0.1s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmpy02r1bk3\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmpy02r1bk3\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   2000-01-01
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmpy02r1bk3\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmpy02r1bk3\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmpy02r1bk3\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmpy02r1bk3\dist
+[pyshield] build complete in 0.2s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmpawqnce7o\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmpawqnce7o\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: full
+[pyshield] note: full integrity verifies templates and static data on every start
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   never
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmpawqnce7o\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmpawqnce7o\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmpawqnce7o\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmpawqnce7o\dist
+[pyshield] build complete in 0.2s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmpqyp4yp72\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmpqyp4yp72\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   2026-11-14
+[pyshield] grace:    5 days after expiry
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmpqyp4yp72\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmpqyp4yp72\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmpqyp4yp72\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmpqyp4yp72\dist
+[pyshield] build complete in 0.2s
+[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmpqyp4yp72\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmpqyp4yp72\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   2026-11-14
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmpqyp4yp72\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmpqyp4yp72\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmpqyp4yp72\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmpqyp4yp72\dist
+[pyshield] build complete in 0.1s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmpokk4vrmo\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmpokk4vrmo\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   2000-01-01
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmpokk4vrmo\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmpokk4vrmo\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmpokk4vrmo\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmpokk4vrmo\dist
+[pyshield] build complete in 0.1s
+[pyshield] license written: C:\Users\ww\AppData\Local\Temp\tmpokk4vrmo\renewed.lic
+[pyshield] replace only this license file on site; the protected package stays as it is
+[pyshield] build id:    b8869fcdf90a7ae3
+cipher:      chacha20poly1305
+python:      3.12
+created:     2026-11-15T09:35:07+00:00
+not before:  2026-11-15
+expires:     2035-01-01
+grace days:  0
+customer:    -
+binding:     any machine
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmp9llph3lb\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmp9llph3lb\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   2035-01-01
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmp9llph3lb\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmp9llph3lb\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmp9llph3lb\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmp9llph3lb\dist
+[pyshield] build complete in 0.1s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmpewnlfic4\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmpewnlfic4\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: off
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   never
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmpewnlfic4\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmpewnlfic4\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmpewnlfic4\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmpewnlfic4\dist
+[pyshield] build complete in 0.1s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmpkqhyitk_\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmpkqhyitk_\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   2035-01-01
+[pyshield] bound to: first machine at first launch
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmpkqhyitk_\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmpkqhyitk_\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmpkqhyitk_\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmpkqhyitk_\dist
+[pyshield] build complete in 0.1s
+[pyshield] license written: C:\Users\ww\AppData\Local\Temp\tmpkqhyitk_\dist\pyshield.lic
+[pyshield] replace only this license file on site; the protected package stays as it is
+[pyshield] build id:    e70f5d2a1c5ad063
+cipher:      chacha20poly1305
+python:      3.12
+created:     2026-11-15T09:35:09+00:00
+not before:  2026-11-15
+expires:     2035-01-01
+grace days:  0
+customer:    ACME
+binding:     first-run (binds to the first machine that starts it)
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmp_e9z3ek2\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmp_e9z3ek2\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   2035-01-01
+[pyshield] bound to: 7deb975ff9da8cc85e90b9ab1ddb0a64
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmp_e9z3ek2\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmp_e9z3ek2\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmp_e9z3ek2\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmp_e9z3ek2\dist
+[pyshield] build complete in 0.1s
+[pyshield] license written: C:\Users\ww\AppData\Local\Temp\tmp_e9z3ek2\dist\pyshield.lic
+[pyshield] replace only this license file on site; the protected package stays as it is
+[pyshield] build id:    4135fac8ba234ff2
+cipher:      chacha20poly1305
+python:      3.12
+created:     2026-11-15T09:35:09+00:00
+not before:  2026-11-15
+expires:     2036-01-01
+grace days:  0
+customer:    -
+binding:     fixed
+  - 7deb975ff9da8cc85e90b9ab1ddb0a64
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmpsm3umf6h\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmpsm3umf6h\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   2035-01-01
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmpsm3umf6h\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmpsm3umf6h\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmpsm3umf6h\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmpsm3umf6h\dist
+[pyshield] build complete in 0.1s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmpkbam4o7w\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmpkbam4o7w\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   2035-01-01
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmpkbam4o7w\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmpkbam4o7w\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmpkbam4o7w\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmpkbam4o7w\dist
+[pyshield] build complete in 0.1s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmp6wmfv6au\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmp6wmfv6au\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   never
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmp6wmfv6au\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmp6wmfv6au\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmp6wmfv6au\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmp6wmfv6au\dist
+[pyshield] build complete in 0.1s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmppzancr37\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmppzancr37\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   never
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmppzancr37\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmppzancr37\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmppzancr37\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmppzancr37\dist
+[pyshield] build complete in 0.2s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmpt7dx25yz\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmpt7dx25yz\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: full
+[pyshield] note: full integrity verifies templates and static data on every start
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   never
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmpt7dx25yz\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmpt7dx25yz\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmpt7dx25yz\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmpt7dx25yz\dist
+[pyshield] build complete in 0.1s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmp7858wm7o\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmp7858wm7o\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   never
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmp7858wm7o\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmp7858wm7o\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   never
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmp7858wm7o\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmp7858wm7o\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmp7858wm7o\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmp7858wm7o\dist
+[pyshield] build complete in 0.2s
+.s[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmp8eh4rsph\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmp8eh4rsph\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   never
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmp8eh4rsph\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmp8eh4rsph\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmp8eh4rsph\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmp8eh4rsph\dist
+[pyshield] build complete in 0.1s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmplajudoj4\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmplajudoj4\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  source
+[pyshield] warning: source runtime publishes decryption logic as plaintext; use --runtime-pyc or --runtime-native for delivery
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   never
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmplajudoj4\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmplajudoj4\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmplajudoj4\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmplajudoj4\dist
+[pyshield] build complete in 0.1s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmpztoth_uq\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmpztoth_uq\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   2035-01-01
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmpztoth_uq\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmpztoth_uq\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmpztoth_uq\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmpztoth_uq\dist
+[pyshield] build complete in 0.1s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmpu2fv4du9\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmpu2fv4du9\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   never
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmpu2fv4du9\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmpu2fv4du9\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmpu2fv4du9\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmpu2fv4du9\dist
+[pyshield] build complete in 0.1s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmptncym3gx\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmptncym3gx\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   never
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmptncym3gx\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmptncym3gx\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmptncym3gx\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmptncym3gx\dist
+[pyshield] build complete in 0.1s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmpvb86mr3x\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmpvb86mr3x\dist
+[pyshield] cipher:   chacha20poly1305
+[pyshield] runtime:  pyc
+[pyshield] integrity: full
+[pyshield] note: full integrity verifies templates and static data on every start
+[pyshield] note: chacha20poly1305 builds require the 'cryptography' package on the deployment machine
+[pyshield] expire:   never
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmpvb86mr3x\dist
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmpvb86mr3x\dist\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmpvb86mr3x\dist.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmpvb86mr3x\dist
+[pyshield] build complete in 0.2s
+.................[trial-server] 127.0.0.1 "GET /health HTTP/1.1" 200 -
+[trial-server] 127.0.0.1 "POST /trial/apply HTTP/1.1" 200 -
+[trial-server] 127.0.0.1 "POST /api/trial/claim HTTP/1.1" 200 -
+...........[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmp7n3xsgz7\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmp7n3xsgz7\project-shielded
+[pyshield] cipher:   chacha
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] expire:   never
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmp7n3xsgz7\project-shielded
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmp7n3xsgz7\project-shielded\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmp7n3xsgz7\project-shielded.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmp7n3xsgz7\project-shielded
+[pyshield] build complete in 0.1s
+.[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmptkl1fwl8\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmptkl1fwl8\project-shielded
+[pyshield] cipher:   chacha
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] expire:   never
+[pyshield] bound to: first machine at first launch
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmptkl1fwl8\project-shielded
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmptkl1fwl8\project-shielded\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmptkl1fwl8\project-shielded.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmptkl1fwl8\project-shielded
+[pyshield] build complete in 0.1s
+..[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmpj0lupvwc\project
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmpj0lupvwc\project-shielded
+[pyshield] cipher:   chacha
+[pyshield] runtime:  pyc
+[pyshield] integrity: protected
+[pyshield] expire:   never
+[pyshield] bound to: any machine
+[pyshield] modules:  4
+[pyshield] copying project data files
+[pyshield] encrypting 4 Python modules
+[pyshield]   protected manage.py
+[pyshield]   protected mypkg/__init__.py
+[pyshield]   protected mypkg/boom.py
+[pyshield]   protected mypkg/tools.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] writing signed package manifest
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmpj0lupvwc\project-shielded
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmpj0lupvwc\project-shielded\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmpj0lupvwc\project-shielded.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmpj0lupvwc\project-shielded
+[pyshield] build complete in 0.1s
+...........................[license-server] 127.0.0.1 "POST /v1/activate HTTP/1.1" 200 -
+[license-server] 127.0.0.1 "POST /v1/heartbeat HTTP/1.1" 200 -
+.[license-server] 127.0.0.1 "POST /v1/activate HTTP/1.1" 200 -
+[license-server] 127.0.0.1 "POST /v1/activate HTTP/1.1" 400 -
+.[license-server] 127.0.0.1 "POST /v1/issue HTTP/1.1" 400 -
+[license-server] 127.0.0.1 "POST /v1/issue HTTP/1.1" 200 -
+.[license-server] 127.0.0.1 "POST /v1/activate HTTP/1.1" 200 -
+[license-server] 127.0.0.1 "POST /v1/heartbeat HTTP/1.1" 400 -
+.[license-server] 127.0.0.1 "POST /v1/activate HTTP/1.1" 200 -
+[license-server] 127.0.0.1 "GET /v1/revocations HTTP/1.1" 200 -
+[license-server] 127.0.0.1 "POST /v1/heartbeat HTTP/1.1" 400 -
+...........................................[pyshield] validating build options
+[pyshield] pyshield 0.6.0 on CPython 3.12
+[pyshield] project:  C:\Users\ww\AppData\Local\Temp\tmpkd2rukbg\staging
+[pyshield] output:   C:\Users\ww\AppData\Local\Temp\tmpkd2rukbg\protected
+[pyshield] cipher:   chacha
+[pyshield] runtime:  source
+[pyshield] warning: source runtime publishes decryption logic as plaintext; use --runtime-pyc or --runtime-native for delivery
+[pyshield] integrity: off
+[pyshield] expire:   never
+[pyshield] bound to: any machine
+[pyshield] modules:  28
+[pyshield] copying project data files
+[pyshield] encrypting 28 Python modules
+[pyshield]   protected gui/__init__.py
+[pyshield]   protected gui/__main__.py
+[pyshield]   protected gui/backend.py
+[pyshield]   protected gui/core.py
+[pyshield]   protected gui/instance.py
+[pyshield]   protected gui/main.py
+[pyshield]   protected gui/state.py
+[pyshield]   protected gui/tray.py
+[pyshield]   protected manage.py
+[pyshield]   protected pyshield/__init__.py
+[pyshield]   protected pyshield/__main__.py
+[pyshield]   protected pyshield/_runtime_bundle.py
+[pyshield]   protected pyshield/activation.py
+[pyshield]   protected pyshield/builder.py
+[pyshield]   protected pyshield/cli.py
+[pyshield]   protected pyshield/crypto.py
+[pyshield]   protected pyshield/devsite.py
+[pyshield]   protected pyshield/ed25519.py
+[pyshield]   protected pyshield/fingerprint.py
+[pyshield]   protected pyshield/license_admin.py
+[pyshield]   protected pyshield/license_server.py
+[pyshield]   protected pyshield/licensing.py
+[pyshield]   protected pyshield/manifest.py
+[pyshield]   protected pyshield/python_runtime.py
+[pyshield]   protected pyshield/secure_store.py
+[pyshield]   protected pyshield/tool_license.py
+[pyshield]   protected pyshield/trial_license.py
+[pyshield]   protected pyshield/trial_server.py
+[pyshield] installing runtime
+[pyshield] writing license
+[pyshield] publishing output directory
+[pyshield] writing build secret
+[pyshield] skipping verification: disabled by the caller
+[pyshield] cleaning bytecode caches
+[pyshield] done: C:\Users\ww\AppData\Local\Temp\tmpkd2rukbg\protected
+[pyshield] license:  C:\Users\ww\AppData\Local\Temp\tmpkd2rukbg\protected\pyshield.lic
+[pyshield] secret:   C:\Users\ww\AppData\Local\Temp\tmpkd2rukbg\protected.shield-secret.json (keep private; needed to reissue licenses)
+[pyshield] deploy the whole directory: C:\Users\ww\AppData\Local\Temp\tmpkd2rukbg\protected
+[pyshield] build complete in 0.4s
+..................................[trial-server] 127.0.0.1 "GET /activate?serial=PS-8H4D-1K96-2NS9&machine=7deb975ff9da8cc85e90b9ab1ddb0a64 HTTP/1.1" 200 -
+[trial-server] 127.0.0.1 "GET /api/trial/status?serial=PS-8H4D-1K96-2NS9 HTTP/1.1" 200 -
+.[trial-server] 127.0.0.1 "POST /trial/apply HTTP/1.1" 200 -
+[trial-server] 127.0.0.1 "GET /api/trial/status?serial=PS-QVD5-X53R-YPPW HTTP/1.1" 200 -
+[trial-server] 127.0.0.1 "POST /api/trial/claim HTTP/1.1" 200 -
+.[trial-server] 127.0.0.1 "POST /trial/apply HTTP/1.1" 200 -
+[trial-server] 127.0.0.1 "POST /api/trial/claim HTTP/1.1" 400 -
+.[trial-server] 127.0.0.1 "POST /trial/apply HTTP/1.1" 200 -
+[trial-server] 127.0.0.1 "GET /api/trial/status?serial=PS-VM4T-7KD4-HFVC HTTP/1.1" 200 -
+.[trial-server] 127.0.0.1 "POST /trial/apply HTTP/1.1" 200 -
+[trial-server] 127.0.0.1 "POST /api/trial/claim HTTP/1.1" 200 -
+[trial-server] 127.0.0.1 "POST /trial/apply HTTP/1.1" 200 -
+[trial-server] 127.0.0.1 "POST /api/trial/claim HTTP/1.1" 200 -
+.[trial-server] 127.0.0.1 "GET /api/trial/status?serial=PS-EP0H-JBT2-E4CR HTTP/1.1" 200 -
+.[trial-server] 127.0.0.1 "POST /trial/apply HTTP/1.1" 200 -
+[trial-server] 127.0.0.1 "POST /api/trial/claim HTTP/1.1" 200 -
+.
+----------------------------------------------------------------------
+Ran 180 tests in 47.657s
+
+OK (skipped=1)

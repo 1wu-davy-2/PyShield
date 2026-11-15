@@ -1,0 +1,3 @@
+exe: PyShieldBuilder.exe pyz: PYZ.pyz license entry: False
+has keyring: False
+no keyring

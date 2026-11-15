@@ -1,0 +1,19 @@
+﻿tree: E:\tmp\workbuild\code\分析\round3\dst\round3-django-shielded
+build_id: c6f18270508c66ce  cipher: chacha  runtime: pyc
+key recovery: 1646 bytes marshal -> master_key() -> 32 bytes
+license: format=3 bind_mode=any expires=None build_key_in_license=False v1_key_accepted=False
+decrypted modules: 13
+  demo: names=()
+  demo.apps: names=('django.apps', 'AppConfig', 'DemoConfig')
+  demo.hidden_flag: names=('__doc__', 'RuntimeError', 'FLAG')
+  demo.management: names=()
+  demo.management.commands: names=()
+  demo.management.commands.reveal: names=('django.core.management.base', 'BaseCommand', 'Command')
+  demo.urls: names=('django.urls', 'path', '', 'views', 'index', 'urlpatterns')
+  demo.views: names=('django.http', 'HttpResponse', 'index')
+  manage: names=('os', 'sys', 'main', '__name__')
+  sampleproj: names=()
+  sampleproj.settings: names=('pathlib', 'Path', '__file__', 'resolve', 'parent', 'BASE_DIR', 'SECRET_KEY', 'DEBUG', 'ALLOWED_HOSTS', 'INSTALLED_APPS', 'ROOT_URLCONF', 'TEMPLATES', 'WSGI_APPLICATION', 'DATABASES', 'STATIC_URL', 'USE_TZ', 'DEFAULT_AUTO_FIELD')
+  sampleproj.urls: names=('django.urls', 'include', 'path', 'urlpatterns')
+  sampleproj.wsgi: names=('os', 'django.core.wsgi', 'get_wsgi_application', 'environ', 'setdefault', 'application')
+timing: key=1.41 ms derive=52.39 ms decrypt_median=0.17 ms decrypt_all=2.38 ms

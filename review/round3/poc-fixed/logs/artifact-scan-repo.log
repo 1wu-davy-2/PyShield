@@ -1,0 +1,45 @@
+{
+  "challenge_zip": {
+    "path": "E:\\tmp\\workbuild\\code\\PyShield\\review\\round3\\round3-django-shielded.zip",
+    "bytes": 70742,
+    "sha256": "03fd153b94028f6c0180dcb53584866da3a414fbaa3e96ebaadb5ea19117a2fa",
+    "hits": {}
+  },
+  "sample_zip": {
+    "path": "E:\\tmp\\workbuild\\code\\PyShield\\review\\round3\\PyShieldBuilder-protected-sample-round3.zip",
+    "bytes": 430520,
+    "sha256": "ddb14d1b8403f4e0cb51afe7f5a02efc4ee8ad0a25a619ce67ccf6ad1c364320",
+    "hits": {}
+  },
+  "main_exe": {
+    "path": "E:\\tmp\\workbuild\\code\\PyShield\\PyShieldBuilder.exe",
+    "bytes": 21541926,
+    "sha256": "e3f85e630daa0fecf04d90b54c0ac80d50dc8140c3856ce4d25a732e66c416c1",
+    "hits": {}
+  },
+  "selfbuild_exe": {
+    "path": "E:\\tmp\\workbuild\\code\\PyShield\\dist-selfbuild\\PyShieldBuilder-selfbuild.exe",
+    "bytes": 40562131,
+    "sha256": "4351f7d0a4c9cf9e64d3f662d3f495b3f714101892f4a1c4e70bf5f11a7d8f04",
+    "hits": {}
+  },
+  "challenge_tree": {
+    "path": "E:\\tmp\\workbuild\\code\\分析\\round4\\dst\\round3-django-shielded",
+    "tree_hits": {}
+  },
+  "sample_tree": {
+    "path": "E:\\tmp\\workbuild\\code\\分析\\round4\\sample\\selfbuild-protected-sample",
+    "tree_hits": {
+      "verify_sample.py": {
+        "MASTER_KEY_B85": 1,
+        "shield_secret": 1
+      },
+      "gui\\web\\app.js": {
+        "shield_secret": 5
+      },
+      "gui\\web\\index.html": {
+        "shield_secret": 3
+      }
+    }
+  }
+}

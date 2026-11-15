@@ -24,7 +24,7 @@
 - `PyShieldBuilder-selfbuild.exe`：40,711,405 B，SHA-256 `684e88c7b38195a2c9ea1b23406892751a1b65eec4a8eb89e174f8d5eb970b9b`（本轮重建）。
 - flag 可离线恢复：值已轮换且不进 git（`review/round3/flag-value.txt` 被 ignore），SHA-256 `4d2b771c90f071e8f1602c00d9d5e4d7f998658873a1c353d9a81b2efbe66e37`，本轮耗时约 96 ms（key 2.0 / derive 57.5 / decrypt 36.1）。轮换原因：首推 `0e18ad5` 把旧 flag 明文带进了公开仓库历史，旧值作废。
 - 全量测试：**247 tests OK (skipped=5)**（完整环境与仅 cryptography 的 CI 等价环境各跑一遍）。
-- CI 先后暴露两个真实问题：`0e18ad5` 入口包缓存误报（`5ca70cf` 修复）、`5ca70cf` 的 TEMP 短路径 8.3 规范化误报（`130f1d7` 修复）；详见 §1.1 的“CI 复测暴露”。
+- `130f1d7` 的三个 CI run **全部通过**：native-runtime `43733768015`、build-develop `43733768023`、selfbuild-poc `43733768104`；此前两次失败与修复见 §1.1 的“CI 复测暴露”。
 
 ## 1. 修复项复核
 
@@ -200,7 +200,7 @@ runtime co_filename: _shield_runtime/_core.py
 | 受保护示例可运行 | 是 | `check` rc=0、`reveal` 输出 `protected demo command OK`、`verify --json` 21 文件 |
 | 运行后不产生缓存 | 是 | `pycache dirs: 0` |
 | 全量测试 | 247 OK / 5 skipped | 完整环境与仅 cryptography 的 CI 等价环境 |
-| CI | 两次失败 → 修复重推 | 入口包误报（`5ca70cf`）、短路径误报（`130f1d7`），见 §1.1 |
+| CI | **全部通过** | `130f1d7`：native `43733768015`、develop `43733768023`、selfbuild `43733768104`；两次失败与修复见 §1.1 |
 | 文档表述 | 一致 | `--temp 0` 不再作为密钥证明；补充了 `--secret`/`--skip-key-scan` 语义 |
 
 ## 3. 回归范围
@@ -268,7 +268,7 @@ py -3.12 review\round3\poc-round4\recover_flag.py .
 
 ## 6. 发送前检查清单
 
-1. **推送 `130f1d7` 触发 CI**，确认三个 run 通过后把 run 号补进邀请函；若改用 CI 产物，重新计算 exe 哈希。
+1. CI 已通过（run 号见 §0）；后续 docs-only 提交会触发新 run，引用时以 `130f1d7` 的 run 号为准。
 2. 确认发送的 exe 与源码一致：本报告核对的 `PyShieldBuilder-r5.exe` 是本机构建，`PyShieldBuilder.exe` 仍是 `ae718c4` 的旧 CI 产物（不含修复），不要混发。
 3. 重跑 `pycache_tamper_r5.py`、`prefix_hijack_r5.py`、`check_release_gap_r5.py`，把日志随包附上。
 4. 不要再用 `--temp 0` 作为“无密钥泄露”的证明；需要密钥结论时提供 `--secret`。

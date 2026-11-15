@@ -1,0 +1,24 @@
+{
+  "build_id": "c23d7b22eb46f938",
+  "runtime": "source",
+  "integrity": "off",
+  "stub_modules": 28,
+  "flag_consts": [],
+  "elapsed_ms": 95.196,
+  "bundle": {
+    "largest_const_len": 28240,
+    "entries": [
+      "__init__.py",
+      "__main__.py",
+      "_core.py",
+      "_chacha_fast.pyx",
+      "_crypto.py",
+      "_machine.py",
+      "_ed25519.py",
+      "_secure_store.py"
+    ],
+    "has_keyring": false,
+    "core_placeholder": true,
+    "core_master_const": false
+  }
+}

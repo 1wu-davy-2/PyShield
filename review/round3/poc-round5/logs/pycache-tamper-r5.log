@@ -1,11 +1,11 @@
 planted demo/__pycache__/__init__.cpython-312.pyc 232 bytes
 Traceback (most recent call last):
-  File "C:\Users\ww\AppData\Local\Temp\pyshield-pyc-tamper-r5-eps_yxcl\app\manage.py", line 5, in <module>
+  File "C:\Users\ww\AppData\Local\Temp\pyshield-pyc-tamper-r5-au70_u6a\app\manage.py", line 5, in <module>
     _pyshield_load_module(
-  File "_shield_runtime/_core.py", line 1123, in load_module
-  File "_shield_runtime/_core.py", line 1113, in _state_for_load
-  File "_shield_runtime/_core.py", line 996, in _load_state
-  File "_shield_runtime/_core.py", line 362, in _enforce_integrity
+  File "_shield_runtime/_core.py", line 1125, in load_module
+  File "_shield_runtime/_core.py", line 1115, in _state_for_load
+  File "_shield_runtime/_core.py", line 998, in _load_state
+  File "_shield_runtime/_core.py", line 364, in _enforce_integrity
 _shield_runtime._core.LicenseError: PyShield package integrity check failed (demo/__pycache__/__init__.cpython-312.pyc: unsigned bytecode cache); restore the original files or contact the vendor
 returncode: 1
 note: cache directory still present (rejected before import)
