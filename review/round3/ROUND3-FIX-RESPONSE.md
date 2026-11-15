@@ -54,6 +54,7 @@
 - 受保护 Django 示例：`manage.py check` 通过，`manage.py reveal` 输出 `protected demo command OK`；`demo.hidden_flag` 直接导入按设计抛出 `RuntimeError`；解密后 `co_consts` 中存在 `FLAG`，发布物中未发现明文 flag；flag 哈希见 `SHA256SUMS.txt`。
 - 受保护源码样本：28 个业务模块全部为 stub；无构建 secret、无 `.pyc`、无 `runtime_template`；`_core.py` 不含 `MASTER_KEY_B85`；`_keyring.py` 存在。
 - 并发时钟：8 进程 × 2 轮测试全部成功，两份状态最终一致，无 `.tmp` 残留。
+- 单实例启动：主 exe 与自保护 exe 同时启动时，第二个进程退出并尝试转发深链；任务管理器只保留一个应用实例（PyInstaller onefile 的 bootloader/子进程除外）。`PYSHELD_ALLOW_MULTI_INSTANCE=1` 仅为自动化并行测试入口。
 - 原生 runtime 端到端构建：已由 GitHub Actions `native-runtime` 矩阵在 Windows 和 Ubuntu 上通过（提交 `8adeccf`，run `43675650384`；上一轮 `9bd4b9f` run `43666681749`）：
   - Windows 使用 Cython + MSVC + LLVM strip，验证 `.pyd` 导入、无 `.py` runtime、无 PDB 侧车、无完整主密钥；
   - Ubuntu 使用 Cython + gcc + binutils strip，验证 `.so` 导入、无 `.py` runtime、无完整主密钥；
