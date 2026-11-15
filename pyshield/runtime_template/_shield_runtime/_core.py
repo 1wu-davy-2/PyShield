@@ -725,7 +725,7 @@ def load_module(name: str, file: str, payload: str, module_id: str) -> None:
     try:
         payload_bytes.extend(_crypto.b85decode(payload))
         compressed.extend(_crypto.open_envelope(
-            key, payload_bytes, _crypto.module_aad(BUILD_ID, module_id)
+            key, bytes(payload_bytes), _crypto.module_aad(BUILD_ID, module_id)
         ))
         data = bytearray(zlib.decompress(compressed))
         code = marshal.loads(data)
