@@ -18,13 +18,13 @@
 
 已核对的事实：
 
-- 挑战包 `round3-django-shielded.zip`：66,750 B，SHA-256 `a1ee83fa0ee9d7ae765f17e9fb12b371643945fc75d1bed9e507e5566f122320`，build `0d13b86aeefd81f8`，27 个条目，`__pycache__` 0 条。
+- 挑战包 `round3-django-shielded.zip`：68,103 B，SHA-256 `8319a62be298a779ece6ade424addec1d47ba62602ce8fe750f9d17e511793d4`，build `1defa4a6e5e8df9c`，27 个条目，`__pycache__` 0 条。
 - 静态样本 `PyShieldBuilder-protected-sample-round3.zip`：547,238 B，SHA-256 `984c701c8ef2a8b22753054d1098a7c7abfe6bacfcf69624ae18cc52c3966ac4`，build `692a5f580935dfaf`，41 个业务模块 stub，runtime 源码包含 `_isolate_bytecode`/`unsigned bytecode cache`。
 - `PyShieldBuilder-r5.exe`：49,305,274 B，SHA-256 `504e89cc242714e2304e8898a639c5b885a98f5b96a0c784a6f6f8b901310200`（本机构建）。
 - `PyShieldBuilder-selfbuild.exe`：40,711,334 B，SHA-256 `7dce130c9857d6899ac854041fddd1358c5953a53a798e63209531abc30c541e`（本轮重建）。
-- flag 仍可离线恢复：`PSH-ROUND3-e3b2caa377c88630`，SHA-256 `a036bf169f93cf499e7496082e3d088e5f3c453b3620cf8eed00941b2d96c4ce`，本轮耗时约 85 ms（key 3.4 / derive 27.1 / decrypt 54.4）。
+- flag 可离线恢复：值已轮换且不进 git（`review/round3/flag-value.txt` 被 ignore），SHA-256 `4d2b771c90f071e8f1602c00d9d5e4d7f998658873a1c353d9a81b2efbe66e37`，本轮耗时约 77 ms（key 2.4 / derive 26.3 / decrypt 48.0）。轮换原因：首推 `0e18ad5` 把旧 flag 明文带进了公开仓库历史，旧值作废。
 - 全量测试：**245 tests OK (skipped=5)**。
-- `d98b48e` **尚未触发 CI**；两枚 exe 均为本机构建，与第四轮 CI 产物不是同一 hash。
+- 首次推送 `0e18ad5` 的 CI **失败并暴露了一个真实误报**（入口包缓存），已在 `5ca70cf` 修复并重新触发；详见 §1.1 的“CI 复测暴露”。
 
 ## 1. 修复项复核
 
@@ -33,8 +33,8 @@
 - 严重度：**High**（发布目录可写时；目录仅管理员可写可降为 Medium）
 - CVSS 3.1：`CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H`，约 **7.8**（沿用上轮评分，攻击复杂度与影响未变）
 - 受影响组件：`round3-django-shielded.zip` 的 `demo/`、`demo/management/`、`sampleproj/` 缓存；`manifest.collect_files`；runtime `_scan_integrity`
-- 受影响产物与 SHA-256：`round3-django-shielded.zip` `a1ee83fa…2320`（修复版；上轮受影响版本为 `34c5e49f…7954`）
-- 源码版本/提交：`develop @ d98b48e`
+- 受影响产物与 SHA-256：`round3-django-shielded.zip` `8319a62b…93d4`（修复版；上轮受影响版本为 `34c5e49f…7954`）
+- 源码版本/提交：`develop @ 5ca70cf`
 - 测试环境：Windows 10 Pro 19045 x64、CPython 3.12.0、Django 5.2.8
 - 前置条件/攻击者模型：能写发布目录的本地用户；无需管理员、调试器或内存 dump
 - 状态：**已修复验证**
@@ -56,7 +56,8 @@
 | 清单校验 | `manifest.py::verify_files(check_bytecode=True)` | 除哈希外，报告未列入清单的字节码；`builder verify` 同步生效 |
 | 构建收尾 | `builder.py::clean_pycache()` + `assert_no_bytecode_caches()` | 清理后再次断言；仍有残留（被占用/清理失败）则构建失败 |
 | 导入隔离 | `runtime/_core.py::_isolate_bytecode()` | runtime 导入时把 `sys.pycache_prefix` 指向 temp 下不可预测且不存在的路径，并置 `sys.dont_write_bytecode = True`；之后导入既不读发布目录 pyc，也不写入 |
-| 完整性 | `runtime/_core.py::_scan_bytecode_caches()` | 在首个受保护模块加载前，把 `_shield_runtime/` 之外的任何 `.pyc/.pyo` 报为 `unsigned bytecode cache` |
+| 完整性 | `runtime/_core.py::_scan_bytecode_caches()` | 在首个受保护模块加载前，把 `_shield_runtime/` 之外的任何 `.pyc/.pyo` 报为 `unsigned bytecode cache`；已导入模块自身的 `__cached__` 除外 |
+| 入口容错 | `runtime/_core.py::_prune_imported_caches()` | 包入口（`python -c "import mypkg"`）会让 CPython 在 stub 执行前写出合法缓存；删除这份缓存，避免同一发布目录换入口启动时误报 |
 | 发布检查 | `tools/check_release.py` | 目录/zip 中出现 `__pycache__` 或未列入该包签名清单的 `.pyc` 直接失败 |
 
 #### 复现步骤（攻击者视角）
@@ -99,6 +100,12 @@ marker `PYSHELD_PYC_BYPASS_R5` 未出现在 stdout/stderr，说明缓存没有�
 
 未实测但由代码路径可判定：预置 `sys.pycache_prefix` 目标目录需要猜中 `os.urandom(8)` 名称；同一用户若能改 runtime 本身，等价于替换校验器（已承认边界）。
 
+#### CI 复测暴露：入口包自身的缓存（`0e18ad5` → `5ca70cf`）
+
+首次推送 `0e18ad5` 后 CI 失败：unittest（Ubuntu/Windows）与 native-runtime 的 `python -c "import mypkg"` 步骤都挂了。根因是本报告初版扫描规则的一个真实误报——包入口会让 CPython **先**写出 `mypkg/__pycache__/__init__…pyc` 再执行 stub，此时隔离还没装上；扫描在 `load_module` 里跑，把这份合法缓存报成失败。本机没复现是因为全局 `PYTHONDONTWRITEBYTECODE=1` 掩盖了写入路径。
+
+`5ca70cf` 的处理：扫描跳过 `sys.modules` 中已导入模块的 `__cached__`（未导入模块的缓存仍然拒绝），并新增 `_prune_imported_caches` 在导入时清掉这份合法缓存，保证同一发布目录换入口（`manage.py`）启动也不误报；新增 `test_package_entry_import_is_tolerated` 覆盖“包入口 → 缓存被清理 → `manage.py check` 二次启动”全链路。本报告的验证（含本节 PoC）均基于 `5ca70cf` 之后的产物。
+
 #### 影响
 
 修复前：可写发布目录中的伪造 pyc 可执行任意代码，绕过“受保护文件被改会发现”的承诺，且交付物本身携带缓存。修复后：伪造缓存在正常布局下既不被执行，也会在首个受保护模块加载前触发完整性失败；发布物不再包含可执行缓存。
@@ -115,8 +122,8 @@ marker `PYSHELD_PYC_BYPASS_R5` 未出现在 stdout/stderr，说明缓存没有�
 - 严重度：**Low**（沿用；工具/文档问题，未发现已发生的密钥泄露）
 - CVSS 3.1：`CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N`，约 **3.3**
 - 受影响组件：`tools/check_release.py`；`ROUND3-FIX-RESPONSE.md` 的发布卫生表述
-- 受影响产物与 SHA-256：不适用（工具/文档）；挑战包 `a1ee83fa…2320`
-- 源码版本/提交：`develop @ d98b48e`
+- 受影响产物与 SHA-256：不适用（工具/文档）；挑战包 `8319a62b…93d4`
+- 源码版本/提交：`develop @ 5ca70cf`
 - 前置条件/攻击者模型：构建/发布流程依赖该检查器；本地用户
 - 状态：**已修复验证（覆盖与语义）；随机密钥不可判定是能力边界**
 
@@ -181,17 +188,17 @@ runtime co_filename: _shield_runtime/_core.py
 
 | 声明 | 核对结果 | 说明 |
 | --- | --- | --- |
-| 挑战包 SHA-256 | 匹配 `a1ee83fa…2320` | 66,750 B；27 条目 |
-| 静态样本 SHA-256 | 匹配 `984c701c…6ac4` | 547,238 B；41 stub；build `692a5f58…` |
-| `PyShieldBuilder-r5.exe` SHA-256 | 匹配 `504e89cc…0200` | 49,305,274 B；本机构建 |
-| 自保护 exe SHA-256 | 匹配 `7dce130c…541e` | 40,711,334 B；本轮重建 |
-| flag 可从 zip 恢复 | 是 | `PSH-ROUND3-e3b2caa377c88630`；hash `a036bf16…c4ce`；约 85 ms |
+| 挑战包 SHA-256 | 匹配 `8319a62b…93d4` | 68,103 B；27 条目 |
+| 静态样本 SHA-256 | 匹配 `b82a5a96…2528` | 548,599 B；41 stub；build `3740d1b3…` |
+| `PyShieldBuilder-r5.exe` SHA-256 | 匹配 `e8008dac…6e22` | 49,307,490 B；本机构建 |
+| 自保护 exe SHA-256 | 匹配 `3ec1ac47…8f5c` | 40,712,974 B；本轮重建 |
+| flag 可从 zip 恢复 | 是 | 值已轮换不进 git；hash `4d2b771c…e37`；约 77 ms |
 | zip 内无明文 flag | 是 | 解密后 `co_consts` 含 flag，zip 条目 0 命中 |
 | zip 内无 `__pycache__` | 是 | 0 条；`check_release.py` 通过 |
 | 受保护示例可运行 | 是 | `check` rc=0、`reveal` 输出 `protected demo command OK`、`verify --json` 21 文件 |
 | 运行后不产生缓存 | 是 | `pycache dirs: 0` |
-| 全量测试 | 245 OK / 5 skipped | 本地 CPython 3.13.14 |
-| CI | **未运行** | `9365307` 未推送；invitation 已注明 |
+| 全量测试 | 246 OK / 5 skipped | 本地 3.13/3.12，含未设置 `PYTHONDONTWRITEBYTECODE` 的环境 |
+| CI | 首推失败 → 修复重推 | `0e18ad5` 暴露入口包误报；`5ca70cf` 修复后重新触发，见 §1.1 |
 | 文档表述 | 一致 | `--temp 0` 不再作为密钥证明；补充了 `--secret`/`--skip-key-scan` 语义 |
 
 ## 3. 回归范围
@@ -259,7 +266,7 @@ py -3.12 review\round3\poc-round4\recover_flag.py .
 
 ## 6. 发送前检查清单
 
-1. **推送 `d98b48e` 触发 CI**，把 native/build-develop/selfbuild 的 run 号补进邀请函；若改用 CI 产物，重新计算 exe 哈希。
+1. **推送 `5ca70cf` 触发 CI**，确认三个 run 通过后把 run 号补进邀请函；若改用 CI 产物，重新计算 exe 哈希。
 2. 确认发送的 exe 与源码一致：本报告核对的 `PyShieldBuilder-r5.exe` 是本机构建，`PyShieldBuilder.exe` 仍是 `ae718c4` 的旧 CI 产物（不含修复），不要混发。
 3. 重跑 `pycache_tamper_r5.py`、`prefix_hijack_r5.py`、`check_release_gap_r5.py`，把日志随包附上。
 4. 不要再用 `--temp 0` 作为“无密钥泄露”的证明；需要密钥结论时提供 `--secret`。

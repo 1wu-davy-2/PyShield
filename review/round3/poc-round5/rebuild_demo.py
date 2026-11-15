@@ -5,7 +5,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-FLAG = "PSH-ROUND3-e3b2caa377c88630"
+# The flag value never enters git: read it from the ignored side file.
+FLAG_PATH = Path(__file__).resolve().parents[1] / "flag-value.txt"
+FLAG = FLAG_PATH.read_text(encoding="utf-8").strip()
 
 
 def main(target: str) -> int:

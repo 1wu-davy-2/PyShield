@@ -1,11 +1,11 @@
-504e89cc242714e2304e8898a639c5b885a98f5b96a0c784a6f6f8b901310200  PyShieldBuilder-r5.exe
-7dce130c9857d6899ac854041fddd1358c5953a53a798e63209531abc30c541e  PyShieldBuilder-selfbuild.exe
-984c701c8ef2a8b22753054d1098a7c7abfe6bacfcf69624ae18cc52c3966ac4  PyShieldBuilder-protected-sample-round3.zip
-a1ee83fa0ee9d7ae765f17e9fb12b371643945fc75d1bed9e507e5566f122320  round3-django-shielded.zip
+e8008dacc43b7a120f5ffd27f64eccd6de2cb298eeebd59278934e2df2eb6e22  PyShieldBuilder-r5.exe
+3ec1ac4780dfbd84ad71bfda9673ad1f7ecbeac5b82ac3baa013d3d02ca08f5c  PyShieldBuilder-selfbuild.exe
+b82a5a96c8ff7e178177910b1a880ca30960fda01258a5fa98f219100e192528  PyShieldBuilder-protected-sample-round3.zip
+8319a62be298a779ece6ade424addec1d47ba62602ce8fe750f9d17e511793d4  round3-django-shielded.zip
 
 # superseded: fourth-round CI builds of ae718c4, no bytecode fix
 a27a1d73a24e7c06c61a55d316b3de6fd8b14e5c770f04ac526732bf9991b3f9  PyShieldBuilder.exe (old)
 25b1089a1fe8e8db3570bcfa22222f0c938eeefd2b13d64f32d3161cd3612a89  PyShieldBuilder-selfbuild.exe (old)
 
 # flag value (demo.hidden_flag.FLAG) SHA-256:
-# a036bf169f93cf499e7496082e3d088e5f3c453b3620cf8eed00941b2d96c4ce
+# 4d2b771c90f071e8f1602c00d9d5e4d7f998658873a1c353d9a81b2efbe66e37 (rotated after the value leaked into public git history)

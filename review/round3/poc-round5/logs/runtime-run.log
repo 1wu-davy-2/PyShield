@@ -5,4 +5,4 @@ protected demo command OK
 reveal rc=0
 verify ok True checked 21 failures []
 pycache dirs: 0
-runtime co_filename: _shield_runtime/_core.py
+co_filename: _shield_runtime/_core.py

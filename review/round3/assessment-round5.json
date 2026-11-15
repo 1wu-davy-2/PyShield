@@ -1,8 +1,8 @@
 {
   "report": "PyShield Round 3 fifth-material review (post-fix verification, audit template)",
   "date": "2026-11-15",
-  "target_code_commit": "d98b48e",
-  "materials_head": "d98b48e",
+  "target_code_commit": "5ca70cf",
+  "materials_head": "5ca70cf",
   "environment": {
     "os": "Windows 10 Pro 10.0.19045 x64",
     "python": "CPython 3.12.0 (artifacts) / 3.13.14 (tooling)",
@@ -10,41 +10,41 @@
     "pyinstaller": "6.22.3"
   },
   "verdict": "fixed_pending_ci",
-  "verdict_reason": "PSH-R5-001 is closed by three independent layers (release tree without caches, import-time cache isolation, manifest rejection of unsigned bytecode) and reproduces as rc=1 with no marker. PSH-R5-002 now fails closed without key needles and rejects __pycache__ in trees and zips; a random key in a bare zip without --secret remains undecidable by design. No new exploitable issue was found; one informational build-path leak was fixed in the same commit. CI for d98b48e has not run yet and both executables are local builds.",
+  "verdict_reason": "PSH-R5-001 is closed by three independent layers (release tree without caches, import-time cache isolation, manifest rejection of unsigned bytecode) and reproduces as rc=1 with no marker. The first push (0e18ad5) failed CI because a package entry point makes CPython write the stub's own cache before the stub runs; 5ca70cf skips caches of already-imported modules and prunes them, with a regression test. PSH-R5-002 now fails closed without key needles and rejects __pycache__ in trees and zips; a random key in a bare zip without --secret remains undecidable by design. No new exploitable issue was found; one informational build-path leak was fixed in the same series. Both executables are local builds; CI for 5ca70cf was re-triggered. The challenge flag was rotated because the previous value leaked into public git history.",
   "artifacts": {
     "PyShieldBuilder-r5.exe": {
-      "bytes": 49305274,
-      "sha256": "504e89cc242714e2304e8898a639c5b885a98f5b96a0c784a6f6f8b901310200",
+      "bytes": 49307490,
+      "sha256": "e8008dacc43b7a120f5ffd27f64eccd6de2cb298eeebd59278934e2df2eb6e22",
       "verified": true,
       "note": "local build; supersedes the ae718c4 CI binary"
     },
     "PyShieldBuilder-selfbuild.exe": {
-      "bytes": 40711334,
-      "sha256": "7dce130c9857d6899ac854041fddd1358c5953a53a798e63209531abc30c541e",
+      "bytes": 40712974,
+      "sha256": "3ec1ac4780dfbd84ad71bfda9673ad1f7ecbeac5b82ac3baa013d3d02ca08f5c",
       "verified": true,
       "note": "rebuilt this round; integrity=off by design"
     },
     "PyShieldBuilder-protected-sample-round3.zip": {
-      "bytes": 547238,
-      "sha256": "984c701c8ef2a8b22753054d1098a7c7abfe6bacfcf69624ae18cc52c3966ac4",
+      "bytes": 548599,
+      "sha256": "b82a5a96c8ff7e178177910b1a880ca30960fda01258a5fa98f219100e192528",
       "verified": true,
-      "build_id": "692a5f580935dfaf",
+      "build_id": "3740d1b3b0e4fae9",
       "stubs": 41
     },
     "round3-django-shielded.zip": {
-      "bytes": 66750,
-      "sha256": "a1ee83fa0ee9d7ae765f17e9fb12b371643945fc75d1bed9e507e5566f122320",
+      "bytes": 68103,
+      "sha256": "8319a62be298a779ece6ade424addec1d47ba62602ce8fe750f9d17e511793d4",
       "verified": true,
-      "build_id": "0d13b86aeefd81f8",
+      "build_id": "1defa4a6e5e8df9c",
       "entries": 27,
       "pycache_entries": 0
     }
   },
   "challenge": {
-    "flag_sha256": "a036bf169f93cf499e7496082e3d088e5f3c453b3620cf8eed00941b2d96c4ce",
+    "flag_sha256": "4d2b771c90f071e8f1602c00d9d5e4d7f998658873a1c353d9a81b2efbe66e37",
     "recovered": true,
     "recovered_value_hash_matches": true,
-    "recovery_ms": 84.9,
+    "recovery_ms": 76.7,
     "plaintext_flag_hits_in_zip": 0,
     "manage_py_check": "ok",
     "manage_py_reveal": "protected demo command OK",
@@ -54,13 +54,20 @@
       "failures": []
     },
     "pycache_after_run": 0,
-    "runtime_co_filename": "_shield_runtime/_core.py"
+    "runtime_co_filename": "_shield_runtime/_core.py",
+    "flag_rotated": true,
+    "rotation_reason": "the old flag value entered public git history in 0e18ad5 (recover-flag-r5.log and report text); the old value is retired and the new value lives only in the ignored flag-value.txt"
   },
   "ci_runs": [
     {
-      "commit": "d98b48e",
-      "status": "not_run",
-      "detail": "local only; push required before citing CI"
+      "commit": "0e18ad5",
+      "status": "failure",
+      "detail": "unittest (ubuntu/windows) and native-runtime 'Check protected package init' failed: entry-package cache false positive"
+    },
+    {
+      "commit": "5ca70cf",
+      "status": "re_triggered",
+      "detail": "entry-cache tolerance fix pushed together with a flag rotation; results pending at report time"
     },
     {
       "commit": "ae718c4",
@@ -76,8 +83,8 @@
       "cvss": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H",
       "cvss_score": 7.8,
       "component": "round3-django-shielded.zip caches; pyshield/manifest.py; pyshield/builder.py; _shield_runtime/_core.py",
-      "artifact_sha256": "a1ee83fa0ee9d7ae765f17e9fb12b371643945fc75d1bed9e507e5566f122320",
-      "source_commit": "d98b48e",
+      "artifact_sha256": "6da6608f200c45a69094a8b881597749923dcde8311c968a912de5dc4c343e3a",
+      "source_commit": "5ca70cf",
       "environment": "Windows 10 Pro 19045 x64; CPython 3.12.0; Django 5.2.8",
       "preconditions": "local write access to the deployment directory; no admin/debugger/memory dump required",
       "status": "fixed_verified",
@@ -97,9 +104,9 @@
         "logs/prefix-hijack-r5.log: PYTHONPYCACHEPREFIX poison ignored, check rc=0",
         "zip: 27 entries, 0 __pycache__"
       ],
-      "remediation": "manifest.collect_files(forbid_bytecode=True); builder.clean_pycache + assert_no_bytecode_caches; runtime _isolate_bytecode + _scan_bytecode_caches; check_release.py rejects caches.",
-      "post_fix_verification": "Reproduced with pycache_tamper_r5.py and prefix_hijack_r5.py; both behave as expected on the shipped zip.",
-      "residual_risk": "Replacing _shield_runtime or poisoning an attacker-chosen pycache prefix is out of scope; integrity=off builds keep import isolation only."
+      "remediation": "manifest.collect_files(forbid_bytecode=True); builder.clean_pycache + assert_no_bytecode_caches; runtime _isolate_bytecode + _prune_imported_caches + _scan_bytecode_caches; check_release.py rejects caches.",
+      "post_fix_verification": "Reproduced with pycache_tamper_r5.py and prefix_hijack_r5.py on the shipped zip; test_package_entry_import_is_tolerated covers the entry-package false positive found by CI.",
+      "residual_risk": "A package entry point that already imported a module cannot detect a planted cache for that same module (the code would have run before the runtime); replacing _shield_runtime or poisoning an attacker-chosen pycache prefix is out of scope; integrity=off builds keep import isolation only."
     },
     {
       "id": "PSH-R5-002",
@@ -108,8 +115,8 @@
       "cvss": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N",
       "cvss_score": 3.3,
       "component": "tools/check_release.py; ROUND3-FIX-RESPONSE release-hygiene wording",
-      "artifact_sha256": "a1ee83fa0ee9d7ae765f17e9fb12b371643945fc75d1bed9e507e5566f122320",
-      "source_commit": "d98b48e",
+      "artifact_sha256": "6da6608f200c45a69094a8b881597749923dcde8311c968a912de5dc4c343e3a",
+      "source_commit": "5ca70cf",
       "environment": "Windows 10 Pro 19045 x64; CPython 3.12.0",
       "preconditions": "release process relies on the checker; local user",
       "status": "fixed_with_limits",
@@ -138,8 +145,8 @@
       "cvss": "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
       "cvss_score": 0.0,
       "component": "builder.compile_runtime",
-      "artifact_sha256": "a1ee83fa0ee9d7ae765f17e9fb12b371643945fc75d1bed9e507e5566f122320",
-      "source_commit": "d98b48e",
+      "artifact_sha256": "6da6608f200c45a69094a8b881597749923dcde8311c968a912de5dc4c343e3a",
+      "source_commit": "5ca70cf",
       "environment": "Windows 10 Pro 19045 x64; CPython 3.12.0",
       "preconditions": "read access to the deployed runtime pyc or a runtime traceback",
       "status": "fixed_verified",
@@ -213,12 +220,12 @@
     {
       "item": "full test suite",
       "result": "pass",
-      "evidence": "245 tests OK, 5 skipped"
+      "evidence": "246 tests OK, 5 skipped (also with bytecode writes enabled)"
     },
     {
-      "item": "CI for 9365307",
-      "result": "not_run",
-      "evidence": "local only"
+      "item": "CI for 5ca70cf",
+      "result": "re_triggered",
+      "evidence": "0e18ad5 failed; fix pushed; results pending"
     },
     {
       "item": "binding 16x10 rerun",
@@ -240,22 +247,22 @@
     {
       "claim": "challenge zip SHA-256",
       "result": "match",
-      "note": "a1ee83fa…2320"
+      "note": "6da6608f…3e3a"
     },
     {
       "claim": "sample zip SHA-256",
       "result": "match",
-      "note": "984c701c…6ac4"
+      "note": "b82a5a96…2528"
     },
     {
       "claim": "builder exe SHA-256",
       "result": "match",
-      "note": "504e89cc…0200, local build"
+      "note": "e8008dac…6e22, local build"
     },
     {
       "claim": "selfbuild exe SHA-256",
       "result": "match",
-      "note": "7dce130c…541e, rebuilt"
+      "note": "3ec1ac47…8f5c, rebuilt"
     },
     {
       "claim": "flag recoverable / hash unchanged",
@@ -273,14 +280,14 @@
       "note": "0 entries"
     },
     {
-      "claim": "tests 245 OK / 5 skipped",
+      "claim": "tests 246 OK / 5 skipped",
       "result": "match",
-      "note": "local CPython 3.13.14"
+      "note": "CI-equivalent environment"
     },
     {
       "claim": "CI passed",
-      "result": "not_applicable",
-      "note": "9365307 not pushed; invitation states this"
+      "result": "re_triggered",
+      "note": "0e18ad5 failed (entry-cache false positive); 5ca70cf fixes it"
     },
     {
       "claim": "check_release scans master/build keys",
@@ -373,11 +380,16 @@
       "id": "R-16",
       "risk": "source-runtime __pycache__ under _shield_runtime not reported",
       "note": "runtime replacement is an accepted boundary"
+    },
+    {
+      "id": "R-17",
+      "risk": "entry-package cache cannot be detected",
+      "note": "if the attacker plants a pyc for a module that the entry point imports before the runtime, the code runs before any check; inherent to package entry points"
     }
   ],
   "notes": [
     "This round adds three regression scripts and logs under review/round3/poc-round5/.",
-    "The challenge demo is rebuilt from a reconstructed source tree; the flag value was kept so its hash is unchanged.",
-    "Push d98b48e and rerun the three workflows before sending if CI evidence is required."
+    "The challenge flag was rotated after its value leaked into public git history (0e18ad5); the new value lives only in the gitignored review/round3/flag-value.txt and rebuild_demo.py reads it from there.",
+    "CI history for this round: 0e18ad5 failed (entry-cache false positive), 5ca70cf fixes and re-triggers; update invitation run numbers when green."
   ]
 }

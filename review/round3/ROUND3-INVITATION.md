@@ -5,21 +5,22 @@
 ## 材料
 
 - 桌面构建器（本轮本机构建，含字节码修复）：`PyShieldBuilder-r5.exe`
-  - SHA-256：`504e89cc242714e2304e8898a639c5b885a98f5b96a0c784a6f6f8b901310200`
-  - 大小：49,305,274 B；与第四轮 CI 产物（`PyShieldBuilder.exe`，`a27a1d73…b3f9`）不是同一构建
+  - SHA-256：`e8008dacc43b7a120f5ffd27f64eccd6de2cb298eeebd59278934e2df2eb6e22`
+  - 大小：49,307,490 B；与第四轮 CI 产物（`PyShieldBuilder.exe`，`a27a1d73…b3f9`）不是同一构建
 - 自保护构建器（本轮重建）：`dist-selfbuild/PyShieldBuilder-selfbuild.exe`
-  - SHA-256：`7dce130c9857d6899ac854041fddd1358c5953a53a798e63209531abc30c541e`
-  - 大小：40,711,334 B
+  - SHA-256：`3ec1ac4780dfbd84ad71bfda9673ad1f7ecbeac5b82ac3baa013d3d02ca08f5c`
+  - 大小：40,712,974 B
 - 打包前受保护源码树：`review/round3/PyShieldBuilder-protected-sample-round3.zip`
-  - SHA-256：`984c701c8ef2a8b22753054d1098a7c7abfe6bacfcf69624ae18cc52c3966ac4`
-  - 41 个业务模块 stub，build `692a5f580935dfaf`，547,238 B
+  - SHA-256：`b82a5a96c8ff7e178177910b1a880ca30960fda01258a5fa98f219100e192528`
+  - 41 个业务模块 stub，build `3740d1b3b0e4fae9`，548,599 B
 - 受保护 Django 测试工程：`review/round3/round3-django-shielded.zip`
-  - SHA-256：`a1ee83fa0ee9d7ae765f17e9fb12b371643945fc75d1bed9e507e5566f122320`
-  - build `0d13b86aeefd81f8`，66,750 B，zip 内 `__pycache__` 条目为 0
-- Challenge flag 的 SHA-256：`a036bf169f93cf499e7496082e3d088e5f3c453b3620cf8eed00941b2d96c4ce`
+  - SHA-256：`8319a62be298a779ece6ade424addec1d47ba62602ce8fe750f9d17e511793d4`
+  - build `1defa4a6e5e8df9c`，68,103 B，zip 内 `__pycache__` 条目为 0
+- Challenge flag 的 SHA-256：`4d2b771c90f071e8f1602c00d9d5e4d7f998658873a1c353d9a81b2efbe66e37`
+  - 旧值 `a036bf16…c4ce` 因明文进入公开仓库历史已作废轮换；flag 明文不进 git
   - 与第四轮相同，flag 常量位置调整后重新构建仍可离线解出
-- 源码：`develop @ d98b48e`（PSH-R5-001/002 主提交 `9365307`，路径卫生 `d98b48e`；审查材料/文档提交另计）
-- CI：`d98b48e` 尚未触发 CI；本地全量测试 **245 tests OK (skipped=5)**。第四轮 `ae718c4` 的三个 run 仍可作为历史对照
+- 源码：`develop @ 5ca70cf`（PSH-R5-001/002 主提交 `9365307`，路径卫生 `d98b48e`，入口包缓存容错 `5ca70cf`；材料/文档提交另计）
+- CI：首次推送 `0e18ad5` 在 CI 暴露了入口包缓存误报，`5ca70cf` 修复后重新触发；请以最新 run 为准（native-runtime / build-develop / selfbuild-poc）
 - 自查报告：`ASSESSMENT-round5.md` / `assessment-round5.json`（开发方复核，不是独立审计）
 
 ## 请重点验证

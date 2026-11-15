@@ -26,3 +26,6 @@ license-data/
 # Grok UI prototype workspace (reference only, not part of the build)
 HA7HqyYHFsn4CepB-grok-workspace/.vercel/output/
 HA7HqyYHFsn4CepB-grok-workspace/.tanstack/
+
+# challenge flag values never enter git
+review/round3/flag-value.txt
