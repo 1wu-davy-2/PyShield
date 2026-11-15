@@ -1,8 +1,8 @@
-# PyShield Round 3 受保护 Django 测试工程（修复版）
+# PyShield Round 3 受保护 Django 测试工程（第四轮修复版）
 
-本目录是一个用 PyShield 0.6.0 保护的 Django 示例工程，运行时为 sourceless `.pyc`，没有提供源码、构建密钥或明文 flag。
+本目录是一个用 PyShield 0.6.0 保护的 Django 示例工程，运行时为 sourceless `.pyc`，没有提供源码、构建密钥或明文 flag。build id：`1cc98e4796b92436`。
 
-本轮修复版将 `FLAG` 赋值放在无条件 `raise` 之前，确保该常量实际进入加密代码对象；本次重建已解密 `demo.hidden_flag` 并确认 `co_consts` 中存在该值。
+本包由第四轮修复源码重建；`FLAG` 赋值位于无条件 `raise` 之前，确保该常量实际进入加密代码对象。本次重建已解密 `demo.hidden_flag` 并确认 `co_consts` 中存在该值。绑定并发和 legacy 一次性迁移修复不影响本挑战的目标。
 
 ## 目标
 

@@ -1,0 +1,291 @@
+{
+  "report": "PyShield Round 3 fixed-materials independent re-review",
+  "date": "2026-11-15",
+  "target_commit": "8adeccf",
+  "materials_commit": "832be66",
+  "environment": {
+    "os": "Windows 10 Pro 10.0.19045 x64",
+    "python": "CPython 3.12.0",
+    "django": "5.2.8",
+    "pyinstaller": "6.22.3",
+    "method": [
+      "source review",
+      "offline release-tree decryption",
+      "PyInstaller CArchive/PYZ extraction",
+      "16-process concurrency tests",
+      "legacy-state and binding behavior tests",
+      "self-build static audit",
+      "unit tests",
+      "CI page snapshot review"
+    ]
+  },
+  "artifacts": {
+    "PyShieldBuilder.exe": {
+      "bytes": 21541926,
+      "sha256": "e3f85e630daa0fecf04d90b54c0ac80d50dc8140c3856ce4d25a732e66c416c1",
+      "verified": true
+    },
+    "PyShieldBuilder-selfbuild.exe": {
+      "bytes": 40562131,
+      "sha256": "4351f7d0a4c9cf9e64d3f662d3f495b3f714101892f4a1c4e70bf5f11a7d8f04",
+      "verified": true
+    },
+    "PyShieldBuilder-protected-sample-round3.zip": {
+      "bytes": 430520,
+      "sha256": "ddb14d1b8403f4e0cb51afe7f5a02efc4ee8ad0a25a619ce67ccf6ad1c364320",
+      "verified": true
+    },
+    "round3-django-shielded.zip": {
+      "bytes": 70742,
+      "sha256": "03fd153b94028f6c0180dcb53584866da3a414fbaa3e96ebaadb5ea19117a2fa",
+      "verified": true
+    }
+  },
+  "challenge": {
+    "build_id": "719368cb21d3fce0",
+    "modules": 13,
+    "runtime": "pyc",
+    "cipher": "chacha",
+    "integrity": "protected",
+    "license_format": 3,
+    "build_key_in_license": false,
+    "flag": "PSH-ROUND3-e3b2caa377c88630",
+    "flag_sha256": "a036bf169f93cf499e7496082e3d088e5f3c453b3620cf8eed00941b2d96c4ce",
+    "flag_hash_matches": true,
+    "raw_zip_flag_hits": 0,
+    "recovery": "offline _keyring.pyc -> master_key() -> HKDF -> decrypt demo.hidden_flag",
+    "timing_ms": {
+      "key_min": 0.363,
+      "key_median": 0.395,
+      "key_cold_max": 2.345,
+      "derive_warm": 0.023,
+      "decrypt_all_warm": 5.474,
+      "decrypt_all_cold": 38.181,
+      "total_warm": 5.859,
+      "total_cold_first_run": 90.447,
+      "total_cold_recover_script": 107.143
+    }
+  },
+  "findings": [
+    {
+      "id": "PSH-R4-001",
+      "title": "First-run binding writes still use a fixed .tmp and can fail under concurrent startup",
+      "severity": "low",
+      "cvss": "CVSS:3.1/AV:L/AC:H/PR:L/UI:N/S:U/C:N/I:N/A:L",
+      "cvss_score": 2.5,
+      "component": "_shield_runtime._core._write_binding_record / _check_first_run_binding",
+      "artifact_sha256": "03fd153b94028f6c0180dcb53584866da3a414fbaa3e96ebaadb5ea19117a2fa",
+      "source_commit": "8adeccf",
+      "environment": "Windows 10 Pro 19045 x64; CPython 3.12.0",
+      "preconditions": "license bind_mode=first-run; 8-16 simultaneous processes sharing the binding path; local user",
+      "status": "new",
+      "summary": "_write_binding_record uses binding.json.tmp / binding.json.anchor.tmp with no unique temp, no retry and no cross-process lock; 4 of 80 direct 16-process first-run attempts failed with WinError 32 / Permission denied. Full manage.py startup 16x5 did not reproduce, but the race window is real.",
+      "root_cause": "pyshield/runtime_template/_shield_runtime/_core.py:529-547 writes a deterministic path.name + '.tmp' then os.replace; _check_first_run_binding at :623-661 writes primary and anchor independently without _state_lock. pyshield/secure_store.py:179-212 already has the hardened mkstemp + retry logic but binding writes do not use it.",
+      "repro_steps": [
+        "Extract PyShieldBuilder-protected-sample-round3.zip and derive the build key from _keyring.",
+        "Clear run/binding and set PYSHELD_BINDING_FILE to a fresh binding.json.",
+        "Start 16 binding_worker.py processes that each call _check_first_run_binding(build_key) once.",
+        "Observe intermittent LicenseError with WinError 32 or Permission denied on binding.json or binding.json.anchor."
+      ],
+      "poc": "review/round3/poc-fixed/binding_concurrency.py <sample-tree> <build-key-hex> 16 5",
+      "impact": "Losing workers exit with LicenseError; retry recovers. A rare primary/anchor bound_at mismatch would leave 'bindings disagree' until both records are deleted. No plaintext recovery, machine-binding bypass or license forgery.",
+      "evidence": [
+        "logs/binding-concurrency-sample.log: 4/80 failures across 5 rounds of 16 (1, 0, 0, 1, 2)",
+        "logs/firstrun-concurrency.log: full manage.py startup 16x5, 0/80 failures",
+        "logs/binding-concurrency-sample.log: no .tmp leftovers; success-path records consistent"
+      ],
+      "remediation": "Use secure_store.write_private (unique temp + retry) for binding records; hold _state_lock or a binding-specific lock across the whole read-modify-write; write both copies with one bound_at; add a 16-process x 10-round regression test.",
+      "post_fix_verification": "binding_concurrency.py with 16 workers x 10 rounds must report TOTAL_FAILURES 0 and no tmp leftovers; firstrun_concurrency.py must also remain 0.",
+      "residual_risk": "Anyone who can delete both binding records can still reset first-run binding; this is a known offline boundary."
+    },
+    {
+      "id": "PSH-R4-002",
+      "title": "Legacy public-MAC migration is not one-time and can reset state mid-process while opt-in env is set",
+      "severity": "low",
+      "cvss": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:N/I:L/A:N",
+      "cvss_score": 3.3,
+      "component": "_shield_runtime._core._read_clock_file / _allow_legacy_state",
+      "artifact_sha256": "03fd153b94028f6c0180dcb53584866da3a414fbaa3e96ebaadb5ea19117a2fa",
+      "source_commit": "8adeccf",
+      "environment": "Windows 10 Pro 19045 x64; CPython 3.12.0",
+      "preconditions": "PYSHELD_ALLOW_LEGACY_STATE=1 is set by the deployment; attacker can write the state files; license expiry bypass additionally requires a system clock rollback (usually admin/root)",
+      "status": "partial",
+      "summary": "Default rejection of legacy public-MAC state is effective. However, the runtime accepts repeated legacy injections for as long as the env is set (no one-time marker); it also lets a writer bypass the in-process 'state disappeared' check by writing a legacy state.",
+      "root_cause": "_core.py:382-415 falls back to open_state(..., secret=None) whenever PYSHELD_ALLOW_LEGACY_STATE is truthy; _allow_legacy_state at :307-310 has no migration marker. _read_clock_locked at :470-500 re-seals keyed but never records that migration was done. Legacy MAC is a public SHA-256 (secure_store.state_key with secret=None), so no build key is needed to forge it.",
+      "repro_steps": [
+        "Set PYSHELD_STATE_DIR to a fresh directory and write legacy-format clock state to both clock paths.",
+        "Call _check_clock(build_key) without the env: expect LicenseError.",
+        "Set PYSHELD_ALLOW_LEGACY_STATE=1 and call again: migration succeeds; both files become keyed.",
+        "Write legacy state again with the env still set and call again: it is accepted again (no one-time enforcement).",
+        "Start a process with _clock_started=True, delete both states (expect 'state disappeared'), write legacy state and set env; the next call succeeds and resets state."
+      ],
+      "poc": "review/round3/poc-fixed/legacy_state_tests.py <sample-tree> <build-key-hex>",
+      "impact": "With the env permanently enabled, a local state writer can repeatedly reset/rollback the clock state without the build key; combined with system clock rollback it can undermine expiry/rollback checks. The capability is close to the already accepted delete-both reset and does not directly recover plaintext or forge license signatures.",
+      "evidence": [
+        "logs/legacy-state-tests.log: default_reject_legacy rejected; opt_in_migrate succeeded; opt_in_repeat succeeded again; future_keyed_30/future_legacy_30 rejected; future_keyed_1 accepted",
+        "mid-process test: after deleting both states -> 'clock state disappeared'; after writing legacy + env=1 -> accepted again"
+      ],
+      "remediation": "Implement a real one-time migration marker or a one-shot CLI; reject legacy forever after the first successful migration; do not accept legacy while _clock_started is true; restrict last_seen to the accepted skew/range; add a regression test that a second legacy injection with env=1 fails.",
+      "post_fix_verification": "legacy_state_tests.py must show the first opt-in migration succeeds and every later legacy injection fails even with env=1; mid-process deletion plus legacy injection must remain LicenseError.",
+      "residual_risk": "The delete-both reset boundary cannot be eliminated in a fully offline client; keeping the opt-in env set reopens a public-MAC write path."
+    },
+    {
+      "id": "PSH-R4-003",
+      "title": "Onefile rejection message recommends PYSHELD_BINDING_FILE even though the override cannot change the decision",
+      "severity": "informational",
+      "cvss": "N/A",
+      "cvss_score": null,
+      "component": "_core._check_first_run_binding error message / _binding_paths_are_volatile",
+      "artifact_sha256": "03fd153b94028f6c0180dcb53584866da3a414fbaa3e96ebaadb5ea19117a2fa",
+      "source_commit": "8adeccf",
+      "environment": "Windows 10 Pro 19045 x64; CPython 3.12.0",
+      "preconditions": "onefile first-run license; operator follows the error message",
+      "status": "new",
+      "summary": "The onefile guard is effective, but its error text suggests setting PYSHELD_BINDING_FILE to a persistent path. In a onefile process, _binding_paths_are_volatile returns True before looking at the override, so the suggestion cannot work.",
+      "root_cause": "_core.py:604-621 early-returns True when sys._MEIPASS is non-onedir, before consulting PYSHELD_BINDING_FILE; the message at :623-630 still lists PYSHELD_BINDING_FILE as an option.",
+      "repro_steps": [
+        "Set sys._MEIPASS to a fake non-onedir directory.",
+        "Set PYSHELD_BINDING_FILE to a persistent path.",
+        "Call _binding_paths_are_volatile() -> True; _check_first_run_binding() -> LicenseError with the PYSHELD_BINDING_FILE suggestion.",
+        "Set sys._MEIPASS to sys.executable.parent (onedir) and repeat: the override is accepted."
+      ],
+      "poc": "review/round3/poc-fixed/binding_guard_tests.py <sample-tree> <build-key-hex>",
+      "impact": "No security bypass; the onefile app still fails closed. Operators may waste time setting an env that cannot help.",
+      "evidence": [
+        "logs/binding-guard-tests.log: onefile_custom_mei_override_normal -> volatile=true, binding=LicenseError",
+        "logs/binding-guard-tests.log: onedir_meipass_override_normal -> volatile=false, binding=ok"
+      ],
+      "remediation": "Change the message to state that PYSHELD_BINDING_FILE cannot make a onefile binding persistent; recommend a fixed fingerprint or onedir. If onefile persistence is desired, implement and review a separate policy.",
+      "post_fix_verification": "binding_guard_tests.py should show an accurate onefile error message and unchanged onedir acceptance.",
+      "residual_risk": "First-run binding cannot be persistent inside a PyInstaller onefile extraction directory."
+    },
+    {
+      "id": "PSH-R4-004",
+      "title": "Build-machine TEMP still contains many staging/CI copies; no sensitive values found",
+      "severity": "informational",
+      "cvss": "N/A",
+      "cvss_score": null,
+      "component": "build-machine release hygiene",
+      "artifact_sha256": "",
+      "source_commit": "8adeccf",
+      "environment": "Windows 10 Pro 19045 x64",
+      "preconditions": "local user can read %TEMP%",
+      "status": "observation",
+      "summary": "The high-sensitivity leftovers from round 3 (challenge source, diagnostic build secrets) are gone. 64 pyshield*/psh* TEMP entries remain, including old sample staging directories, CI HTML pages, a copy of the main exe and smoke directories; no new flag, challenge master/build key or real shield-secret file was found.",
+      "root_cause": "Ad-hoc mkdtemp/fixed-name build and test directories plus downloaded CI pages are not cleaned up; this is not a product vulnerability.",
+      "repro_steps": [
+        "Run python review/round3/poc-fixed/temp_hygiene.py.",
+        "Inspect matching_entries=64, sensitive_hits=[], real_secret_files=[].",
+        "Only two 2-byte old.shield-secret.json test fixtures remain outside the pyshield* subtrees."
+      ],
+      "poc": "review/round3/poc-fixed/temp_hygiene.py",
+      "impact": "No sensitive data exposure was observed; old build/sample directories could still contain per-build keyrings if the machine is shared.",
+      "evidence": [
+        "logs/temp-hygiene.log: matching_entries=64, sensitive_hits=[], real_secret_files=[]",
+        "logs/temp-hygiene.log: only 2-byte old.shield-secret.json fixtures"
+      ],
+      "remediation": "Use TemporaryDirectory/finally cleanup; keep CI downloads in a dedicated workspace; add a release scan for flag, master/build key and *.shield-secret.json.",
+      "post_fix_verification": "Rerun temp_hygiene.py and confirm no matching sensitive hits and no real secret files.",
+      "residual_risk": "Same-machine users can always read TEMP; run sensitive builds under a dedicated account or machine."
+    }
+  ],
+  "fix_verification": [
+    {
+      "id": "PSH-R3-001",
+      "title": "Challenge flag absent from final zip",
+      "status": "effective",
+      "evidence": "Flag PSH-ROUND3-e3b2caa377c88630 recovered offline; co_consts contains it; SHA-256 matches flag-sha256.txt; raw zip scan 0 hits; logs/recover-flag.log, logs/artifact-scan.log"
+    },
+    {
+      "id": "PSH-R3-002",
+      "title": "Clock state concurrent write failure",
+      "status": "effective",
+      "evidence": "16x5 clock tests 0/80; startup/reload/TTL 16x3 each 0/144; one read-only copy tolerated; both read-only fail-closed; logs/clock-concurrency-*.log, logs/startup-concurrency-challenge.log, logs/clock-failure-tests.log. Binding has a separate race: PSH-R4-001."
+    },
+    {
+      "id": "PSH-R3-003",
+      "title": "Legacy public-MAC migration downgrade",
+      "status": "partial",
+      "evidence": "Default reject works; opt-in migration works; future >7 days rejected; opt-in is not one-time and can reset state mid-process: PSH-R4-002; logs/legacy-state-tests.log"
+    },
+    {
+      "id": "PSH-R3-004",
+      "title": "Onefile first-run binding bypass",
+      "status": "effective",
+      "evidence": "Onefile/custom _MEIPASS/override _MEI rejected; PYSHELD_BINDING_FILE cannot disable the check; onedir accepted; env relocation remains a known reset. Message issue: PSH-R4-003; logs/binding-guard-tests.log"
+    },
+    {
+      "id": "PSH-R3-005",
+      "title": "Build-machine temp flag/secrets",
+      "status": "effective",
+      "evidence": "No new flag, challenge master/build key or real shield-secret in TEMP; non-sensitive staging/CI copies remain: PSH-R4-004; logs/temp-hygiene.log"
+    },
+    {
+      "id": "PSH-R3-006",
+      "title": "Native keyring oracle / no local native artifact",
+      "status": "partial",
+      "evidence": "Native source still exports master_key(); diagnose_native_runtime.py asserts master_key() == master; check_native_build.py only scans full master. No local native artifact; CI page snapshots show success but were not independently downloaded."
+    },
+    {
+      "id": "PSH-R3-007",
+      "title": "Self-build residual properties",
+      "status": "residual",
+      "evidence": "Sample: 28 stubs, integrity=off, runtime source, bundle 8 plaintext templates without _keyring, no flag. Selfbuild exe: no .py/runtime datas, PYZ keyring/master/build key recoverable, builder/gui decryptable; logs/sample-audit.log, logs/exe-selfbuild.log"
+    },
+    {
+      "id": "FORMAT-3",
+      "title": "License format 3 runtime downgrade",
+      "status": "effective",
+      "evidence": "Challenge license format 3, no build_key; v1 salt rejected with CryptoError; runtime has no v3-to-v2 fallback"
+    },
+    {
+      "id": "KEYRING",
+      "title": "Masked keyring extraction cost",
+      "status": "residual",
+      "evidence": "1,679-byte _keyring.pyc; master_key() 0.363-2.345 ms; 13 modules 5.474 ms warm / 38.181 ms cold; total 5.859 ms warm / 90-107 ms cold; no license check; selfbuild exe PYZ same"
+    },
+    {
+      "id": "SINGLE-INSTANCE",
+      "title": "Main/self-build single-instance behavior",
+      "status": "effective",
+      "evidence": "First process running; second exits 0; one application process tree; PYSHELD_ALLOW_MULTI_INSTANCE=1 is an explicit test bypass; poc-fixed/single-instance.log"
+    },
+    {
+      "id": "TTL",
+      "title": "300-second license revalidation",
+      "status": "effective",
+      "evidence": "Double-checked lock, 16-process reload/TTL tests 0/144; _integrity remains a one-time scan and is documented as such"
+    },
+    {
+      "id": "TESTS",
+      "title": "Unit tests",
+      "status": "effective",
+      "evidence": "178 tests OK (skipped=1); skip is the native toolchain test; logs/tests.log"
+    }
+  ],
+  "residual_risks": [
+    {"id": "R-01", "risk": "Master key recoverable via _keyring.master_key(); challenge keyring 1679 bytes, key 0.4-2.3 ms, all modules 5.5-5.9 ms warm; selfbuild exe PYZ same", "type": "accepted"},
+    {"id": "R-02", "risk": "Runtime memory contains plaintext code objects; _wipe is best effort", "type": "accepted"},
+    {"id": "R-03", "risk": "Deleting both clock/binding records resets local history; PYSHELD_BINDING_FILE relocation is equivalent", "type": "accepted"},
+    {"id": "R-04", "risk": "After master/build key extraction, clock and binding MACs can be forged", "type": "accepted"},
+    {"id": "R-05", "risk": "Legacy opt-in can be replayed while PYSHELD_ALLOW_LEGACY_STATE=1 remains set", "type": "partial"},
+    {"id": "R-06", "risk": "One unreadable/corrupt state copy fails closed and can block startup (availability tradeoff)", "type": "accepted"},
+    {"id": "R-07", "risk": "POSIX flock has no timeout; a hung lock holder can stall startup", "type": "accepted"},
+    {"id": "R-08", "risk": "DPAPI failure degrades to PLAIN1 with an HMAC", "type": "accepted"},
+    {"id": "R-09", "risk": "Self-build integrity=off, bundle only compressed, intermediate tree plaintext; PYZ keyring/master/business recoverable", "type": "accepted"},
+    {"id": "R-10", "risk": "Native keyring oracle; strip/PDB/CodeView best effort; no Authenticode/TPM/server", "type": "accepted"},
+    {"id": "R-11", "risk": "300-second revalidation does not re-scan the integrity manifest", "type": "documented"},
+    {"id": "R-12", "risk": "Build-machine TEMP retains non-sensitive staging/CI copies", "type": "hygiene"},
+    {"id": "R-13", "risk": "Local mutex squatting or PYSHELD_ALLOW_MULTI_INSTANCE=1 can defeat the single-instance UX; no cross-user privilege", "type": "accepted"},
+    {"id": "R-14", "risk": "last_seen=today+1 is accepted by the one-day skew and freezes the clock for a day", "type": "design"},
+    {"id": "R-15", "risk": "A source deployment in %TEMP% without _MEIPASS is not detected as volatile", "type": "residual"},
+    {"id": "R-16", "risk": "Per-user state allows a new OS user to reset history; machine-level anchor or server time is recommended", "type": "accepted"},
+    {"id": "R-17", "risk": "No Authenticode/TPM/server-side unlock", "type": "accepted"}
+  ],
+  "notes": [
+    "All four delivered artifact SHA-256 values match the supplied SHA256SUMS.txt.",
+    "The challenge is now solvable offline; no license, signature or integrity check is needed for the decrypt PoC.",
+    "CI page snapshots from the local TEMP for runs 43676490706/729/789 show success; GitHub Actions artifacts were not downloaded (gh is not installed).",
+    "The samples are authorized review artifacts and must not be redistributed."
+  ]
+}

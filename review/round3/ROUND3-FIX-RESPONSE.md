@@ -1,9 +1,18 @@
 # Round 3 修复说明与自评
 
-- 源码：`develop @ 8adeccf`
+- 源码：`develop`（第四轮修复未提交版本）
 - 日期：2026-11-15
 - 性质：**开发方自评，不是独立审计报告**。独立结论以审查方按 `VULNERABILITY-REPORT-FORMAT.md` 提交的报告为准。
-- 测试：`python -m unittest discover -s tests` → **178 tests OK (skipped=1)**；原生 runtime 测试因当前机器缺少 C 编译器和 strip 工具被跳过。
+- 测试：`python -m unittest discover -s tests` → **180 tests OK (skipped=1)**；原生 runtime 测试因当前机器缺少 C 编译器和 strip 工具被跳过。
+
+## 0.1 第四轮复核问题修复（2026-11-15）
+
+| 第四轮问题 | 处理 | 证据/限制 |
+| --- | --- | --- |
+| PSH-R4-001 首次运行绑定固定 `.tmp` 并发失败 | `_write_binding_record` 改用 `secure_store.write_private`（唯一临时文件 + 共享冲突重试）；`_check_first_run_binding` 在整个 primary/anchor read-modify-write 外层持有 `_state_lock`；单份写失败容忍并在下次启动恢复；新增 16 进程 × 10 轮回归 | `_core.py::_write_binding_record/_write_binding_records/_check_first_run_binding`；`test_concurrent_first_run_binding_does_not_fail`；`test_first_run_binding` 增加锚点反向恢复 |
+| PSH-R4-002 legacy 迁移不是一次性、运行中可重置 | 迁移成功或已有 keyed 状态时写入一次性 `.legacy-migrated` marker（主/锚点各一份）；之后即使 `PYSHELD_ALLOW_LEGACY_STATE=1` 仍存在也拒绝旧格式；进程运行中（`_clock_started`）拒绝 legacy 注入；legacy `last_seen` 晚于今天直接拒绝 | `_core.py::_legacy_migration_done/_write_legacy_migration_marker/_legacy_state_policy`；`test_legacy_clock_state_requires_explicit_opt_in`、`test_legacy_state_cannot_reset_running_process` |
+| PSH-R4-003 onefile 错误文案建议无效的 `PYSHELD_BINDING_FILE` | 文案改为“onefile 下 `PYSHELD_BINDING_FILE` 不能使解压目录持久化；请用固定指纹或 onedir”，不再建议在 onefile 中设置该变量 | `_core.py::_check_first_run_binding`；`test_binding_override_does_not_disable_onefile_guard` 断言文案 |
+| PSH-R4-004 构建机 TEMP 残留旧 staging/CI 副本 | 已清理本机 `%TEMP%` 中 `pyshield*`/`psh*` 旧目录、CI HTML 和 exe 副本；新增 `tools/check_release.py`，扫描发布树中的 flag、master/build key、私钥标记和包内 `*.shield-secret.json`，并支持 `--temp`；CI 的 Windows 构建、原生 runtime、自保护构建和受保护示例均增加发布卫生扫描 | `tools/check_release.py`；`build-develop.yml`；`python tools/check_release.py --temp` 输出 0 个匹配项 |
 
 ## 0. 第三轮报告修复（2026-11-15）
 
@@ -27,7 +36,7 @@
 | 300 秒重验不覆盖完整性清单 | 不改缓存策略，明确写入文档：清单只在进程首次加载时扫描一次 | `README.md`、`docs/security-hardening.md`、`docs/runbook.md`、`docs/implementation.md` |
 | 每用户状态 → 新 OS 用户可重置时钟 | 默认仍按用户隔离；文档明确多用户场景应把 `PYSHELD_STATE_ANCHOR_DIR` 指向机器级 ACL 目录，或改用服务端时间 | 未做机器级目录自动迁移，避免无权限/ACL 复杂度和破坏现有部署 |
 | 自保护 `integrity=off`、bundle 仅压缩 | 文档明确：自保护 exe 不做清单校验；`_runtime_bundle.py` 是 base64+zlib+zip，解包成本约一次解压 | `docs/selfbuild-poc.md`、`docs/security-hardening.md` |
-| onefile + first-run 绑定写入 `_MEIPASS` | runtime 将非 onedir `_MEIPASS` 一律视为临时；即使设置 `PYSHELD_BINDING_FILE` 也不能关闭检查；提示改用固定指纹、onedir 或持久路径 | `_core.py::_binding_paths_are_volatile`；`test_binding_override_does_not_disable_onefile_guard` |
+| onefile + first-run 绑定写入 `_MEIPASS` | runtime 将非 onedir `_MEIPASS` 一律视为临时；即使设置 `PYSHELD_BINDING_FILE` 也不能关闭检查，也不能让解压目录持久化；提示改用固定指纹或 onedir | `_core.py::_binding_paths_are_volatile`；`test_binding_override_does_not_disable_onefile_guard` |
 | DPAPI 失败静默降级 PLAIN | 文档明确写出降级行为；状态仍带 HMAC | 未改为强制失败，避免服务账户/无 DPAPI 环境直接不可用 |
 | `_wipe` 只清 bytearray，bytes 未清 | 保留 best-effort 表述；文档列入残余风险 | 未声称内存加密 |
 | 最终 exe 未随材料提供 | 本轮提供重新构建的 `PyShieldBuilder.exe` 与自保护 exe，并给出 SHA-256 | 见 `review/round3/README.md` |
@@ -48,19 +57,22 @@
 
 ## 3. 验证记录
 
-- 全量单元测试：178 通过，1 跳过（原生工具链缺失）。
+- 全量单元测试：180 通过，1 跳过（原生工具链缺失）。
 - 冻结 exe 的隐藏 setup 子进程：已验证可导入 Cython、执行 `cythonize` 并正常退出（windowed bootloader 下需重定向 stdout/stderr）。
 - 主 exe 冒烟：启动后存活 8 秒；自保护 exe 同样存活 8 秒。
-- 受保护 Django 示例：`manage.py check` 通过，`manage.py reveal` 输出 `protected demo command OK`；`demo.hidden_flag` 直接导入按设计抛出 `RuntimeError`；解密后 `co_consts` 中存在 `FLAG`，发布物中未发现明文 flag；flag 哈希见 `SHA256SUMS.txt`。
-- 受保护源码样本：28 个业务模块全部为 stub；无构建 secret、无 `.pyc`、无 `runtime_template`；`_core.py` 不含 `MASTER_KEY_B85`；`_keyring.py` 存在。
+- 受保护 Django 示例（第四轮重建，build `1cc98e4796b92436`）：`manage.py check` 通过，`manage.py reveal` 输出 `protected demo command OK`；`_shield_runtime verify --json` 21 个文件通过；`demo.hidden_flag` 直接导入按设计抛出 `RuntimeError`；离线解密后 `co_consts` 中存在 `FLAG`，发布 zip 中未发现明文 flag；flag 哈希见 `SHA256SUMS.txt`。
+- 受保护源码样本（第四轮重建，build `0617618bfb042369`）：28 个业务模块全部为 stub；无构建 secret、无 `.pyc`、无 `runtime_template`；`_core.py` 不含 `MASTER_KEY_B85`；`_keyring.py` 存在；`verify_sample.py` 通过。
 - 并发时钟：8 进程 × 2 轮测试全部成功，两份状态最终一致，无 `.tmp` 残留。
+- 并发首次绑定：16 进程 × 10 轮全部成功，primary/anchor `bound_at` 一致，无 `.tmp` 残留；删除单份记录（主或锚点）均能从另一份恢复。
+- legacy 一次性迁移：首次 opt-in 迁移成功并生成 marker；同一 env 下再次注入旧格式被拒绝；进程运行中删除状态后注入 legacy 也被拒绝。
+- 发布卫生：`python tools/check_release.py --temp` 检查 0 个遗留 `pyshield*`/`psh*` 项；`python tools/check_release.py review/round3/PyShieldBuilder-protected-sample-round3.zip` 无敏感命中。
 - 单实例启动：主 exe 与自保护 exe 同时启动时，第二个进程退出并尝试转发深链；任务管理器只保留一个应用实例（PyInstaller onefile 的 bootloader/子进程除外）。`PYSHELD_ALLOW_MULTI_INSTANCE=1` 仅为自动化并行测试入口。
 - 原生 runtime 端到端构建：已由 GitHub Actions `native-runtime` 矩阵在 Windows 和 Ubuntu 上通过（提交 `8adeccf`，run `43675650384`；上一轮 `9bd4b9f` run `43666681749`）：
   - Windows 使用 Cython + MSVC + LLVM strip，验证 `.pyd` 导入、无 `.py` runtime、无 PDB 侧车、无完整主密钥；
   - Ubuntu 使用 Cython + gcc + binutils strip，验证 `.so` 导入、无 `.py` runtime、无完整主密钥；
   - 两个平台都运行了受保护 `manage.py check` 和 `_shield_runtime verify --json`，并上传原生产物。
   - 本机仍无 C 编译器/strip，因此本地不能重复该端到端构建；以 CI 结果作为本轮证据。
-- 桌面构建器 CI：`build-develop` run `43675650496` 通过；Windows 单文件 exe 从 `ci-develop-latest` 下载并替换本地文件，SHA-256 见 `SHA256SUMS.txt`。自保护 exe 由 `selfbuild-poc` run `43675650448` 通过，本地使用同提交构建产物。
+- 桌面构建器 CI（第三轮 `8adeccf`）：`build-develop` run `43675650496` 通过；自保护 exe 由 `selfbuild-poc` run `43675650448` 通过。第四轮修复当前尚未提交/推送，本地 `PyShieldBuilder.exe`、`PyShieldBuilder-selfbuild.exe`、两个 zip 均由第四轮源码本机构建，哈希见 `SHA256SUMS.txt`；CI 需在提交后重新运行，正式对外材料应以 CI artifact 为准。
 
 ## 4. 仍需审查方重点挑战的点
 
@@ -74,9 +86,9 @@
 ## 5. 明确的残余风险
 
 - 离线客户端无法阻止有能力的攻击者最终拿到明文和主密钥；
-- 同时删除两份状态仍可重置本地历史；
+- 同时删除两份状态和（如使用过）legacy 迁移 marker 仍可重置本地历史；
 - 状态 MAC 和绑定 MAC 在 master 被提取后都可伪造；
-- 旧状态迁移开关若长期保留，会重新打开公开-MAC 伪造路径；
+- 无 `_MEIPASS` 时未检测 dist 是否位于 `%TEMP%`；临时目录被清理会丢失 first-run 绑定，生产应使用持久路径；
 - 状态目录不可写时锁文件无法创建，退化为无锁读写（仍使用唯一临时文件和重试）；
 - 5 分钟重验不覆盖完整性清单；
 - 自保护 exe 不做清单校验，bundle 只是压缩；
