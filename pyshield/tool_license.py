@@ -17,8 +17,10 @@ from pathlib import Path
 from . import crypto, ed25519, fingerprint, secure_store
 
 TOOL_LICENSE_FORMAT = "pyshield-tool-license/1"
-TRIAL_STATE_FORMAT = "pyshield-trial/1"
-QUOTA_STATE_FORMAT = "pyshield-quota/1"
+TRIAL_STATE_FORMAT = "pyshield-trial/2"
+TRIAL_STATE_FORMAT_V1 = "pyshield-trial/1"
+QUOTA_STATE_FORMAT = "pyshield-quota/2"
+QUOTA_STATE_FORMAT_V1 = "pyshield-quota/1"
 REVOCATION_FORMAT = "pyshield-revocations/1"
 
 TOOL_SIGNATURE_PREFIX = b"pyshield-tool-license-v1:"
@@ -198,6 +200,139 @@ class ToolLicenseStatus:
             "checked": self.checked,
             "code": self.code,
         }
+
+
+@dataclass
+class BuildReservation:
+    token: str
+    mode: str
+    charged: bool
+    duplicate: bool = False
+    replayed: bool = False
+    before_used: int = 0
+    after_used: int = 0
+    limit: int = 0
+    license_id: str | None = None
+    month: str | None = None
+    machine: str = ""
+    paid_by_credit: bool = False
+
+
+@dataclass
+class RefundResult:
+    applied: bool
+    already_applied: bool = False
+    skipped_period_changed: bool = False
+    before_used: int = 0
+    after_used: int = 0
+    limit: int = 0
+    message: str = ""
+
+
+@dataclass
+class BuildSettlement:
+    token: str
+    state: str
+    refund: RefundResult | None = None
+
+
+_INTERNAL_TRIAL_KEYS = {
+    "pending", "refunded", "completed", "idempotency", "idempotency_fingerprints",
+}
+_INTERNAL_QUOTA_KEYS = {
+    "pending", "refunded", "completed", "idempotency",
+    "idempotency_fingerprints", "credits",
+}
+
+
+def _empty_ledger() -> dict:
+    return {
+        "pending": {}, "refunded": {}, "completed": {},
+        "idempotency": {}, "idempotency_fingerprints": {},
+    }
+
+
+def _upgrade_trial(payload: dict) -> dict:
+    data = dict(payload)
+    if data.get("format") == TRIAL_STATE_FORMAT_V1:
+        data["format"] = TRIAL_STATE_FORMAT
+    for key, value in _empty_ledger().items():
+        data.setdefault(key, value)
+    return data
+
+
+def _upgrade_quota(payload: dict) -> dict:
+    data = dict(payload)
+    if data.get("format") == QUOTA_STATE_FORMAT_V1:
+        data["format"] = QUOTA_STATE_FORMAT
+    for key, value in _empty_ledger().items():
+        data.setdefault(key, value)
+    data.setdefault("credits", 0)
+    return data
+
+
+def _public_trial(payload: dict | None, days_left: int | None = None,
+                  builds_left: int | None = None, not_started: bool = False) -> dict:
+    data = dict(payload or {})
+    public = {
+        key: data.get(key)
+        for key in ("started", "builds", "days", "max_builds", "last_build")
+        if key in data
+    }
+    if days_left is not None:
+        public["days_left"] = days_left
+    if builds_left is not None:
+        public["builds_left"] = builds_left
+    if not_started:
+        public["not_started"] = True
+    return public
+
+
+def _public_quota(payload: dict | None, limit: int | None = None) -> dict | None:
+    if not payload:
+        return None
+    public = {
+        key: payload.get(key)
+        for key in ("license_id", "month", "used", "updated")
+        if key in payload
+    }
+    if limit is not None:
+        public["limit"] = limit
+    return public
+
+
+def ledger_lock_path() -> Path:
+    return state_dir() / "ledger.lock"
+
+
+def _append_ledger(event: dict) -> None:
+    path = state_dir() / "build-ledger.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(event, sort_keys=True, ensure_ascii=False) + "\n"
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(line)
+        handle.flush()
+        os.fsync(handle.fileno())
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
+def _prune(mapping: dict, keep: int = 1000) -> None:
+    if len(mapping) <= keep:
+        return
+    ordered = sorted(
+        mapping.items(),
+        key=lambda item: str((item[1] or {}).get("at") or ""),
+    )
+    for key, _ in ordered[: len(mapping) - keep]:
+        mapping.pop(key, None)
+
+
+def _prune_idempotency(mapping: dict, keep: int = 1000) -> None:
+    for key in list(mapping)[: max(0, len(mapping) - keep)]:
+        mapping.pop(key, None)
 
 
 def state_dir() -> Path:
@@ -462,36 +597,41 @@ def _trial_limits() -> tuple[int, int]:
     return max(1, min(days, 365)), max(1, min(builds, 10000))
 
 
-def _trial_state(machine: str, today: date) -> dict:
+def _trial_state(machine: str, today: date, initialize: bool = True) -> dict:
     path = trial_path()
     data = secure_store.read_private(path)
     if data is None:
         days, builds = _trial_limits()
         payload = {
             "format": TRIAL_STATE_FORMAT,
-            "started": today.isoformat(),
+            "started": today.isoformat() if initialize else None,
             "builds": 0,
             "days": days,
             "max_builds": builds,
             "machine": machine,
             "last_build": None,
+            **_empty_ledger(),
         }
-        secure_store.write_private(path, secure_store.seal_state(payload, machine, "trial"))
+        if initialize:
+            secure_store.write_private(path, secure_store.seal_state(payload, machine, "trial"))
         return payload
     try:
         payload = secure_store.open_state(data, machine, "trial")
     except secure_store.SecureStoreError as exc:
         raise ToolLicenseError("trial state is damaged or was modified") from exc
-    if payload.get("format") != TRIAL_STATE_FORMAT:
+    if payload.get("format") not in {TRIAL_STATE_FORMAT, TRIAL_STATE_FORMAT_V1}:
         raise ToolLicenseError("trial state has an unsupported format")
     if str(payload.get("machine") or "").lower() != machine.lower():
         raise ToolLicenseError("trial state belongs to another machine")
-    return payload
+    return _upgrade_trial(payload)
 
 
 def _trial_days_left(payload: dict, today: date) -> int:
+    started_raw = payload.get("started")
+    if not started_raw:
+        return int(payload.get("days") or DEFAULT_TRIAL_DAYS)
     try:
-        started = date.fromisoformat(str(payload.get("started")))
+        started = date.fromisoformat(str(started_raw))
     except ValueError as exc:
         raise ToolLicenseError("trial state has an invalid start date") from exc
     if today < started:
@@ -500,20 +640,26 @@ def _trial_days_left(payload: dict, today: date) -> int:
     return max(0, (started + timedelta(days=days) - today).days)
 
 
-def _quota_state(entitlement: Entitlement, machine: str, today: date) -> dict:
+def _quota_state(entitlement: Entitlement, machine: str, today: date,
+                 initialize: bool = True) -> dict:
     if entitlement.max_builds_per_month <= 0:
         return {}
     path = quota_path()
     data = secure_store.read_private(path)
     month = today.strftime("%Y-%m")
+    previous: dict | None = None
     if data is not None:
         try:
             payload = secure_store.open_state(data, machine, "quota")
         except secure_store.SecureStoreError as exc:
             raise ToolLicenseError("build quota state is damaged or was modified") from exc
-        if payload.get("format") == QUOTA_STATE_FORMAT:
-            if payload.get("license_id") == entitlement.license_id and payload.get("month") == month:
-                return payload
+        if payload.get("format") not in {QUOTA_STATE_FORMAT, QUOTA_STATE_FORMAT_V1}:
+            raise ToolLicenseError("build quota state has an unsupported format")
+        payload = _upgrade_quota(payload)
+        if payload.get("license_id") == entitlement.license_id and payload.get("month") == month:
+            return payload
+        if payload.get("license_id") == entitlement.license_id:
+            previous = payload
     payload = {
         "format": QUOTA_STATE_FORMAT,
         "license_id": entitlement.license_id,
@@ -521,8 +667,14 @@ def _quota_state(entitlement: Entitlement, machine: str, today: date) -> dict:
         "used": 0,
         "machine": machine,
         "updated": today.isoformat(),
+        "credits": int((previous or {}).get("credits", 0)),
+        "pending": dict((previous or {}).get("pending", {})),
+        "refunded": dict((previous or {}).get("refunded", {})),
+        "completed": dict((previous or {}).get("completed", {})),
+        "idempotency": dict((previous or {}).get("idempotency", {})),
     }
-    secure_store.write_private(path, secure_store.seal_state(payload, machine, "quota"))
+    if initialize:
+        secure_store.write_private(path, secure_store.seal_state(payload, machine, "quota"))
     return payload
 
 
@@ -569,8 +721,13 @@ def check(
     today: date | None = None,
     license_path: str | Path | None = None,
     public_key: bytes | None = None,
+    initialize_trial: bool = True,
 ) -> ToolLicenseStatus:
-    """Return the current tool license state without consuming a build."""
+    """Return the current tool license state without consuming a build.
+
+    ``initialize_trial=False`` makes status/validate calls truly read-only: a
+    missing trial or quota state is reported without creating it.
+    """
     machine = (machine or fingerprint.machine_fingerprint()).lower()
     today = today or date.today()
     path = Path(license_path) if license_path is not None else tool_license_path()
@@ -650,12 +807,13 @@ def check(
                 machine, path, configured, entitlement, code="feature_missing",
             )
         try:
-            quota = _quota_state(entitlement, machine, today)
+            quota = _quota_state(entitlement, machine, today, initialize=initialize_trial)
         except ToolLicenseError as exc:
             return _invalid(str(exc), machine, path, configured, entitlement, code="license_invalid")
         used = int(quota.get("used", 0)) if quota else 0
+        credits = int(quota.get("credits", 0)) if quota else 0
         limit = entitlement.max_builds_per_month
-        if limit and used >= limit:
+        if limit and used >= limit and credits <= 0:
             if trial_edition:
                 message = (
                     f"trial build limit reached ({used}/{limit}); "
@@ -667,8 +825,10 @@ def check(
                 message, machine, path, configured, entitlement, code="quota_exhausted",
             )
         if quota:
-            quota = {**quota, "limit": limit}
-            if "grace period" in reason:
+            quota = _public_quota(quota, limit)
+            if credits > 0:
+                reason = f"{reason}; {credits} carried-over credit(s) available"
+            elif "grace period" in reason:
                 reason = f"{reason}; {limit - used} builds left this month"
             else:
                 reason = f"valid; {limit - used} builds left this month"
@@ -688,20 +848,25 @@ def check(
         )
 
     try:
-        trial = _trial_state(machine, today)
+        trial = _trial_state(machine, today, initialize=initialize_trial)
         days_left = _trial_days_left(trial, today)
     except ToolLicenseError as exc:
         return _invalid(str(exc), machine, path, configured, code="license_invalid")
     used = int(trial.get("builds") or 0)
     limit = int(trial.get("max_builds") or DEFAULT_TRIAL_BUILDS)
+    not_started = not trial.get("started")
     if days_left <= 0:
         return _invalid(
-            "trial period has expired", machine, path, configured, trial=trial, code="trial_expired",
+            "trial period has expired", machine, path, configured,
+            trial=_public_trial(trial, days_left, max(0, limit - used)),
+            code="trial_expired",
         )
     if used >= limit:
         return _invalid(
             f"trial build limit reached ({used}/{limit})",
-            machine, path, configured, trial=trial, code="quota_exhausted",
+            machine, path, configured,
+            trial=_public_trial(trial, days_left, max(0, limit - used)),
+            code="quota_exhausted",
         )
     blocked = [feature for feature in features if feature in {
         FEATURE_NATIVE_RUNTIME, FEATURE_LICENSE_ISSUANCE, FEATURE_CI, FEATURE_OEM,
@@ -709,16 +874,21 @@ def check(
     if blocked:
         return _invalid(
             f"trial does not include: {', '.join(blocked)}",
-            machine, path, configured, trial=trial, code="feature_missing",
+            machine, path, configured,
+            trial=_public_trial(trial, days_left, max(0, limit - used), not_started),
+            code="feature_missing",
         )
+    reason = f"trial: {days_left} days left, {limit - used} builds left"
+    if not_started:
+        reason = f"trial not started: {days_left} days, {limit - used} builds available"
     return ToolLicenseStatus(
         mode="trial",
         valid=True,
-        reason=f"trial: {days_left} days left, {limit - used} builds left",
+        reason=reason,
         machine=machine,
         license_path=str(path),
         public_key_configured=configured,
-        trial={**trial, "days_left": days_left, "builds_left": limit - used},
+        trial=_public_trial(trial, days_left, max(0, limit - used), not_started),
         checked=checked,
         code="trial",
     )
@@ -759,32 +929,429 @@ def require(
     return status
 
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _candidate_states(machine: str, today: date) -> list[tuple[str, dict, Entitlement | None]]:
+    """Load trial and quota ledgers without creating or charging anything."""
+    candidates: list[tuple[str, dict, Entitlement | None]] = []
+    try:
+        trial = _trial_state(machine, today, initialize=False)
+    except ToolLicenseError:
+        trial = None
+    if trial is not None:
+        candidates.append(("trial", _upgrade_trial(trial), None))
+    try:
+        key = active_public_key()
+        entitlement = load_entitlement(public_key=key, verify=key is not None)
+    except ToolLicenseError:
+        entitlement = None
+    if entitlement is not None:
+        try:
+            quota = _quota_state(entitlement, machine, today, initialize=False)
+        except ToolLicenseError:
+            quota = None
+        if quota:
+            candidates.append(("licensed", _upgrade_quota(quota), entitlement))
+    return candidates
+
+
+def _reservation_from_info(info: dict, mode: str, machine: str, bucket: str) -> BuildReservation:
+    return BuildReservation(
+        token=str(info.get("token") or ""),
+        mode=mode,
+        charged=False,
+        duplicate=True,
+        replayed=bucket != "pending",
+        before_used=int(info.get("before_used", 0)),
+        after_used=int(info.get("after_used", 0)),
+        limit=int(info.get("limit", 0)),
+        license_id=info.get("license_id"),
+        month=info.get("month"),
+        machine=machine,
+        paid_by_credit=bool(info.get("paid_by_credit", False)),
+    )
+
+
+def _find_existing_reservation(
+    token: str,
+    idempotency_key: str | None,
+    machine: str,
+    today: date,
+    idempotency_fingerprint: str | None = None,
+) -> BuildReservation | None:
+    key_seen = False
+    for mode, payload, _entitlement in _candidate_states(machine, today):
+        lookup = token
+        if idempotency_key and idempotency_key in payload.get("idempotency", {}):
+            key_seen = True
+            stored = payload.get("idempotency_fingerprints", {}).get(idempotency_key)
+            if (
+                idempotency_fingerprint
+                and stored
+                and str(stored) != str(idempotency_fingerprint)
+            ):
+                raise ToolLicenseError(
+                    "idempotency key was used with different build parameters"
+                )
+            lookup = str(payload["idempotency"][idempotency_key])
+        for bucket in ("pending", "completed", "refunded"):
+            info = payload.get(bucket, {}).get(lookup)
+            if info:
+                return _reservation_from_info(info, mode, machine, bucket)
+    if key_seen:
+        raise ToolLicenseError("idempotency key refers to an unknown build")
+    return None
+
+
+def find_reservation(
+    token: str | None = None,
+    idempotency_key: str | None = None,
+    today: date | None = None,
+    timeout: float = 10.0,
+    machine: str | None = None,
+    idempotency_fingerprint: str | None = None,
+) -> BuildReservation | None:
+    """Look up an existing reservation without charging anything."""
+    machine = (machine or fingerprint.machine_fingerprint()).lower()
+    today = today or date.today()
+    with secure_store.exclusive_lock(ledger_lock_path(), timeout=timeout):
+        return _find_existing_reservation(
+            str(token or ""), idempotency_key, machine, today,
+            idempotency_fingerprint=idempotency_fingerprint,
+        )
+
+
+def _begin_trial(token: str, machine: str, today: date,
+                 idempotency_key: str | None,
+                 idempotency_fingerprint: str | None = None) -> BuildReservation:
+    payload = _upgrade_trial(_trial_state(machine, today, initialize=True))
+    ledger = payload
+    used = int(ledger.get("builds", 0))
+    limit = int(ledger.get("max_builds") or DEFAULT_TRIAL_BUILDS)
+    if used >= limit:
+        raise ToolLicenseError(f"trial build limit reached ({used}/{limit})")
+    info = {
+        "token": token,
+        "mode": "trial",
+        "charged": True,
+        "before_used": used,
+        "after_used": used + 1,
+        "limit": limit,
+        "license_id": None,
+        "month": None,
+        "paid_by_credit": False,
+        "at": _now_iso(),
+    }
+    ledger["builds"] = used + 1
+    ledger["last_build"] = today.isoformat()
+    ledger["pending"][token] = info
+    if idempotency_key:
+        ledger["idempotency"][idempotency_key] = token
+        if idempotency_fingerprint:
+            ledger["idempotency_fingerprints"][idempotency_key] = idempotency_fingerprint
+        _prune_idempotency(ledger["idempotency"])
+        _prune_idempotency(ledger["idempotency_fingerprints"])
+    _save_trial(ledger, machine)
+    _append_ledger({
+        "event": "begin", "token": token, "mode": "trial",
+        "charged": True, "before": used, "after": used + 1,
+        "limit": limit, "at": info["at"],
+    })
+    return BuildReservation(
+        token=token, mode="trial", charged=True, before_used=used,
+        after_used=used + 1, limit=limit, machine=machine,
+    )
+
+
+def _begin_licensed(token: str, machine: str, today: date,
+                    entitlement: Entitlement, idempotency_key: str | None,
+                    idempotency_fingerprint: str | None = None) -> BuildReservation:
+    if entitlement.max_builds_per_month <= 0:
+        return BuildReservation(
+            token=token, mode="licensed", charged=False, limit=0,
+            license_id=entitlement.license_id, month=today.strftime("%Y-%m"),
+            machine=machine,
+        )
+    payload = _upgrade_quota(_quota_state(entitlement, machine, today, initialize=True))
+    ledger = payload
+    used = int(ledger.get("used", 0))
+    credits = int(ledger.get("credits", 0))
+    limit = entitlement.max_builds_per_month
+    if used >= limit and credits <= 0:
+        raise ToolLicenseError(f"monthly build quota exhausted ({used}/{limit})")
+    before = used
+    paid_by_credit = credits > 0
+    if paid_by_credit:
+        credits -= 1
+    else:
+        used += 1
+    info = {
+        "token": token,
+        "mode": "licensed",
+        "charged": True,
+        "before_used": before,
+        "after_used": used,
+        "limit": limit,
+        "license_id": entitlement.license_id,
+        "month": ledger.get("month"),
+        "paid_by_credit": paid_by_credit,
+        "at": _now_iso(),
+    }
+    ledger["used"] = used
+    ledger["credits"] = credits
+    ledger["updated"] = today.isoformat()
+    ledger["pending"][token] = info
+    if idempotency_key:
+        ledger["idempotency"][idempotency_key] = token
+        if idempotency_fingerprint:
+            ledger["idempotency_fingerprints"][idempotency_key] = idempotency_fingerprint
+        _prune_idempotency(ledger["idempotency"])
+        _prune_idempotency(ledger["idempotency_fingerprints"])
+    _save_quota(ledger, machine)
+    _append_ledger({
+        "event": "begin", "token": token, "mode": "licensed",
+        "charged": True, "before": before, "after": used,
+        "limit": limit, "credit": paid_by_credit, "at": info["at"],
+    })
+    return BuildReservation(
+        token=token, mode="licensed", charged=True, before_used=before,
+        after_used=used, limit=limit, license_id=entitlement.license_id,
+        month=info["month"], machine=machine, paid_by_credit=paid_by_credit,
+    )
+
+
+def begin_build(
+    features: tuple[str, ...] | list[str] = (),
+    token: str | None = None,
+    idempotency_key: str | None = None,
+    today: date | None = None,
+    timeout: float = 10.0,
+    machine: str | None = None,
+    idempotency_fingerprint: str | None = None,
+) -> BuildReservation:
+    """Atomically consume one build and record a pending reservation.
+
+    The license is re-checked while holding the ledger lock, so two processes
+    cannot both observe the last remaining build and charge it twice.
+    """
+    token = str(token or secrets.token_hex(16))
+    today = today or date.today()
+    machine = (machine or fingerprint.machine_fingerprint()).lower()
+    with secure_store.exclusive_lock(ledger_lock_path(), timeout=timeout):
+        existing = _find_existing_reservation(
+            token, idempotency_key, machine, today,
+            idempotency_fingerprint=idempotency_fingerprint,
+        )
+        if existing is not None:
+            return existing
+        status = check(features=features, machine=machine, today=today, initialize_trial=True)
+        if not status.valid:
+            raise ToolLicenseError(status.reason)
+        if status.mode == "development":
+            return BuildReservation(
+                token=token, mode="development", charged=False, machine=machine,
+            )
+        if status.mode == "trial":
+            return _begin_trial(
+                token, machine, today, idempotency_key, idempotency_fingerprint,
+            )
+        if status.mode == "licensed" and status.entitlement is not None:
+            return _begin_licensed(
+                token, machine, today, status.entitlement, idempotency_key,
+                idempotency_fingerprint,
+            )
+    raise ToolLicenseError(f"unsupported license mode: {status.mode}")
+
+
+def _load_ledger_for_reservation(reservation: BuildReservation, today: date) -> tuple[dict, Entitlement | None]:
+    if reservation.mode == "trial":
+        return _upgrade_trial(_trial_state(reservation.machine, today, initialize=False)), None
+    if reservation.mode == "licensed":
+        try:
+            key = active_public_key()
+            entitlement = load_entitlement(public_key=key, verify=key is not None)
+        except ToolLicenseError:
+            entitlement = None
+        if entitlement is None:
+            raise ToolLicenseError("tool license is no longer available")
+        payload = _quota_state(entitlement, reservation.machine, today, initialize=False)
+        if not payload:
+            raise ToolLicenseError("build quota state is unavailable")
+        return _upgrade_quota(payload), entitlement
+    raise ToolLicenseError(f"cannot load ledger for mode {reservation.mode}")
+
+
+def refund_build(
+    reservation: BuildReservation,
+    failure_class: str,
+    code: str,
+    message: str,
+    evidence: str = "",
+    today: date | None = None,
+    timeout: float = 10.0,
+) -> RefundResult:
+    """Refund a reservation exactly once, under the ledger lock."""
+    today = today or date.today()
+    if reservation.mode == "development":
+        return RefundResult(applied=False, message="development mode does not consume quota")
+    with secure_store.exclusive_lock(ledger_lock_path(), timeout=timeout):
+        ledger, entitlement = _load_ledger_for_reservation(reservation, today)
+        token = reservation.token
+        if token in ledger.get("refunded", {}):
+            info = ledger["refunded"][token]
+            return RefundResult(
+                applied=True, already_applied=True,
+                before_used=int(info.get("before_used", 0)),
+                after_used=int(info.get("after_used", 0)),
+                limit=int(info.get("limit", 0)),
+                message="quota was already refunded for this build",
+            )
+        info = ledger.get("pending", {}).pop(token, None)
+        if info is None:
+            if token in ledger.get("completed", {}):
+                return RefundResult(applied=False, message="build already completed; not refundable")
+            return RefundResult(applied=False, message="unknown build reservation")
+        before = int(info.get("before_used", 0))
+        limit = int(info.get("limit", 0))
+        if reservation.mode == "trial":
+            current = int(ledger.get("builds", 0))
+            ledger["builds"] = max(0, current - 1)
+            after = ledger["builds"]
+        else:
+            current_used = int(ledger.get("used", 0))
+            current_month = ledger.get("month")
+            current_license = ledger.get("license_id")
+            if info.get("paid_by_credit"):
+                ledger["credits"] = int(ledger.get("credits", 0)) + 1
+                after = current_used
+            elif info.get("month") == current_month and info.get("license_id") == current_license:
+                ledger["used"] = max(0, current_used - 1)
+                after = ledger["used"]
+            else:
+                ledger["credits"] = int(ledger.get("credits", 0)) + 1
+                after = current_used
+            ledger["updated"] = today.isoformat()
+        refunded = {
+            **info,
+            "refunded_at": _now_iso(),
+            "failure_class": failure_class,
+            "code": code,
+            "message": message,
+            "evidence": str(evidence or "")[:2000],
+        }
+        ledger["refunded"][token] = refunded
+        _prune(ledger["refunded"])
+        if reservation.mode == "trial":
+            _save_trial(ledger, reservation.machine)
+        else:
+            _save_quota(ledger, reservation.machine)
+        _append_ledger({
+            "event": "refund", "token": token, "mode": reservation.mode,
+            "failure_class": failure_class, "code": code,
+            "before": before, "after": after, "limit": limit,
+            "at": refunded["refunded_at"],
+        })
+        return RefundResult(
+            applied=True, before_used=before, after_used=after, limit=limit,
+            message="quota refunded",
+        )
+
+
+def finalize_build(
+    reservation: BuildReservation,
+    refund: bool = False,
+    reason_code: str = "",
+    message: str = "",
+    evidence: str = "",
+    today: date | None = None,
+    timeout: float = 10.0,
+) -> BuildSettlement:
+    """Close a pending reservation, optionally refunding it first."""
+    if refund:
+        result = refund_build(
+            reservation, "PROJECT_CODE", reason_code, message, evidence,
+            today=today, timeout=timeout,
+        )
+        state = "refunded" if result.applied or result.already_applied else "refund_failed"
+        return BuildSettlement(token=reservation.token, state=state, refund=result)
+    if reservation.mode == "development":
+        return BuildSettlement(token=reservation.token, state="completed")
+    today = today or date.today()
+    with secure_store.exclusive_lock(ledger_lock_path(), timeout=timeout):
+        ledger, _entitlement = _load_ledger_for_reservation(reservation, today)
+        token = reservation.token
+        if token in ledger.get("completed", {}):
+            return BuildSettlement(token=token, state="completed")
+        if token in ledger.get("refunded", {}):
+            return BuildSettlement(token=token, state="refunded")
+        info = ledger.get("pending", {}).pop(token, None)
+        if info is None:
+            return BuildSettlement(token=token, state="missing")
+        completed = {**info, "completed_at": _now_iso(), "reason": reason_code}
+        ledger["completed"][token] = completed
+        _prune(ledger["completed"])
+        if reservation.mode == "trial":
+            _save_trial(ledger, reservation.machine)
+        else:
+            _save_quota(ledger, reservation.machine)
+        _append_ledger({
+            "event": "complete", "token": token, "mode": reservation.mode,
+            "reason": reason_code, "at": completed["completed_at"],
+        })
+        return BuildSettlement(token=token, state="completed")
+
+
 def record_build(status: ToolLicenseStatus, today: date | None = None) -> None:
-    """Consume one build from the trial or monthly quota when a build starts."""
+    """Compatibility wrapper for CLI/GUI: consume one build atomically.
+
+    New callers should use :func:`begin_build` / :func:`finalize_build` so the
+    reservation can be refunded when the target project itself is broken.
+    """
     today = today or date.today()
     if not status.valid or status.mode == "development":
         return
-    if status.mode == "trial":
-        payload = dict(status.trial or {})
-        payload["builds"] = int(payload.get("builds", 0)) + 1
-        if payload.get("builds_left") is not None:
-            payload["builds_left"] = max(0, int(payload["builds_left"]) - 1)
-        payload["last_build"] = today.isoformat()
-        _save_trial(payload, status.machine)
-        status.trial = payload
-        return
-    if status.mode == "licensed" and status.entitlement is not None:
-        entitlement = status.entitlement
-        if entitlement.max_builds_per_month <= 0:
+    with secure_store.exclusive_lock(ledger_lock_path()):
+        token = "legacy-" + secrets.token_hex(8)
+        if status.mode == "trial":
+            payload = _upgrade_trial(_trial_state(status.machine, today, initialize=True))
+            used = int(payload.get("builds", 0))
+            limit = int(payload.get("max_builds") or DEFAULT_TRIAL_BUILDS)
+            payload["builds"] = used + 1
+            payload["last_build"] = today.isoformat()
+            _save_trial(payload, status.machine)
+            status.trial = _public_trial(
+                payload, _trial_days_left(payload, today), max(0, limit - used - 1),
+            )
+            _append_ledger({
+                "event": "legacy_charge", "token": token, "mode": "trial",
+                "before": used, "after": used + 1, "at": _now_iso(),
+            })
             return
-        try:
-            payload = _quota_state(entitlement, status.machine, today)
-        except ToolLicenseError:
+        if status.mode == "licensed" and status.entitlement is not None:
+            entitlement = status.entitlement
+            if entitlement.max_builds_per_month <= 0:
+                return
+            payload = _upgrade_quota(
+                _quota_state(entitlement, status.machine, today, initialize=True)
+            )
+            used = int(payload.get("used", 0))
+            credits = int(payload.get("credits", 0))
+            if credits > 0:
+                payload["credits"] = credits - 1
+            else:
+                used += 1
+                payload["used"] = used
+            payload["updated"] = today.isoformat()
+            _save_quota(payload, status.machine)
+            status.quota = _public_quota(payload, entitlement.max_builds_per_month)
+            _append_ledger({
+                "event": "legacy_charge", "token": token, "mode": "licensed",
+                "before": used - (0 if credits > 0 else 1), "after": used,
+                "at": _now_iso(),
+            })
             return
-        payload["used"] = int(payload.get("used", 0)) + 1
-        payload["updated"] = today.isoformat()
-        _save_quota(payload, status.machine)
-        status.quota = {**payload, "limit": entitlement.max_builds_per_month}
 
 
 def status_dict(**kwargs) -> dict:

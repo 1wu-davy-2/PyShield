@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import fnmatch
 import importlib.machinery
 import importlib.util
@@ -21,7 +22,16 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from . import __version__, _runtime_bundle, crypto, ed25519, fingerprint, licensing, manifest
+from . import (
+    __version__,
+    _runtime_bundle,
+    build_spec,
+    crypto,
+    ed25519,
+    fingerprint,
+    licensing,
+    manifest,
+)
 
 RUNTIME_PACKAGE = "_shield_runtime"
 MARKER_FILE = ".pyshield-build.json"
@@ -31,6 +41,7 @@ PAYLOAD_CHUNK = 1000
 NATIVE_MODULES = ("_core", "_crypto", "_ed25519", "_chacha_fast", "_keyring")
 INTEGRITY_MODES = ("protected", "full", "off")
 KEYRING_PARTS = 8
+_CONSOLE_LOG = contextvars.ContextVar("pyshield_console_log", default=True)
 NATIVE_SETUP = """\
 import os
 
@@ -84,6 +95,14 @@ class BuildCancelled(BuildError):
     """Raised when the caller cancels a running build."""
 
 
+class ProjectCodeError(BuildError):
+    """Raised when the target project's own code is invalid.
+
+    The MCP build service refunds the quota only for this class of failure.
+    Environment and toolchain failures deliberately stay as plain BuildError.
+    """
+
+
 @dataclass
 class Module:
     path: Path
@@ -115,6 +134,11 @@ class BuildOptions:
     dry_run: bool = False
     verify_python: str | None = None
     tool_info: dict | None = None
+    console_log: bool = True
+    require_absent_output: bool = False
+    secret_path: str | None = None
+    verify_timeout: int | None = None
+    verify_env: dict[str, str] | None = None
     cancel: threading.Event | None = field(default=None, repr=False, compare=False)
     progress: Callable[[str, int], None] | None = field(default=None, repr=False, compare=False)
     log_sink: Callable[[str], None] | None = field(default=None, repr=False, compare=False)
@@ -133,6 +157,8 @@ class BuildResult:
 
 
 def log(message: str) -> None:
+    if not _CONSOLE_LOG.get():
+        return
     if sys.stdout is not None:
         print(f"[pyshield] {message}", flush=True)
 
@@ -166,11 +192,7 @@ def check_cancel(options: BuildOptions) -> None:
 
 
 def path_is_within(child: Path, parent: Path) -> bool:
-    try:
-        child.relative_to(parent)
-        return True
-    except ValueError:
-        return False
+    return build_spec.is_within(child, parent)
 
 
 def copy_ignore(directory: str, names: list[str]) -> set[str]:
@@ -178,7 +200,7 @@ def copy_ignore(directory: str, names: list[str]) -> set[str]:
     base = Path(directory)
     for name in names:
         path = base / name
-        if path.is_symlink():
+        if build_spec.is_reparse_point(path):
             ignored.add(name)
         elif name in IGNORED_DIRS:
             ignored.add(name)
@@ -226,7 +248,7 @@ def is_excluded(relative: Path, module_id: str, patterns: list[str]) -> bool:
 def find_packages(project: Path) -> list[Path]:
     packages = []
     for entry in sorted(project.iterdir(), key=lambda item: item.name):
-        if not entry.is_dir() or entry.is_symlink() or entry.name in IGNORED_DIRS:
+        if not entry.is_dir() or build_spec.is_reparse_point(entry) or entry.name in IGNORED_DIRS:
             continue
         if entry.name.startswith("."):
             continue
@@ -250,11 +272,15 @@ def discover_modules(project: Path, patterns: list[str]) -> list[Module]:
     manage = project / "manage.py"
     if not manage.is_file():
         raise BuildError(f"manage.py not found in {project}")
+    if build_spec.is_reparse_point(manage):
+        raise BuildError(f"manage.py is a symlink or reparse point: {manage}")
     add(manage)
 
     for package in find_packages(project):
         for path in sorted(package.rglob("*.py")):
-            if not path.is_file() or path.is_symlink():
+            if not path.is_file() or build_spec.is_reparse_point(path):
+                continue
+            if build_spec.path_has_reparse(path, stop=project):
                 continue
             if any(part in IGNORED_DIRS or part.startswith(".") for part in path.relative_to(project).parts[:-1]):
                 continue
@@ -290,7 +316,9 @@ def protect_module(module: Module, build_key: bytes, build_id: str, cipher: str)
     try:
         code = compile(source, filename, "exec", dont_inherit=True)
     except SyntaxError as exc:
-        raise BuildError(f"cannot compile {module.relative}: {exc}") from exc
+        raise ProjectCodeError(
+            f"cannot compile {module.relative}:{exc.lineno or '?'}:{exc.offset or '?'}: {exc.msg}"
+        ) from exc
     try:
         raw = zlib.compress(marshal.dumps(code), 9)
     except (ValueError, TypeError) as exc:
@@ -735,6 +763,50 @@ def can_remove_output(output: Path) -> bool:
     return (output / MARKER_FILE).is_file()
 
 
+def _looks_like_project_code_failure(details: str, output: Path) -> bool:
+    """Best-effort classification for manage.py check failures.
+
+    Only failures whose evidence points at the protected project are refunded
+    by the MCP service.  Missing third-party packages and interpreter errors
+    stay environment failures.
+    """
+    if not details:
+        return False
+    if "SystemCheckError" in details or "SyntaxError" in details:
+        return True
+    # A missing third-party package is an environment failure even though the
+    # traceback may point at the generated manage.py.  Refunds are conservative:
+    # uncertain evidence is not treated as target-project code.
+    if "ModuleNotFoundError" in details or "ImportError" in details:
+        return False
+    if "Traceback (most recent call last)" in details:
+        try:
+            output_text = str(output.resolve())
+        except OSError:
+            output_text = str(output)
+        if output_text in details:
+            return True
+    return False
+
+
+def _run_check(
+    executable: str,
+    output: Path,
+    env: dict[str, str],
+    timeout: int | float | None,
+) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            [executable, str(output / "manage.py"), "check"],
+            cwd=output, env=env, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise BuildError(
+            f"manage.py check timed out after {timeout} seconds"
+        ) from exc
+
+
 def verify_build(
     output: Path,
     license_path: Path,
@@ -742,6 +814,8 @@ def verify_build(
     fingerprints: list[str],
     python_executable: str | None = None,
     bind_mode: str = licensing.BIND_ANY,
+    timeout: int | float | None = None,
+    extra_env: dict[str, str] | None = None,
 ) -> None:
     if expire_date is not None and expire_date < date.today():
         log("skipping verification: the build is already expired")
@@ -757,6 +831,8 @@ def verify_build(
             return
         executable = sys.executable
     env = os.environ.copy()
+    if extra_env is not None:
+        env = {key: value for key, value in extra_env.items() if value is not None}
     env["PYSHELD_LICENSE"] = str(license_path)
 
     temp_binding: Path | None = None
@@ -773,17 +849,19 @@ def verify_build(
 
     log(f"running manage.py check with {executable}")
     try:
-        result = subprocess.run(
-            [executable, str(output / "manage.py"), "check"],
-            cwd=output, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
-        )
+        result = _run_check(executable, output, env, timeout)
     finally:
         if temp_binding is not None:
             temp_binding.unlink(missing_ok=True)
             Path(str(temp_binding) + ".anchor").unlink(missing_ok=True)
     if result.returncode != 0:
         details = (result.stdout + result.stderr).strip()
-        raise BuildError("protected project failed manage.py check:\n" + details)
+        error_type = (
+            ProjectCodeError
+            if _looks_like_project_code_failure(details, output)
+            else BuildError
+        )
+        raise error_type("protected project failed manage.py check:\n" + details)
 
 
 def directory_size(root: Path) -> int:
@@ -803,13 +881,28 @@ def clean_pycache(root: Path) -> None:
 
 
 def build(options: BuildOptions) -> BuildResult:
+    token = _CONSOLE_LOG.set(bool(options.console_log))
+    try:
+        return _build_impl(options)
+    finally:
+        _CONSOLE_LOG.reset(token)
+
+
+def _build_impl(options: BuildOptions) -> BuildResult:
     started = time.monotonic()
     project = Path(options.project).resolve()
     output = Path(options.output).resolve()
 
     report_stage(options, "init", "validating build options", 2)
-    if not (project / "manage.py").is_file():
+    if output.parent == output or output.anchor == str(output):
+        raise BuildError("refusing to use a filesystem root as the build output")
+    if output.parent.exists() and build_spec.is_reparse_point(output.parent):
+        raise BuildError(f"output parent is a symlink or reparse point: {output.parent}")
+    manage_py = project / "manage.py"
+    if not manage_py.is_file():
         raise BuildError(f"manage.py not found in {project}")
+    if build_spec.is_reparse_point(manage_py):
+        raise BuildError(f"manage.py is a symlink or reparse point: {manage_py}")
     if options.runtime_native and (options.runtime_pyc or options.runtime_source):
         raise BuildError("--runtime-native cannot be combined with --runtime-pyc or --runtime-source")
     if options.runtime_pyc and options.runtime_source:
@@ -883,6 +976,8 @@ def build(options: BuildOptions) -> BuildResult:
             "-", len(modules), cipher, time.monotonic() - started,
         )
 
+    if options.require_absent_output and output.exists():
+        raise BuildError(f"output directory already exists: {output}")
     if not can_remove_output(output) and not options.force:
         raise BuildError(
             f"{output} exists and is not a pyshield build; "
@@ -896,15 +991,15 @@ def build(options: BuildOptions) -> BuildResult:
     build_key = licensing.build_key_for(master_key, build_id)
     signing_key = crypto.random_bytes(32)
     signing_public_key = ed25519.public_key(signing_key)
-    temp = output.parent / f".{output.name}.tmp"
-
-    if temp.exists():
-        shutil.rmtree(temp, ignore_errors=True)
+    temp_root = Path(tempfile.mkdtemp(
+        prefix=f".{output.name}.", dir=str(output.parent),
+    ))
+    temp = temp_root / output.name
 
     try:
         check_cancel(options)
         report_stage(options, "copy", "copying project data files", 10)
-        shutil.copytree(project, temp, ignore=copy_ignore)
+        shutil.copytree(project, temp, ignore=copy_ignore, symlinks=True)
         check_cancel(options)
 
         total = len(modules)
@@ -960,14 +1055,38 @@ def build(options: BuildOptions) -> BuildResult:
 
         check_cancel(options)
         report_stage(options, "publish", "publishing output directory", 84)
+        if options.require_absent_output and output.exists():
+            raise BuildError(
+                f"output directory appeared during the build; refusing to replace it: {output}"
+            )
         if output.exists():
             shutil.rmtree(output)
         os.replace(temp, output)
+        shutil.rmtree(temp_root, ignore_errors=True)
     except Exception:
-        shutil.rmtree(temp, ignore_errors=True)
+        shutil.rmtree(temp_root, ignore_errors=True)
         raise
 
-    secret_path = licensing.secret_path_for(output)
+    license_path = output / LICENSE_FILE
+    if not options.no_verify:
+        report_stage(options, "verify", "verifying protected output", 92)
+        verify_build(
+            output, license_path, expire_date, fingerprints,
+            python_executable=options.verify_python, bind_mode=bind_mode,
+            timeout=options.verify_timeout, extra_env=options.verify_env,
+        )
+    else:
+        report_log(options, "skipping verification: disabled by the caller")
+
+    # Write the build secret only after verification.  If verification runs
+    # target project code, it must not be able to read the signing keys.
+    secret_path = (
+        Path(options.secret_path).expanduser().resolve()
+        if options.secret_path
+        else licensing.secret_path_for(output)
+    )
+    if build_spec.is_within(secret_path, output):
+        raise BuildError("build secret must not be placed inside the output directory")
     report_stage(options, "secret", "writing build secret", 88)
     licensing.write_secret(secret_path, {
         "format": licensing.FORMAT,
@@ -991,15 +1110,6 @@ def build(options: BuildOptions) -> BuildResult:
         "license": str(output / LICENSE_FILE),
     })
 
-    license_path = output / LICENSE_FILE
-    if not options.no_verify:
-        report_stage(options, "verify", "verifying protected output", 92)
-        verify_build(
-            output, license_path, expire_date, fingerprints,
-            python_executable=options.verify_python, bind_mode=bind_mode,
-        )
-    else:
-        report_log(options, "skipping verification: disabled by the caller")
     report_stage(options, "cleanup", "cleaning bytecode caches", 96)
     clean_pycache(output)
 

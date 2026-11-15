@@ -7,6 +7,7 @@ editing of the JSON files fails closed instead of silently granting builds.
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import errno
 import hashlib
@@ -17,6 +18,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import Iterator
 
 _DPAPI_PREFIX = b"DPAPI1\n"
 _PLAIN_PREFIX = b"PLAIN1\n"
@@ -174,6 +176,64 @@ def _retry_oserror(action):
             time.sleep(min(_RETRY_BASE_DELAY * (attempt + 1), _RETRY_MAX_DELAY))
     assert last is not None
     raise last
+
+
+@contextlib.contextmanager
+def exclusive_lock(path: Path | str, timeout: float = 10.0) -> Iterator[None]:
+    """Hold an inter-process exclusive lock on ``path``.
+
+    The lock file is intentionally separate from the state file: atomic writes
+    replace the state file's inode, so locking it directly would not serialize
+    two read-modify-write cycles.
+    """
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(target, "a+b")
+    try:
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"\0")
+            handle.flush()
+        try:
+            os.chmod(target, 0o600)
+        except OSError:
+            pass
+        deadline = time.monotonic() + max(0.0, float(timeout))
+        delay = 0.01
+        while True:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise SecureStoreError(f"timed out waiting for lock: {target}")
+                time.sleep(delay)
+                delay = min(delay * 2, 0.2)
+        try:
+            yield
+        finally:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass
+    finally:
+        handle.close()
 
 
 def write_private(path: Path | str, data: bytes) -> None:

@@ -13,5 +13,10 @@
 # pythonnet==3.2.1
 # pyinstaller==6.22.3
 
+# 可选：MCP 服务（运行时只依赖标准库；打包 PyShieldMCP.exe 时需要 PyInstaller）
+# 官方 mcp SDK 仅作为开发/测试 client，不是运行时依赖
+# mcp>=1,<2
+# 打包带 Cython 原生 runtime 的 MCP 时还需要 Cython>=3 和 setuptools>=68
+
 # 示例 Django 项目（仅 demo 使用）
 Django==6.1.3

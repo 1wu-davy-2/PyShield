@@ -19,7 +19,7 @@ import os
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-from . import crypto, ed25519
+from . import crypto, ed25519, secure_store
 
 LICENSE_FILENAME = "pyshield.lic"
 SECRET_SUFFIX = ".shield-secret.json"
@@ -398,11 +398,9 @@ def read_secret(path: Path) -> dict:
 def write_secret(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
-    path.write_text(text, encoding="utf-8")
-    try:
-        os.chmod(path, 0o600)
-    except OSError:
-        pass
+    # Atomic replace plus best-effort 0600; the build secret is the most
+    # sensitive artifact PyShield writes.
+    secure_store.write_private(path, text.encode("utf-8"))
 
 
 def secret_path_for(output: Path) -> Path:
