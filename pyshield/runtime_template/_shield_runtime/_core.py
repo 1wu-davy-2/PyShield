@@ -197,7 +197,9 @@ def _imported_bytecode_paths() -> set[str]:
         if not isinstance(cached, str) or not cached:
             continue
         try:
-            paths.add(os.path.normcase(os.path.abspath(cached)))
+            # resolve() expands 8.3 short names (CI runners export TEMP as
+            # C://Users//RUNNER~1//...), which plain abspath keeps.
+            paths.add(os.path.normcase(str(Path(cached).resolve())))
         except (OSError, ValueError):
             continue
     return paths
@@ -222,7 +224,7 @@ def _prune_imported_caches(root: Path) -> None:
             continue
         try:
             relative = path.relative_to(root).as_posix()
-            current = os.path.normcase(os.path.abspath(path))
+            current = os.path.normcase(str(Path(path).resolve()))
         except (OSError, ValueError):
             continue
         if relative.startswith(runtime_prefix) or current not in imported:
@@ -260,7 +262,7 @@ def _scan_bytecode_caches(root: Path) -> list[str]:
             continue
         if is_file and path.suffix.lower() in BYTECODE_SUFFIXES:
             try:
-                current = os.path.normcase(os.path.abspath(path))
+                current = os.path.normcase(str(Path(path).resolve()))
             except (OSError, ValueError):
                 current = ""
             if current in imported:

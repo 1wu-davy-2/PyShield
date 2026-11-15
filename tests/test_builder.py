@@ -56,6 +56,19 @@ def make_project(root: Path) -> None:
     (root / "old.shield-secret.json").write_text("{}", encoding="utf-8")
 
 
+def windows_short_path(path: Path) -> str | None:
+    """Return the 8.3 short form of *path* (GitHub runners use it for TEMP)."""
+    if os.name != "nt":
+        return None
+    import ctypes
+
+    buffer = ctypes.create_unicode_buffer(1024)
+    length = ctypes.windll.kernel32.GetShortPathNameW(str(path), buffer, 1024)
+    if not length or length > 1024:
+        return None
+    return buffer.value
+
+
 def write_forged_pyc(source: Path, cache_dir: Path, payload: str) -> Path:
     """Write a timestamp-based cache that CPython would accept for ``source``."""
     import importlib.util
@@ -397,6 +410,24 @@ class BuilderTests(unittest.TestCase):
         self.assertNotIn("PYSHELD_PYC_BYPASS", completed.stdout + completed.stderr)
         self.assertIn("unsigned bytecode cache", completed.stderr)
         self.assertIn("mypkg/__pycache__", completed.stderr)
+
+    @unittest.skipIf(os.name != "nt", "Windows short-path behaviour")
+    def test_entry_import_from_short_path(self) -> None:
+        """CI runners export TEMP as an 8.3 path; the cache skip must match."""
+        self.build()
+        short = windows_short_path(self.output)
+        if short is None or short == str(self.output):
+            self.skipTest("volume has no 8.3 short names")
+        env = os.environ.copy()
+        env["PYSHELD_LICENSE"] = str(self.output / "pyshield.lic")
+        env["PYSHELD_STATE_DIR"] = str(self.state_dir)
+        env.pop("PYTHONDONTWRITEBYTECODE", None)
+        completed = subprocess.run(
+            [sys.executable, "-c", "import mypkg; print('short ok', mypkg.VALUE)"],
+            cwd=short, env=env, capture_output=True, text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("short ok 42", completed.stdout)
 
     def test_package_entry_import_is_tolerated(self) -> None:
         """CPython writes the entry package's cache before the stub runs."""
