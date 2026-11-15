@@ -174,7 +174,7 @@ AAD = 头部 8 字节 + "pyshield-module:<build_id>:<module_id>"
 - 实际加密的模块 stub 记为 `code`；
 - `_shield_runtime/` 下的文件记为 `runtime`；
 - 其余数据文件记为 `data`；
-- 默认可变模式（许可证、本地配置、`.env`、数据库、日志、`media/`、`staticfiles/`、`__pycache__` 等）与 `--mutable` 额外模式不登记。
+- 默认可变模式（许可证、本地配置、`.env`、数据库、日志、`media/`、`staticfiles/` 等）与 `--mutable` 额外模式不登记；`__pycache__`/`.pyc` 不是可变文件：清单生成阶段直接拒绝带缓存的树，构建结束也会清理并断言。
 
 runtime 在加载首个受保护模块前用内置公钥验签，再按模式校验 `code` + `runtime`（`full` 模式再加 `data`）：路径必须安全、文件必须存在、大小与 SHA-256 必须一致。新增文件不报错，登记文件缺失或被修改即拒绝加载。清单在临时输出目录中生成，不包含自身、许可证与构建标记。
 

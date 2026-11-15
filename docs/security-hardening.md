@@ -103,7 +103,7 @@ python tools/embed_runtime.py
 CPython 对 timestamp-based `.pyc` 只校验源文件的 `mtime`/`size`，不校验 pyc 内容。发布目录可写时，攻击者可以在 `demo/__init__.py` 旁写入 `demo/__pycache__/__init__.cpython-312.pyc`，让它在导入时替代受保护的 stub 执行，而清单里所有文件仍然哈希一致。修复分三层：
 
 - **发布物**：构建结束执行 `clean_pycache()`，并调用 `assert_no_bytecode_caches()` 再次确认输出树没有 `__pycache__` 或非 runtime 的 `.pyc`；`manifest.collect_files(forbid_bytecode=True)` 在写清单前直接拒绝带缓存的树。`_shield_runtime/` 下的 sourceless `.pyc`（pyc/native runtime 模式）是清单内的 runtime 文件，不受影响。
-- **运行时**：`_core.py` 在导入时执行 `_isolate_bytecode()`，把 `sys.pycache_prefix` 指向一个不可预测且不存在的路径并关闭 `sys.dont_write_bytecode`，之后的导入既不会读取发布目录里的 pyc，也不会把新缓存写进去；`_scan_integrity()` 另外把 `_shield_runtime/` 之外的任何 `.pyc`/`.pyo` 报为 `unsigned bytecode cache`，即使绕过前缀隔离也会在首个受保护模块加载前失败。
+- **运行时**：`_core.py` 在导入时执行 `_isolate_bytecode()`，把 `sys.pycache_prefix` 指向一个不可预测且不存在的路径，并置 `sys.dont_write_bytecode = True`，之后的导入既不会读取发布目录里的 pyc，也不会把新缓存写进去；`_scan_integrity()` 另外把 `_shield_runtime/` 之外的任何 `.pyc`/`.pyo` 报为 `unsigned bytecode cache`，即使绕过前缀隔离也会在首个受保护模块加载前失败。
 - **发布检查**：`tools/check_release.py` 拒绝目录/zip 中任何 `__pycache__` 条目，以及未出现在该包签名清单里的 `.pyc`/`.pyo`。
 
 这仍然不是“可写目录不可攻击”：能替换 `_shield_runtime` 本身的攻击者不受清单保护（见残余风险）；本项修的是“意外的可执行缓存”从发布物和完整性模型里消失，并且伪造缓存在正常布局下不再被执行。
