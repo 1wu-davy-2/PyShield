@@ -30,7 +30,7 @@ Windows 双击 `dist/PyShieldBuilder.exe`，Linux 执行 `dist/PyShieldBuilder`�
 设备绑定：
 
 - **不绑定**：任意兼容机器运行；
-- **首次启动绑定**：交付时拿不到客户机指纹时使用。程序第一次启动会在输出目录写入 `.pyshield-binding.json` 与 `_shield_runtime/` 下的独立锚点，并锁定该机器；删除单个记录不会重置绑定，此后整包复制到其他机器也无法启动。构建时的 `manage.py check` 使用临时绑定文件，不会占用客户机的首次绑定。**不要把首次启动绑定的产物打成 PyInstaller onefile**：`_MEIPASS` 是临时目录，记录会随进程退出消失；runtime 会把任何非 onedir `_MEIPASS` 视为临时并拒绝这种组合，设置 `PYSHELD_BINDING_FILE` 也不能关闭检查；请改用固定指纹、onedir 或真正的持久路径；
+- **首次启动绑定**：交付时拿不到客户机指纹时使用。程序第一次启动会在输出目录写入 `.pyshield-binding.json` 与 `_shield_runtime/` 下的独立锚点，并锁定该机器；删除单个记录不会重置绑定，此后整包复制到其他机器也无法启动。构建时的 `manage.py check` 使用临时绑定文件，不会占用客户机的首次绑定。**不要把首次启动绑定的产物打成 PyInstaller onefile**：`_MEIPASS` 是临时目录，记录会随进程退出消失；runtime 会把任何非 onedir `_MEIPASS` 视为临时并拒绝这种组合，`PYSHELD_BINDING_FILE` 在 onefile 下不能关闭检查，也不能让解压目录持久化；请改用固定指纹或 onedir；
 - **指定指纹**：已知客户机指纹时使用，可填写多个；客户可运行 `python -m _shield_runtime fingerprint` 获取。
 
 构建密钥写入 `<输出目录>.shield-secret.json`，位置与输出目录同级。格式 3 包含 `master_key`、派生出的 `build_key`、`signing_key`，只应保存在构建方；发布时只交付输出目录本身，且发布包中的 `pyshield.lic` 已不再携带 `build_key`。

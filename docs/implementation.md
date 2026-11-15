@@ -232,7 +232,7 @@ runtime 在加载首个受保护模块前用内置公钥验签，再按模式校
 - 主文件与独立锚点各写一份；删除其中一份会从另一份恢复；两份日期不一致时取较新值并重写两份；写入使用唯一临时文件、共享冲突重试和跨进程锁。旧公开-MAC 状态默认拒绝，只有显式 `PYSHELD_ALLOW_LEGACY_STATE=1` 才允许一次性迁移；未来日期超过 7 天按损坏状态拒绝。两份都不可写时默认拒绝启动，`PYSHELD_ALLOW_VOLATILE_STATE=1` 可显式放弃持久化回拨检测；
 - 默认状态按 OS 用户隔离；多用户场景用 `PYSHELD_STATE_ANCHOR_DIR` 指向机器级 ACL 目录。
 
-首次启动绑定的主记录仍在输出目录 `.pyshield-binding.json`，锚点位于 `_shield_runtime/.pyshield-binding.json.anchor`；两者都带 `build_id`、机器指纹、绑定时间与由 `build_key` 派生的 HMAC。删除主记录会从锚点恢复，删除锚点会从主记录重建；两者同时删除才会被视为首次运行。任何非 onedir `_MEIPASS` 都被视为临时目录并拒绝首次绑定；设置 `PYSHELD_BINDING_FILE` 不会关闭该检查，override 路径包含 `_MEI*` 也会被拒绝；应改用固定指纹、onedir 或持久路径。
+首次启动绑定的主记录仍在输出目录 `.pyshield-binding.json`，锚点位于 `_shield_runtime/.pyshield-binding.json.anchor`；两者都带 `build_id`、机器指纹、绑定时间与由 `build_key` 派生的 HMAC。读写复用 `secure_store` 的唯一临时文件、共享冲突重试，并在整个 read-modify-write 外层持有跨进程锁；单份写入失败不会阻塞启动，下一次启动会从存活副本恢复。删除主记录会从锚点恢复，删除锚点会从主记录重建；两者同时删除才会被视为首次运行。任何非 onedir `_MEIPASS` 都被视为临时目录并拒绝首次绑定；`PYSHELD_BINDING_FILE` 不会关闭该检查，也不能让 onefile 解压目录持久化，override 路径包含 `_MEI*` 也会被拒绝；应改用固定指纹或 onedir。
 
 机器指纹来源：
 

@@ -188,7 +188,7 @@ python manage.py runserver 0.0.0.0:8000
 ### 4.3 可写目录与时间同步
 
 - 续期时通常直接把新 `pyshield.lic` 写到原位置，运行用户需要该目录的写权限；也可用 `PYSHELD_LICENSE` 指向外部可写路径。
-- 首次启动绑定会在输出目录写入 `.pyshield-binding.json`，并在 `_shield_runtime/` 写入独立锚点，因此该目录必须可写；只读部署用 `PYSHELD_BINDING_FILE` 指向可写位置（绑定记录放在包外会削弱复制防护）。写入失败时启动会被拒绝，避免绑定被静默跳过；删除主记录会从锚点恢复。PyInstaller onefile 或任何非 onedir `_MEIPASS` 都会被视为临时目录并拒绝首次绑定；设置 `PYSHELD_BINDING_FILE` 也不能关闭该检查，请改用固定指纹、onedir 或真正的持久路径。
+- 首次启动绑定会在输出目录写入 `.pyshield-binding.json`，并在 `_shield_runtime/` 写入独立锚点，因此该目录必须可写；只读部署用 `PYSHELD_BINDING_FILE` 指向可写位置（绑定记录放在包外会削弱复制防护）。绑定读写使用唯一临时文件、共享冲突重试和跨进程锁；单份写入失败不会阻塞启动，下一次启动会从存活副本恢复。删除主记录会从锚点恢复。PyInstaller onefile 或任何非 onedir `_MEIPASS` 都会被视为临时目录并拒绝首次绑定；`PYSHELD_BINDING_FILE` 不能关闭该检查，也不能让解压目录持久化，请改用固定指纹或 onedir。
 - 时钟状态写入 `~/.pyshield/<build_id>.state` 和独立锚点（默认在平台用户状态目录）；可用 `PYSHELD_STATE_DIR` / `PYSHELD_STATE_ANCHOR_DIR` 指定。Windows 使用 DPAPI，其它平台使用 HMAC；MAC 密钥由 `build_key` 派生。写入使用唯一临时文件、共享冲突重试和跨进程锁；删除单份会从另一份恢复，两份日期不一致时取较新值并重写两份。旧公开-MAC 状态默认拒绝，只有一次性升级时才临时设置 `PYSHELD_ALLOW_LEGACY_STATE=1`。只读部署默认会因无法持久化而拒绝启动；确认接受回拨检测失效时设置 `PYSHELD_ALLOW_VOLATILE_STATE=1`。默认状态按 OS 用户隔离，多用户共用机器时应把 `PYSHELD_STATE_ANCHOR_DIR` 指向机器级 ACL 目录。
 - 部署机应启用 NTP/时间同步。容器重建、快照恢复或虚拟机迁移后如果时钟明显回拨，runtime 会拒绝启动，先校正时间再启动。
 - 许可证带签发日期，现场时钟早于签发日期超过 1 天同样会拒绝。
@@ -303,8 +303,9 @@ PYSHELD_LICENSE=/secure/pyshield.lic python manage.py check
 3. 停止正在运行的服务（Windows 下避免文件占用）；
 4. 重新执行构建命令；
 5. 在产物上验证 `manage.py check` 与关键页面；
-6. 发布整个输出目录；
-7. 构建密钥继续留在构建方，不随包发布。
+6. 执行发布卫生扫描：`python tools/check_release.py <输出目录>`；
+7. 发布整个输出目录；
+8. 构建密钥继续留在构建方，不随包发布。
 
 不要直接修改产物中的 stub、runtime、`.pyshield-manifest.json` 或许可证；这些文件会在下次构建时被覆盖，手工改动还会导致完整性校验或验签失败。现场配置与数据请放在可变文件中。
 
@@ -364,6 +365,6 @@ python -m unittest discover -s tests -v
 - 完整性清单由 runtime 自身校验，且只在进程首次加载时扫描一次；5 分钟重验只覆盖许可证/绑定/时钟。如果攻击者能整体替换 `_shield_runtime/`，清单也会失效。它用于发现现场误改、局部篡改和跨构建移植，不是二进制级防篡改。
 - 时钟状态与回拨检测是尽力而为：MAC 密钥由 `build_key` 派生，提取 master 后仍可伪造；同时删除主记录与锚点仍会重置历史；默认状态按 OS 用户隔离。请结合 NTP、机器级锚点、服务端时间、合同和授权流程。
 - 原生 runtime 把主密钥、验签逻辑和快速 ChaCha 编译进 `.pyd`/`.so`，显著提高静态提取门槛，但无法阻止有能力的攻击者在运行时内存中提取。
-- 发布卫生（Authenticode、PDB 路径、发布暴露审计）见 [security-hardening.md](security-hardening.md)。
+- 发布卫生（Authenticode、PDB 路径、发布暴露审计）见 [security-hardening.md](security-hardening.md)。`tools/check_release.py` 会扫描发布树中的挑战 flag、master/build key、私钥标记和包内 `*.shield-secret.json`；`--temp` 可检查构建机临时目录。
 - 迁移与测试默认保持明文；如包含敏感逻辑，使用 `--encrypt-migrations` / `--encrypt-tests`。
 - 加密提高的是逆向与源码泄露门槛，不是绝对不可破解的 DRM；服务端代码最终会在内存中还原，请配合合同、授权、SaaS 化等手段。
