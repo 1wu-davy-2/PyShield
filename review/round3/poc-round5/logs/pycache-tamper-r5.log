@@ -1,0 +1,12 @@
+planted demo/__pycache__/__init__.cpython-312.pyc 232 bytes
+Traceback (most recent call last):
+  File "C:\Users\ww\AppData\Local\Temp\pyshield-pyc-tamper-r5-ypik_uyx\app\manage.py", line 5, in <module>
+    _pyshield_load_module(
+  File "_shield_runtime/_core.py", line 1060, in load_module
+  File "_shield_runtime/_core.py", line 1050, in _state_for_load
+  File "_shield_runtime/_core.py", line 933, in _load_state
+  File "_shield_runtime/_core.py", line 299, in _enforce_integrity
+_shield_runtime._core.LicenseError: PyShield package integrity check failed (demo/__pycache__/__init__.cpython-312.pyc: unsigned bytecode cache); restore the original files or contact the vendor
+returncode: 1
+note: cache directory still present (rejected before import)
+OK: forged pyc was rejected before it could execute

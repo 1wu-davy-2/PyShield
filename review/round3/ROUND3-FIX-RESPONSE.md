@@ -1,11 +1,19 @@
 # Round 3 修复说明与自评
 
-- 源码：`develop @ ae718c4`
+- 源码：`develop @ d98b48e`（PSH-R5-001/002 主提交 `9365307`，路径卫生 `d98b48e`）
 - 日期：2026-11-15
 - 性质：**开发方自评，不是独立审计报告**。独立结论以审查方按 `VULNERABILITY-REPORT-FORMAT.md` 提交的报告为准。
-- 测试：`python -m unittest discover -s tests` → **180 tests OK (skipped=1)**；原生 runtime 测试因当前机器缺少 C 编译器和 strip 工具被跳过。
+- 测试：`python -m unittest discover -s tests` → **245 tests OK (skipped=5)**；原生 runtime 测试因当前机器缺少 C 编译器和 strip 工具被跳过。第五轮提交尚未触发 CI。
 
-## 0.1 第四轮复核问题修复（2026-11-15）
+## 0.1 第五轮修复（PSH-R5，2026-11-15）
+
+| 第四轮问题 | 处理 | 证据/限制 |
+| --- | --- | --- |
+| PSH-R5-001 挑战 zip 自带 `__pycache__`，伪造 pyc 可绕过清单 | ① 挑战包用第五轮源码重建，zip 内 `__pycache__` 为 0 条；② `builder.clean_pycache()` 之后调用 `assert_no_bytecode_caches()`，仍有缓存则构建失败；③ `manifest.collect_files(forbid_bytecode=True)` 在写清单前拒绝带缓存的树，`verify_files()` 默认报告未列入清单的字节码；④ runtime 导入时执行 `_isolate_bytecode()`：`sys.pycache_prefix` 指向不可预测且不存在的路径、`sys.dont_write_bytecode=True`，受保护包不再读取发布目录的 pyc；⑤ `_scan_integrity()` 在加载首个模块前拒绝 `_shield_runtime/` 之外的任何 `.pyc/.pyo` | `pyshield/manifest.py`、`pyshield/builder.py`、`pyshield/runtime_template/_shield_runtime/_core.py`；`test_planted_bytecode_cache_is_rejected`、`test_runtime_does_not_write_bytecode_into_dist`、`test_bytecode_cache_is_rejected_at_build_time`；`review/round3/poc-round5/pycache_tamper_r5.py` 输出 `unsigned bytecode cache`、marker 未执行、rc=1。限制：能整体替换 `_shield_runtime` 的攻击者仍不受清单保护（已承认边界） |
+| PSH-R5-002 `check_release.py` 对 master/build key 与 pycache 覆盖不足、表述过宽 | ① 新增 `--secret`（可重复）与 TEMP 内真实 `*.shield-secret.json` 自动发现，`--temp` 使用同一组 needles；② 缺少 needles 时不再输出无范围的 OK：目标扫描失败并提示 `--secret`，`--temp` 默认 fail-closed，仅 `--skip-key-scan` 可显式接受缺口；③ 目标树/zip 中出现 `__pycache__` 或未列入该包签名清单的 `.pyc` 直接失败；④ CI 的纯 exe 产物改用 `--skip-key-scan`，带构建密钥的 `dist-demo`/`dist-native` 仍自动取 sibling secret | `tools/check_release.py`；`tests/test_release_check.py`（10 例）；`poc-round5/check_release_gap_r5.py` 覆盖“无密钥 fail-closed / `--secret` 检出裸密钥 / 带 pycache 的 zip 被拒绝”。限制：不带 `--secret` 也没有 sibling secret 的裸 zip 无法比对随机密钥，工具只报“无法验证”，这是能力边界而不是已修好的保证 |
+| 附带卫生（本轮自查） | runtime 编译时 `dfile` 改为相对路径，traceback 不再显示构建机临时输出目录 | `pyshield/builder.py::compile_runtime`；`logs/runtime-run.log` 的 `runtime co_filename: _shield_runtime/_core.py` |
+
+## 0.2 第四轮复核问题修复（2026-11-15）
 
 | 第四轮问题 | 处理 | 证据/限制 |
 | --- | --- | --- |
@@ -65,14 +73,17 @@
 - 并发时钟：8 进程 × 2 轮测试全部成功，两份状态最终一致，无 `.tmp` 残留。
 - 并发首次绑定：16 进程 × 10 轮全部成功，primary/anchor `bound_at` 一致，无 `.tmp` 残留；删除单份记录（主或锚点）均能从另一份恢复。
 - legacy 一次性迁移：首次 opt-in 迁移成功并生成 marker；同一 env 下再次注入旧格式被拒绝；进程运行中删除状态后注入 legacy 也被拒绝。
-- 发布卫生：`python tools/check_release.py --temp` 检查 0 个遗留 `pyshield*`/`psh*` 项；`python tools/check_release.py review/round3/PyShieldBuilder-protected-sample-round3.zip` 无敏感命中。
+- 发布卫生（第五轮，范围为“该命令实际覆盖的部分”）：`python tools/check_release.py --skip-key-scan review/round3/round3-django-shielded.zip` 与同参数扫描静态样本 zip 均通过，两个包 `__pycache__` 条目为 0；扫描树/zip 时会拒绝未列入签名清单的 `.pyc`。master/build key 只有在 sibling `*.shield-secret.json` 或显式 `--secret` 时才做比对；`--temp` 缺少密钥时按“无法验证”失败，不再把 0 项当成密钥卫生证明。
+- 第五轮挑战包：build `0d13b86aeefd81f8`，`manage.py check`/`reveal` 通过，`verify --json` 21 个文件通过，flag 离线解出且 SHA-256 与旧包一致（`a036bf16…c4ce`），发布 zip 的明文 flag 命中数为 0，运行后发布目录 `__pycache__` 数量为 0。
+- 第五轮静态样本：build `692a5f580935dfaf`，41 个业务模块 stub，runtime 源码包含 `_isolate_bytecode`/`unsigned bytecode cache`，无 `.pyc`、无构建 secret。
+- 第五轮 PoC：`poc-round5/pycache_tamper_r5.py` 期望 rc=1、marker 不出现；`poc-round5/check_release_gap_r5.py` 5 个场景全部符合预期（无密钥 fail-closed、`--secret` 检出、pycache zip 拒绝）。
 - 单实例启动：主 exe 与自保护 exe 同时启动时，第二个进程退出并尝试转发深链；任务管理器只保留一个应用实例（PyInstaller onefile 的 bootloader/子进程除外）。`PYSHELD_ALLOW_MULTI_INSTANCE=1` 仅为自动化并行测试入口。
 - 原生 runtime 端到端构建：已由 GitHub Actions `native-runtime` 矩阵在 Windows 和 Ubuntu 上通过（提交 `ae718c4`，run `43697777107`；第三轮 `8adeccf` run `43675650384`）：
   - Windows 使用 Cython + MSVC + LLVM strip，验证 `.pyd` 导入、无 `.py` runtime、无 PDB 侧车、无完整主密钥；
   - Ubuntu 使用 Cython + gcc + binutils strip，验证 `.so` 导入、无 `.py` runtime、无完整主密钥；
   - 两个平台都运行了受保护 `manage.py check` 和 `_shield_runtime verify --json`，并上传原生产物。
   - 本机仍无 C 编译器/strip，因此本地不能重复该端到端构建；以 CI 结果作为本轮证据。
-- 桌面构建器 CI（第四轮 `ae718c4`）：`build-develop` run `43697777144` 通过；`selfbuild-poc` run `43697777044` 通过；`native-runtime` run `43697777107` 通过。本地 `PyShieldBuilder.exe` 已用 `ci-develop-latest` 中对应 `ae718c4` 的 Windows CI 产物替换，哈希见 `SHA256SUMS.txt`；自保护 exe 与两个 zip 由第四轮源码本机构建。`ci-develop-latest` 是移动快照，后续 docs-only commit 重建可能产生不同 exe 哈希。
+- 桌面构建器 CI（第四轮 `ae718c4`）：`build-develop` run `43697777144` 通过；`selfbuild-poc` run `43697777044` 通过；`native-runtime` run `43697777107` 通过。第五轮的材料改为本机构建：桌面构建器 `PyShieldBuilder-r5.exe`（49,305,274 B）、自保护 exe（40,711,334 B）与两个 zip 均由 `9365307` 本地构建，哈希见 `SHA256SUMS.txt`；第四轮 CI 的 `PyShieldBuilder.exe` 保留为旧产物对照。`ci-develop-latest` 是移动快照，后续 docs-only commit 重建可能产生不同 exe 哈希。
 
 ## 4. 仍需审查方重点挑战的点
 
@@ -82,6 +93,8 @@
 - 原生 runtime 的 strip 是否破坏 Python 导入；CodeView 清理是否彻底；`.pyd` 是否仍含完整主密钥。
 - onefile 绑定检测在自定义 `_MEIPASS`、`PYSHELD_BINDING_FILE` 和 onedir 布局下是否仍可绕过。
 - 受保护 Django 示例的 flag 是否能在不运行程序的情况下从发布目录恢复。
+- 伪造 `demo/__pycache__/*.pyc` 是否仍能执行：本机验证会被 `unsigned bytecode cache` 拒绝，且 `sys.pycache_prefix` 隔离使缓存根本不被读取；请重点尝试 `PYTHONPYCACHEPREFIX`、预置 prefix 路径、`_shield_runtime` 内替换等绕过。
+- `check_release.py` 的 5 个场景是否都符合“不能验证就失败”：`--temp` 无密钥、裸 zip 无密钥、`--secret` 检出、带 `__pycache__` 的 zip、正常包通过。
 
 ## 5. 明确的残余风险
 
@@ -94,5 +107,6 @@
 - 自保护 exe 不做清单校验，bundle 只是压缩；
 - DPAPI 失败会降级为 `PLAIN1`；
 - PyInstaller 内置二进制仍可能有 PDB 路径/符号；未接入 Authenticode。
+- 字节码隔离不是机密性边界：能写发布目录并替换 `_shield_runtime` 的攻击者仍可绕过一切清单校验；能预置 `sys.pycache_prefix` 目标目录的同用户攻击者也可能投毒缓存。该项只保证“未签名缓存不会被执行/不会被当作受保护文件”。
 
 这些是设计边界，不应被表述为“本轮已完全修复”。

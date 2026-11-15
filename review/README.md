@@ -6,11 +6,13 @@
 
 第三轮材料在 [`round3/`](round3/README.md)：
 
-- `round3/PyShieldBuilder-protected-sample-round3.zip`：重新生成的受保护源码树；
+- `round3/PyShieldBuilder-protected-sample-round3.zip`：重新生成的受保护源码树（41 个业务模块 stub）；
 - `round3/round3-django-shielded.zip`：可直接运行的受保护 Django 示例与 Crack Challenge；
 - `round3/ROUND3-INVITATION.md`：发给审查方的话术；
 - `round3/VULNERABILITY-REPORT-FORMAT.md`：漏洞报告格式；
-- `round3/ROUND3-FIX-RESPONSE.md`：对第二轮问题的逐项修复说明；
+- `round3/ROUND3-FIX-RESPONSE.md`：对第二至第五轮问题的逐项修复说明；
+- `round3/ASSESSMENT-round5.md`：第五轮修复复核报告（审计范文），上一轮为 `ASSESSMENT-round4.md`；
+- `round3/poc-round5/`：字节码缓存与发布检查的回归脚本与日志；
 - `round3/SHA256SUMS.txt`：exe、zip 与 flag 哈希。
 
 ## Round 2（历史）

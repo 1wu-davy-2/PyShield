@@ -1,0 +1,383 @@
+{
+  "report": "PyShield Round 3 fifth-material review (post-fix verification, audit template)",
+  "date": "2026-11-15",
+  "target_code_commit": "d98b48e",
+  "materials_head": "d98b48e",
+  "environment": {
+    "os": "Windows 10 Pro 10.0.19045 x64",
+    "python": "CPython 3.12.0 (artifacts) / 3.13.14 (tooling)",
+    "django": "5.2.8",
+    "pyinstaller": "6.22.3"
+  },
+  "verdict": "fixed_pending_ci",
+  "verdict_reason": "PSH-R5-001 is closed by three independent layers (release tree without caches, import-time cache isolation, manifest rejection of unsigned bytecode) and reproduces as rc=1 with no marker. PSH-R5-002 now fails closed without key needles and rejects __pycache__ in trees and zips; a random key in a bare zip without --secret remains undecidable by design. No new exploitable issue was found; one informational build-path leak was fixed in the same commit. CI for d98b48e has not run yet and both executables are local builds.",
+  "artifacts": {
+    "PyShieldBuilder-r5.exe": {
+      "bytes": 49305274,
+      "sha256": "504e89cc242714e2304e8898a639c5b885a98f5b96a0c784a6f6f8b901310200",
+      "verified": true,
+      "note": "local build; supersedes the ae718c4 CI binary"
+    },
+    "PyShieldBuilder-selfbuild.exe": {
+      "bytes": 40711334,
+      "sha256": "7dce130c9857d6899ac854041fddd1358c5953a53a798e63209531abc30c541e",
+      "verified": true,
+      "note": "rebuilt this round; integrity=off by design"
+    },
+    "PyShieldBuilder-protected-sample-round3.zip": {
+      "bytes": 547238,
+      "sha256": "984c701c8ef2a8b22753054d1098a7c7abfe6bacfcf69624ae18cc52c3966ac4",
+      "verified": true,
+      "build_id": "692a5f580935dfaf",
+      "stubs": 41
+    },
+    "round3-django-shielded.zip": {
+      "bytes": 66750,
+      "sha256": "a1ee83fa0ee9d7ae765f17e9fb12b371643945fc75d1bed9e507e5566f122320",
+      "verified": true,
+      "build_id": "0d13b86aeefd81f8",
+      "entries": 27,
+      "pycache_entries": 0
+    }
+  },
+  "challenge": {
+    "flag_sha256": "a036bf169f93cf499e7496082e3d088e5f3c453b3620cf8eed00941b2d96c4ce",
+    "recovered": true,
+    "recovered_value_hash_matches": true,
+    "recovery_ms": 84.9,
+    "plaintext_flag_hits_in_zip": 0,
+    "manage_py_check": "ok",
+    "manage_py_reveal": "protected demo command OK",
+    "verify_json": {
+      "ok": true,
+      "checked": 21,
+      "failures": []
+    },
+    "pycache_after_run": 0,
+    "runtime_co_filename": "_shield_runtime/_core.py"
+  },
+  "ci_runs": [
+    {
+      "commit": "d98b48e",
+      "status": "not_run",
+      "detail": "local only; push required before citing CI"
+    },
+    {
+      "commit": "ae718c4",
+      "status": "previous round",
+      "detail": "native-runtime 43697777107 / build-develop 43697777144 / selfbuild-poc 43697777044"
+    }
+  ],
+  "findings": [
+    {
+      "id": "PSH-R5-001",
+      "title": "Challenge zip ships __pycache__ outside the signed manifest; a tampered pyc executes while the manifest passes",
+      "severity": "high",
+      "cvss": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H",
+      "cvss_score": 7.8,
+      "component": "round3-django-shielded.zip caches; pyshield/manifest.py; pyshield/builder.py; _shield_runtime/_core.py",
+      "artifact_sha256": "a1ee83fa0ee9d7ae765f17e9fb12b371643945fc75d1bed9e507e5566f122320",
+      "source_commit": "d98b48e",
+      "environment": "Windows 10 Pro 19045 x64; CPython 3.12.0; Django 5.2.8",
+      "preconditions": "local write access to the deployment directory; no admin/debugger/memory dump required",
+      "status": "fixed_verified",
+      "summary": "The release no longer contains bytecode caches, the runtime redirects sys.pycache_prefix and disables cache writes before protected packages are imported, and _scan_integrity rejects any .pyc outside _shield_runtime. A planted demo/__pycache__ pyc now fails with 'unsigned bytecode cache' and never executes.",
+      "root_cause": "CPython validates timestamp-based pyc headers only against source mtime/size; the manifest covered .py files but not caches, and the packaging step shipped __pycache__.",
+      "repro_steps": [
+        "Copy the challenge tree to a writable directory.",
+        "Read demo/__init__.py mtime/size.",
+        "Write demo/__pycache__/__init__.cpython-312.pyc with a matching header and marker payload.",
+        "Run python manage.py check."
+      ],
+      "poc": "review/round3/poc-round5/pycache_tamper_r5.py",
+      "impact": "Before the fix a writable deployment allowed arbitrary code execution that bypassed the integrity promise. After the fix the forged cache is neither executed nor accepted.",
+      "evidence": [
+        "logs/pycache-tamper-r5.log: rc=1, marker absent, 'unsigned bytecode cache'",
+        "logs/runtime-run.log: pycache dirs 0 after check/reveal/verify",
+        "logs/prefix-hijack-r5.log: PYTHONPYCACHEPREFIX poison ignored, check rc=0",
+        "zip: 27 entries, 0 __pycache__"
+      ],
+      "remediation": "manifest.collect_files(forbid_bytecode=True); builder.clean_pycache + assert_no_bytecode_caches; runtime _isolate_bytecode + _scan_bytecode_caches; check_release.py rejects caches.",
+      "post_fix_verification": "Reproduced with pycache_tamper_r5.py and prefix_hijack_r5.py; both behave as expected on the shipped zip.",
+      "residual_risk": "Replacing _shield_runtime or poisoning an attacker-chosen pycache prefix is out of scope; integrity=off builds keep import isolation only."
+    },
+    {
+      "id": "PSH-R5-002",
+      "title": "check_release.py key coverage and pycache rejection were incomplete and overstated",
+      "severity": "low",
+      "cvss": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N",
+      "cvss_score": 3.3,
+      "component": "tools/check_release.py; ROUND3-FIX-RESPONSE release-hygiene wording",
+      "artifact_sha256": "a1ee83fa0ee9d7ae765f17e9fb12b371643945fc75d1bed9e507e5566f122320",
+      "source_commit": "d98b48e",
+      "environment": "Windows 10 Pro 19045 x64; CPython 3.12.0",
+      "preconditions": "release process relies on the checker; local user",
+      "status": "fixed_with_limits",
+      "summary": "The checker now takes --secret, discovers real secrets in TEMP, fails closed when no needles are available, and rejects __pycache__ / unlisted .pyc in trees and archives. A random key inside an archive with no secret source remains undecidable and is reported as such.",
+      "root_cause": "--temp passed empty needle tuples; archives without a sibling secret had no key source; neither path rejected bytecode caches.",
+      "repro_steps": [
+        "Write a real master key into a pyshield*-named TEMP directory.",
+        "Run check_release.py --temp without --secret: must fail as 'cannot verify'.",
+        "Repeat with --secret: must report 'build key material'.",
+        "Add a __pycache__ entry to a copy of the challenge zip: must fail."
+      ],
+      "poc": "review/round3/poc-round5/check_release_gap_r5.py",
+      "impact": "Before the fix the checker returned 0 without scanning keys and accepted caches, and the fix response treated '--temp 0' as proof of key hygiene.",
+      "evidence": [
+        "logs/check-release-gap-r5.log: 5 scenarios match expected rc",
+        "logs/check-release-artifacts.log: both shipped zips pass with --skip-key-scan and a scoped OK message"
+      ],
+      "remediation": "--secret/--skip-key-scan, TEMP secret discovery, fail-closed default, bytecode rejection, scoped success message.",
+      "post_fix_verification": "All five scenarios in check_release_gap_r5.py behave as expected.",
+      "residual_risk": "A random 32-byte key has no detectable shape; a bare archive without --secret can only fail closed, not prove absence of leakage."
+    },
+    {
+      "id": "PSH-R5-003",
+      "title": "Runtime pyc co_filename leaked the build machine's temporary output path",
+      "severity": "informational",
+      "cvss": "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+      "cvss_score": 0.0,
+      "component": "builder.compile_runtime",
+      "artifact_sha256": "a1ee83fa0ee9d7ae765f17e9fb12b371643945fc75d1bed9e507e5566f122320",
+      "source_commit": "d98b48e",
+      "environment": "Windows 10 Pro 19045 x64; CPython 3.12.0",
+      "preconditions": "read access to the deployed runtime pyc or a runtime traceback",
+      "status": "fixed_verified",
+      "summary": "Tracebacks from the runtime used to print the builder's temporary output directory; py_compile now receives a relative dfile.",
+      "root_cause": "compile_runtime passed dfile=str(source) while the source lived in the temporary build directory.",
+      "repro_steps": [
+        "Load _shield_runtime/_core.pyc and print co_filename.",
+        "Trigger any runtime traceback and read the path."
+      ],
+      "poc": "py -3.12 -c \"import marshal;print(marshal.loads(open('_shield_runtime/_core.pyc','rb').read()[16:]).co_filename)\"",
+      "impact": "Build-path disclosure only; no key or source disclosure.",
+      "evidence": [
+        "logs/runtime-run.log: runtime co_filename: _shield_runtime/_core.py"
+      ],
+      "remediation": "dfile=f'_shield_runtime/{source.name}'",
+      "post_fix_verification": "co_filename is relative on the shipped zip.",
+      "residual_risk": "PyInstaller built-in binaries may still carry symbols/paths (see R-15)."
+    }
+  ],
+  "fix_verification": [
+    {
+      "item": "PSH-R5-001 release tree without caches",
+      "result": "pass",
+      "evidence": "zip 27 entries, 0 __pycache__"
+    },
+    {
+      "item": "PSH-R5-001 runtime import isolation",
+      "result": "pass",
+      "evidence": "pycache dirs 0 after check/reveal; PYTHONPYCACHEPREFIX ignored"
+    },
+    {
+      "item": "PSH-R5-001 integrity rejection",
+      "result": "pass",
+      "evidence": "rc=1, 'unsigned bytecode cache', marker absent"
+    },
+    {
+      "item": "PSH-R5-001 build-time enforcement",
+      "result": "pass",
+      "evidence": "manifest/builder tests; assert_no_bytecode_caches"
+    },
+    {
+      "item": "PSH-R5-002 fail closed without keys",
+      "result": "pass",
+      "evidence": "--temp and bare zip both rc=1 'cannot verify'"
+    },
+    {
+      "item": "PSH-R5-002 --secret detection",
+      "result": "pass",
+      "evidence": "'build key material' for TEMP and zip"
+    },
+    {
+      "item": "PSH-R5-002 pycache rejection",
+      "result": "pass",
+      "evidence": "poisoned zip rc=1"
+    },
+    {
+      "item": "PSH-R5-003 relative co_filename",
+      "result": "pass",
+      "evidence": "_shield_runtime/_core.py"
+    },
+    {
+      "item": "flag recovery",
+      "result": "pass",
+      "evidence": "PSH-ROUND3-…630, hash matches, 84.9 ms"
+    },
+    {
+      "item": "protected demo runs",
+      "result": "pass",
+      "evidence": "check/reveal/verify 21 files"
+    },
+    {
+      "item": "full test suite",
+      "result": "pass",
+      "evidence": "245 tests OK, 5 skipped"
+    },
+    {
+      "item": "CI for 9365307",
+      "result": "not_run",
+      "evidence": "local only"
+    },
+    {
+      "item": "binding 16x10 rerun",
+      "result": "not_rerun",
+      "evidence": "code untouched; unit test covers it"
+    },
+    {
+      "item": "clock 8x2 rerun",
+      "result": "not_rerun",
+      "evidence": "code untouched; unit test covers it"
+    },
+    {
+      "item": "native strip/PDB",
+      "result": "not_rerun",
+      "evidence": "no local toolchain; CI evidence only"
+    }
+  ],
+  "document_review": [
+    {
+      "claim": "challenge zip SHA-256",
+      "result": "match",
+      "note": "a1ee83fa…2320"
+    },
+    {
+      "claim": "sample zip SHA-256",
+      "result": "match",
+      "note": "984c701c…6ac4"
+    },
+    {
+      "claim": "builder exe SHA-256",
+      "result": "match",
+      "note": "504e89cc…0200, local build"
+    },
+    {
+      "claim": "selfbuild exe SHA-256",
+      "result": "match",
+      "note": "7dce130c…541e, rebuilt"
+    },
+    {
+      "claim": "flag recoverable / hash unchanged",
+      "result": "match",
+      "note": "a036bf16…c4ce"
+    },
+    {
+      "claim": "zip has no plaintext flag",
+      "result": "match",
+      "note": "decrypted consts only"
+    },
+    {
+      "claim": "zip has no __pycache__",
+      "result": "match",
+      "note": "0 entries"
+    },
+    {
+      "claim": "tests 245 OK / 5 skipped",
+      "result": "match",
+      "note": "local CPython 3.13.14"
+    },
+    {
+      "claim": "CI passed",
+      "result": "not_applicable",
+      "note": "9365307 not pushed; invitation states this"
+    },
+    {
+      "claim": "check_release scans master/build keys",
+      "result": "scoped",
+      "note": "requires --secret or sibling secret; documented"
+    },
+    {
+      "claim": "--temp hygiene proof",
+      "result": "fixed",
+      "note": "no longer presented as key proof"
+    }
+  ],
+  "residual_risks": [
+    {
+      "id": "R-01",
+      "risk": "bytecode isolation can be bypassed by a same-user attacker",
+      "note": "runtime replacement or prefix poisoning"
+    },
+    {
+      "id": "R-02",
+      "risk": "random keys are undetectable without needles",
+      "note": "bare archive fails closed only"
+    },
+    {
+      "id": "R-03",
+      "risk": "master key extractable",
+      "note": "_keyring.master_key()"
+    },
+    {
+      "id": "R-04",
+      "risk": "plaintext in memory",
+      "note": "best-effort wipe"
+    },
+    {
+      "id": "R-05",
+      "risk": "double-delete resets state",
+      "note": "offline boundary"
+    },
+    {
+      "id": "R-06",
+      "risk": "keyed last_seen +1 day skew",
+      "note": "design skew"
+    },
+    {
+      "id": "R-07",
+      "risk": "single state copy unreadable",
+      "note": "fail-closed"
+    },
+    {
+      "id": "R-08",
+      "risk": "POSIX lock without timeout",
+      "note": "hang possible"
+    },
+    {
+      "id": "R-09",
+      "risk": "DPAPI fallback",
+      "note": "PLAIN1 + HMAC"
+    },
+    {
+      "id": "R-10",
+      "risk": "self-build integrity=off",
+      "note": "documented"
+    },
+    {
+      "id": "R-11",
+      "risk": "native keyring oracle",
+      "note": "no Authenticode/TPM/server"
+    },
+    {
+      "id": "R-12",
+      "risk": "manifest not rescanned every 300 s",
+      "note": "first load only"
+    },
+    {
+      "id": "R-13",
+      "risk": "temp deployment without _MEIPASS",
+      "note": "first-run binding loss"
+    },
+    {
+      "id": "R-14",
+      "risk": "build machine TEMP",
+      "note": "process control, not a boundary"
+    },
+    {
+      "id": "R-15",
+      "risk": "unsigned executables; local build differs from CI",
+      "note": "hash mismatch documented"
+    },
+    {
+      "id": "R-16",
+      "risk": "source-runtime __pycache__ under _shield_runtime not reported",
+      "note": "runtime replacement is an accepted boundary"
+    }
+  ],
+  "notes": [
+    "This round adds three regression scripts and logs under review/round3/poc-round5/.",
+    "The challenge demo is rebuilt from a reconstructed source tree; the flag value was kept so its hash is unchanged.",
+    "Push d98b48e and rerun the three workflows before sending if CI evidence is required."
+  ]
+}

@@ -1,0 +1,3 @@
+note: review\round3\round3-django-shielded.zip: master/build key scan skipped (no --secret or sibling build secret)
+note: review\round3\PyShieldBuilder-protected-sample-round3.zip: master/build key scan skipped (no --secret or sibling build secret)
+release check OK: no challenge flag, build secret, private key marker or unsigned bytecode found (master/build key scan skipped)
