@@ -52,6 +52,10 @@ $env:PYSHELD_GUI_CONFIG_DIR = "D:\pyshield-config"
 
 配置目录覆盖不会解除单实例限制：同一用户会话内再次启动只会唤醒已运行窗口并转发深链。并行 UI 测试需要显式设置 `PYSHELD_ALLOW_MULTI_INSTANCE=1`。
 
+### 启动与首次引导
+
+双击 exe 后先显示全屏启动层（品牌标识 + 进度条），本地引擎就绪后淡出；首次启动会自动弹出 4 步引导：选项目、保护参数、AI 接入、授权与记录。跳过或走完会写入 `onboarding_seen=true`，之后不再自动弹出；设置页提供「重新查看新手引导」。
+
 ### AI 接入（内置 MCP）
 
 侧边栏「AI 接入」把 MCP 构建服务暴露给本地 agent，不再需要单独下载 console 版：

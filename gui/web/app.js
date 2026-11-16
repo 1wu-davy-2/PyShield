@@ -110,6 +110,129 @@
     development: "开发模式",
   };
 
+  // --------------------------------------------------------------- splash
+
+  const BOOT_MIN_MS = 700;
+  const bootStartedAt = performance.now();
+  let bootSplashHidden = false;
+
+  function hideBootSplash() {
+    if (bootSplashHidden) return;
+    bootSplashHidden = true;
+    const splash = $("#bootSplash");
+    if (!splash) return;
+    splash.classList.add("is-done");
+    setTimeout(() => {
+      splash.hidden = true;
+    }, 380);
+  }
+
+  function hideBootWhenReady() {
+    const waited = performance.now() - bootStartedAt;
+    setTimeout(hideBootSplash, Math.max(0, BOOT_MIN_MS - waited));
+  }
+
+  setTimeout(hideBootSplash, 4500);
+
+  // ----------------------------------------------------------- onboarding
+
+  const ONBOARDING_STEPS = [
+    {
+      icon: "i-folder",
+      title: "先选一个 Django 项目",
+      text: "选中包含 manage.py 的项目根目录，输出目录默认放在同级，不会改动原项目。",
+      points: [
+        "点「选择」挑目录，或直接把路径粘进输入框",
+        "输出默认是 <项目名>-shielded，可随时改",
+        "构建密钥写在输出目录同级，只留在本机",
+      ],
+    },
+    {
+      icon: "i-shield",
+      title: "保护参数用默认值就够",
+      text: "算法、运行时与完整性默认已调好；确认构建摘要后立即扣 1 次额度，失败或取消不退还。",
+      points: [
+        "字节码运行时兼容性最好，首次建议先用它",
+        "原生运行时需要本机 C 编译器和 Cython",
+        "预检不消耗额度，语法错误会提前拦下",
+      ],
+    },
+    {
+      icon: "i-terminal",
+      title: "让 AI Agent 帮你构建",
+      text: "「AI 接入」页把 MCP 服务开放给本机 agent，复制一份配置就能让 Claude Code、Cursor 直接调用。",
+      points: [
+        "打开软件即监听 127.0.0.1:8790，端口被占用会自动换 8xxx",
+        "复制内容自带接入说明：工具清单、调用顺序、额度规则",
+        "HTTP 需要软件保持运行；stdio 由客户端自己拉子进程",
+      ],
+    },
+    {
+      icon: "i-key",
+      title: "授权、记录都在侧边栏",
+      text: "「版本与试用」自助开通试用，「构建记录」只存本机，「设置」里可以重新打开这份引导。",
+      points: [
+        "试用：14 天、3 次加密构建，无需付款",
+        "构建记录保留最近 100 次，首次启动会从旧版本迁移",
+        "设置页可改默认算法、运行时与校验解释器",
+      ],
+    },
+  ];
+
+  let onboardingIndex = 0;
+
+  function renderOnboarding() {
+    const step = ONBOARDING_STEPS[onboardingIndex];
+    if (!step) return;
+    const art = $("#onboardingArt");
+    if (art) art.innerHTML = `<svg class="icon"><use href="#${step.icon}"/></svg>`;
+    $("#onboardingStep").textContent = `${onboardingIndex + 1} / ${ONBOARDING_STEPS.length}`;
+    $("#onboardingTitle").textContent = step.title;
+    $("#onboardingText").textContent = step.text;
+    $("#onboardingPoints").innerHTML = step.points
+      .map((point) => `<li><svg class="icon"><use href="#i-check"/></svg><span>${escapeHtml(point)}</span></li>`)
+      .join("");
+    $("#onboardingDots").innerHTML = ONBOARDING_STEPS
+      .map((_, index) => `<span class="${index === onboardingIndex ? "is-active" : ""}"></span>`)
+      .join("");
+    $("#onboardingPrev").disabled = onboardingIndex === 0;
+    $("#onboardingNext").textContent =
+      onboardingIndex === ONBOARDING_STEPS.length - 1 ? "开始使用" : "下一步";
+  }
+
+  function openOnboarding(index = 0) {
+    onboardingIndex = Math.max(0, Math.min(index, ONBOARDING_STEPS.length - 1));
+    renderOnboarding();
+    $("#onboardingModal").hidden = false;
+  }
+
+  async function markOnboardingSeen() {
+    if (state.settings && state.settings.onboarding_seen) return;
+    state.settings = { ...(state.settings || {}), onboarding_seen: true };
+    await call("save_settings", { onboarding_seen: true });
+  }
+
+  function closeOnboarding(markSeen = true) {
+    $("#onboardingModal").hidden = true;
+    if (markSeen) markOnboardingSeen();
+  }
+
+  function onboardingNext() {
+    if (onboardingIndex >= ONBOARDING_STEPS.length - 1) {
+      closeOnboarding(true);
+      toast("可以从「加密构建」开始了", "success");
+      return;
+    }
+    onboardingIndex += 1;
+    renderOnboarding();
+  }
+
+  function onboardingPrev() {
+    if (onboardingIndex === 0) return;
+    onboardingIndex -= 1;
+    renderOnboarding();
+  }
+
   // ---------------------------------------------------------------- bridge
 
   function bridgeReady() {
@@ -2038,11 +2161,13 @@
   async function boot() {
     const ready = await bridgeReady();
     if (!ready && !state.preview) {
+      hideBootSplash();
       toast("无法连接本地构建引擎，请重新启动应用", "error");
       return;
     }
     const response = await call("bootstrap");
     if (!response.ok) {
+      hideBootSplash();
       toast(response.error || "初始化失败", "error");
       return;
     }
@@ -2111,6 +2236,12 @@
     const panel = new URLSearchParams(location.search).get("panel");
     if (state.preview && panel === "python") await openPythonModal();
     if (state.preview && panel === "confirm") await startBuild();
+
+    hideBootWhenReady();
+    const forceGuide = new URLSearchParams(location.search).get("onboarding") === "1";
+    if (forceGuide || !(response.settings && response.settings.onboarding_seen)) {
+      setTimeout(() => openOnboarding(0), BOOT_MIN_MS + 260);
+    }
   }
 
   // ---------------------------------------------------------------- preview
@@ -2374,6 +2505,7 @@
           mcp_port: 8790,
           mcp_allow_build: true,
           mcp_project_root: "",
+          onboarding_seen: false,
         },
         history: history,
         machine: "9f3c1a72b0d84e51c4a201e57d8b16a3",
@@ -2659,7 +2791,9 @@
       return Promise.resolve({ ok: true, machine: "9f3c1a72b0d84e51c4a201e57d8b16a3" });
     }
     if (name === "save_settings") {
-      return Promise.resolve({ ok: true, settings: args[0] || {} });
+      const payload = args[0] || {};
+      state.settings = { ...(state.settings || {}), ...payload };
+      return Promise.resolve({ ok: true, settings: state.settings });
     }
     if (name === "reveal") return Promise.resolve({ ok: true });
     if (name === "window_action") return Promise.resolve({ ok: true });
@@ -2984,6 +3118,20 @@
     $("#mcpBrowseRoot").addEventListener("click", browseMcpRoot);
     $("#mcpCopyToken").addEventListener("click", () => {
       copyText(state.mcp ? state.mcp.token : "", "访问令牌已复制");
+    });
+    $("#replayOnboarding").addEventListener("click", () => openOnboarding(0));
+    $("#onboardingNext").addEventListener("click", onboardingNext);
+    $("#onboardingPrev").addEventListener("click", onboardingPrev);
+    $("#onboardingSkip").addEventListener("click", () => closeOnboarding(true));
+    $("#onboardingModal").addEventListener("click", (event) => {
+      if (event.target === $("#onboardingModal")) closeOnboarding(true);
+    });
+    document.addEventListener("keydown", (event) => {
+      const modal = $("#onboardingModal");
+      if (!modal || modal.hidden) return;
+      if (event.key === "Escape") closeOnboarding(true);
+      else if (event.key === "ArrowRight") onboardingNext();
+      else if (event.key === "ArrowLeft") onboardingPrev();
     });
     $("#mcpQuickStart").addEventListener("click", startMcp);
     $("#mcpRequestCard").addEventListener("click", openMcpLog);

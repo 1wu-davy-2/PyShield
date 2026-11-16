@@ -61,6 +61,7 @@ DEFAULT_SETTINGS = {
     "mcp_port": MCP_DEFAULT_PORT,
     "mcp_allow_build": True,
     "mcp_project_root": "",
+    "onboarding_seen": False,
 }
 
 PROBE_SCRIPT = r"""
@@ -462,6 +463,7 @@ def _normalized_settings(payload: dict | None) -> dict:
     settings["mcp_enabled"] = bool(settings.get("mcp_enabled", True))
     settings["mcp_allow_build"] = bool(settings.get("mcp_allow_build", True))
     settings["mcp_project_root"] = str(settings.get("mcp_project_root") or "").strip()
+    settings["onboarding_seen"] = bool(settings.get("onboarding_seen", False))
     try:
         port = int(settings.get("mcp_port") or MCP_DEFAULT_PORT)
     except (TypeError, ValueError):
@@ -494,7 +496,12 @@ def load_settings() -> dict:
 
 
 def save_settings(payload: dict) -> dict:
-    settings = _normalized_settings(payload)
+    # Merge over the stored values: callers often submit only the fields they
+    # own, and an omitted key must not fall back to its default.
+    merged = dict(load_settings())
+    if isinstance(payload, dict):
+        merged.update(payload)
+    settings = _normalized_settings(merged)
     state_store().save_settings(settings)
     # Keep the legacy JSON export for users who inspect or back it up manually;
     # SQLite remains the source of truth.

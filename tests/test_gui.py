@@ -279,6 +279,18 @@ class SettingsAndHistoryTests(unittest.TestCase):
         raw = json.loads(core.settings_path().read_text(encoding="utf-8"))
         self.assertEqual(raw["output_suffix"], "-prod")
 
+    def test_onboarding_flag_defaults_and_persists(self) -> None:
+        settings = core.load_settings()
+        self.assertFalse(settings["onboarding_seen"])
+
+        saved = core.save_settings({**settings, "onboarding_seen": True})
+        self.assertTrue(saved["onboarding_seen"])
+        self.assertTrue(core.load_settings()["onboarding_seen"])
+
+        # A partial settings save must not flip the flag back.
+        core.save_settings({"cipher": "aesgcm"})
+        self.assertTrue(core.load_settings()["onboarding_seen"])
+
     def test_invalid_values_fall_back(self) -> None:
         core.settings_path().parent.mkdir(parents=True, exist_ok=True)
         core.settings_path().write_text(
