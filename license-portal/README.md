@@ -5,14 +5,15 @@
 ## 1. 功能概览
 
 - **试用申请**：桌面端打开 `/activate?serial=...&machine=...` 时自动携带序列号和机器码；用户填写邮箱、手机号、姓名/称呼（表单字段 `name`，即页面上的用户名）、个人或公司、公司名称，并勾选同意条款。
-- **邮箱验证码**：6 位数字验证码，10 分钟内有效，单个申请最多尝试 5 次；验证通过后签发试用授权。
+- **邮箱验证码**：6 位数字验证码，10 分钟内有效，单个申请最多尝试 5 次；验证通过后签发试用授权。未收到时可重发，重发后旧码立即失效，同一申请每小时最多重发 5 次。
+- **品牌化邮件**：验证码与系统通知使用与门户一致的深色页头、石灰绿强调和验证码卡片 HTML 模板，同时提供纯文本正文；发件人显示名、Reply-To、站点名称、支持邮箱与客服微信均可配置。
 - **Cloudflare Turnstile**：配置 Site Key 和 Secret 后自动启用；开发环境可留空关闭。
 - **试用码与深链**：签发成功后页面显示 `PST-XXXX-XXXX-XXXX` 试用码，并提供 `pyshield://activate?serial=...&code=...` 深链；未安装协议处理程序时也能复制试用码。
 - **激活码**：管理端可批量生成专业版/企业版激活码（`PSP-...` / `PSE-...`），支持查看、复制、吊销和批次备注。
 - **手动微信收款**：用户通过页面或微信联系运营人员，人工确认转账后由管理员生成激活码并发送；订单页用于记录 `pending / paid / fulfilled / cancelled`。
 - **在线激活与验签**：桌面端提交激活码到 `/api/license/activate`，服务端返回已签名授权文档；客户端只用内置公钥验签，写入本地授权。
 - **续费、升级、吊销**：管理端修改授权后 `revision` 加一；桌面端刷新状态时通过 `/api/license/status` 领取新文档。吊销后在线刷新或同步吊销列表即拒绝。
-- **管理端**：概览、授权、激活码、客户、订单、审计日志、签发密钥公钥/指纹。
+- **管理端**：概览、授权、激活码、客户（列表 + 详情）、订单、审计日志（支持 CSV 导出）、签发密钥公钥/指纹。
 - **React 单页应用**：`license-portal/web` 使用 Vite + React + TypeScript + Ant Design；后端只提供 JSON，页面路由由前端负责，`npm run build` 产物由 Nginx 直接托管。
 - **单机轻量部署**：仅依赖 Python 标准库和仓库内的 `pyshield` 共享模块，SQLite WAL 单文件存储，适合早期客户量。
 
@@ -277,6 +278,8 @@ sudo editor /etc/pyshield-portal/portal.env
 | `PYSHELD_PORTAL_SMTP_USER` | `smtp_user` | 空 | 否 | SMTP 登录用户。 |
 | `PYSHELD_PORTAL_SMTP_PASSWORD` | `smtp_password` | 空 | **是** | SMTP 密码或授权码，只放在 `portal.env`（或通过 wrapper 从 systemd credential 导出到环境变量）中。 |
 | `PYSHELD_PORTAL_SMTP_FROM` | `smtp_from` | 空（回退到 `smtp_user`） | 否 | 发件人地址，必须是 SMTP 服务允许的 From。 |
+| `PYSHELD_PORTAL_SMTP_FROM_NAME` | `smtp_from_name` | 空（回退到 `site_name`） | 否 | 发件人显示名，支持中文；实际 `From` 为 `显示名 <smtp_from>`。 |
+| `PYSHELD_PORTAL_SMTP_REPLY_TO` | `smtp_reply_to` | 空（回退到 `support_email`，再回退到 `smtp_from`） | 否 | 用户直接回复时使用的地址。 |
 | `PYSHELD_PORTAL_SMTP_TLS` | `smtp_tls` | `starttls` | 否 | `starttls`、`ssl` 或 `none`。生产不要用 `none`。 |
 | `PYSHELD_PORTAL_TURNSTILE_SITE_KEY` | `turnstile_site_key` | 空 | 否 | Cloudflare Turnstile 公开 Site Key；与 Secret 同时非空才启用。 |
 | `PYSHELD_PORTAL_TURNSTILE_SECRET` | `turnstile_secret` | 空 | **是** | Turnstile Secret，只放在 `portal.env` 或受保护配置中。 |
@@ -311,6 +314,8 @@ PYSHELD_PORTAL_SMTP_PORT=587
 PYSHELD_PORTAL_SMTP_USER=portal@example.com
 PYSHELD_PORTAL_SMTP_PASSWORD=替换为SMTP授权码
 PYSHELD_PORTAL_SMTP_FROM=portal@example.com
+PYSHELD_PORTAL_SMTP_FROM_NAME="PyShield 授权中心"
+PYSHELD_PORTAL_SMTP_REPLY_TO=support@example.com
 PYSHELD_PORTAL_SMTP_TLS=starttls
 
 PYSHELD_PORTAL_TURNSTILE_SITE_KEY=替换为SiteKey
@@ -320,6 +325,43 @@ PYSHELD_PORTAL_SIGNING_PASSPHRASE=替换为签发密钥口令
 ```
 
 `EnvironmentFile` 使用 `KEY=value` 语法，不要在 `=` 两边加空格；包含空格或特殊字符时用双引号包起来。
+
+#### 邮件发件与模板
+
+验证码邮件和系统通知都使用内置的品牌 HTML 模板：深色页头、站点名称、石灰绿强调色、验证码卡片和页脚客服信息，并自动附带纯文本正文。模板不引用外部字体或图片，样式全部内联，Outlook/QQ 邮箱/移动端均可正常显示。
+
+模板使用的站点字段：
+
+| 字段 | 用途 |
+| --- | --- |
+| `site_name` | 页头品牌、邮件标题前缀、页脚版权。 |
+| `site_url` | 页脚“访问授权中心”链接、正文 CTA 按钮和验证码复制页；只接受 `http`/`https`。 |
+| `support_email` | 页脚支持邮箱，同时是 `Reply-To` 的首选回退。 |
+| `contact_wechat` | 页脚客服微信（可选）。 |
+| `smtp_from_name` | 发件人显示名，默认与 `site_name` 一致。 |
+
+验证码旁边有“复制”按钮。邮件客户端会剥离脚本，不能在邮件内直接操作剪贴板，所以按钮打开站内复制页（形如 `/copy-code.html?minutes=10&site=…&support=…&wechat=…#验证码`）：验证码只放在 URL fragment 中，不发送到服务器，页面读取后立即从地址栏清除；浏览器允许时自动复制，否则显示“复制验证码”按钮。查询参数携带站点名、支持邮箱和客服微信作为回退值，复制页同时读取 `/api/public/config` 获取权威配置，展示当前站点名称、联系方式、授权中心地址、验证码有效期和安全提示；配置接口不可用时仍可复制，只是隐藏未提供的联系方式。直接选中验证码也可以复制。
+
+常见服务商参数：
+
+| 服务商 | 主机 | 端口 | TLS | 备注 |
+| --- | --- | --- | --- | --- |
+| QQ 邮箱 | `smtp.qq.com` | 465 | `ssl` | 密码填“授权码”，不是 QQ 密码。 |
+| 163 邮箱 | `smtp.163.com` | 465 | `ssl` | 密码填客户端授权码。 |
+| 腾讯企业邮 | `smtp.exmail.qq.com` | 465 | `ssl` | `smtp_from` 必须是企业邮箱地址。 |
+| 阿里云邮件推送 | `smtpdm.aliyun.com` | 465 | `ssl` | 发件地址需先在控制台验证。 |
+| 自建 Postfix | 你的域名 | 587 | `starttls` | 确认证书有效且允许该发件人。 |
+
+配置完成后先发一封测试邮件（会使用同一套品牌模板）：
+
+```bash
+sudo bash -c 'set -a; . /etc/pyshield-portal/portal.env; set +a; \
+  PYTHONPATH=/opt/pyshield-portal/license-portal:/opt/pyshield-portal \
+  /opt/pyshield-portal/.venv/bin/python -m license_portal mail test \
+  --config /etc/pyshield-portal/config.json --to you@example.com'
+```
+
+成功时命令打印收件人和 SMTP 主机；SMTP 未配置、认证失败或收件人被拒都会以非零状态退出。管理端“概览 → 邮件服务”也会显示 SMTP 是否已配置、发件人与 Reply-To，但不会显示密码。
 
 ### 4.4 初始化与管理员（生产）
 
@@ -666,7 +708,7 @@ Nginx 与内置静态服务都会把未知路径回退到 `web/dist/index.html`�
 | `/upgrade?edition=pro\|enterprise&serial=` | 购买/升级意向，提交后写入 `orders`。 |
 | `/redeem?serial=&machine=` | 网页兑换激活码。 |
 | `/admin/login` | 管理员登录。 |
-| `/admin` `/admin/licenses` `/admin/keys` `/admin/customers` `/admin/orders` `/admin/audit` `/admin/signing` | 管理端页面。 |
+| `/admin` `/admin/licenses` `/admin/keys` `/admin/customers` `/admin/customers/:id` `/admin/orders` `/admin/audit` `/admin/signing` | 管理端页面。 |
 | `/robots.txt` | 禁止抓取 `/admin`。 |
 
 ### 浏览器 JSON API
@@ -678,6 +720,7 @@ Nginx 与内置静态服务都会把未知路径回退到 `web/dist/index.html`�
 | `GET` | `/api/public/config` | 站点名、试用天数/配额、客服微信、Turnstile site key。 |
 | `POST` | `/api/public/trial/apply` | 提交试用申请；`email_verification=false` 时直接返回授权。 |
 | `POST` | `/api/public/trial/verify` | `{application_id, code}` 验证邮箱并签发。 |
+| `POST` | `/api/public/trial/resend` | `{application_id}` 重发验证码；旧码立即失效，按 IP/申请限流。 |
 | `GET` | `/api/public/trial/application?id=` | 验证码页面所需元信息（脱敏邮箱、状态、过期时间）。 |
 | `GET` | `/api/public/license?serial=&machine=` | 成功页与详情页读取授权状态（不返回签名文档）。 |
 | `POST` | `/api/public/upgrade` | 创建升级/续费意向。 |
@@ -701,6 +744,7 @@ Nginx 与内置静态服务都会把未知路径回退到 `web/dist/index.html`�
 | `POST` | `/api/admin/keys/<id>/reveal` | 解密显示完整激活码（写审计日志）。 |
 | `POST` | `/api/admin/keys/<id>/revoke` | 吊销激活码及其授权。 |
 | `GET` | `/api/admin/customers?q=` | 客户列表。 |
+| `GET` | `/api/admin/customers/<id>` | 客户详情：资料、授权、订单与试用申请（不返回验证码哈希）。 |
 | `GET` | `/api/admin/orders?status=` | 订单列表。 |
 | `POST` | `/api/admin/orders/<id>/status` | 更新订单状态：`pending/paid/fulfilled/cancelled`。 |
 | `GET` | `/api/admin/audit?action=&q=&limit=` | 审计事件。 |
@@ -808,6 +852,7 @@ python -m license_portal selftest
 | `tests/test_service.py` | 试用、激活、续费、升级、吊销、审计等业务规则。 |
 | `tests/test_validation.py` / `test_security.py` | 字段规范化、口令哈希、Cookie/CSRF。 |
 | `tests/test_api.py` | `/api/public/*` 与 `/api/admin/*`：登录、CSRF、发码、兑换、订单、审计。 |
+| `tests/test_mailer.py` | SMTP 发件人/Reply-To 回退、品牌 HTML 模板、纯文本正文、HTML 转义与非法 URL 过滤。 |
 | `tests/test_server.py` | 桌面端 5 个接口、SPA 路由回退、静态资源缓存、缺少构建产物时的 503。 |
 
 前端没有引入浏览器测试框架；构建前的 `npm run typecheck` 覆盖类型，关键流程用真实浏览器做过端到端验证（试用申请 → 邮箱验证 → 后台登录 → 批量发码 → 网页兑换 → 授权详情）。

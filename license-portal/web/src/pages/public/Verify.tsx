@@ -1,9 +1,15 @@
 import { App, Button, Form, Input } from 'antd'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { ApiError } from '../../api/client'
-import { useTrialApplication, useVerifyTrial } from '../../api/hooks'
+import {
+  useResendTrialCode,
+  useTrialApplication,
+  useVerifyTrial,
+} from '../../api/hooks'
 import { Callout, ErrorNote, LoadingScreen, MetaList, SectionCard } from '../../components/ui'
+import { formatDateTime } from '../../lib/format'
 
 export default function Verify() {
   const [params] = useSearchParams()
@@ -12,7 +18,15 @@ export default function Verify() {
   const applicationId = Number(params.get('application') ?? '0')
   const meta = useTrialApplication(applicationId)
   const verify = useVerifyTrial()
+  const resend = useResendTrialCode()
   const [form] = Form.useForm<{ code: string }>()
+  const [cooldown, setCooldown] = useState(0)
+
+  useEffect(() => {
+    if (cooldown <= 0) return
+    const timer = window.setTimeout(() => setCooldown((value) => Math.max(0, value - 1)), 1000)
+    return () => window.clearTimeout(timer)
+  }, [cooldown])
 
   if (!applicationId) {
     return (
@@ -49,6 +63,16 @@ export default function Verify() {
     )
   }
 
+  const handleResend = () => {
+    resend.mutate(applicationId, {
+      onSuccess: (result) => {
+        message.success('新的验证码已发送，请查收邮箱')
+        setCooldown(result.resend_after || 60)
+        form.setFieldsValue({ code: '' })
+      },
+    })
+  }
+
   return (
     <div className="shell page">
       <div className="page-head">
@@ -68,6 +92,9 @@ export default function Verify() {
               <span>
                 验证码已发送至 <strong className="mono">{meta.data?.email}</strong>
                 {meta.data?.status === 'verified' ? '（该申请已完成验证）' : ''}
+                {meta.data?.status === 'pending_email' && meta.data?.code_expires
+                  ? `，有效期至 ${formatDateTime(meta.data.code_expires)}`
+                  : ''}
               </span>
             )}
           </Callout>
@@ -124,8 +151,26 @@ export default function Verify() {
             <p className="muted" style={{ fontSize: 13.5 }}>
               请先检查垃圾邮件或拦截规则，验证码可能需要一两分钟才能送达。
             </p>
+            <div style={{ marginTop: 14 }}>
+              <Button
+                block
+                onClick={handleResend}
+                loading={resend.isPending}
+                disabled={cooldown > 0 || meta.data?.status !== 'pending_email'}
+              >
+                {cooldown > 0 ? `${cooldown} 秒后可重新发送` : '重新发送验证码'}
+              </Button>
+              <p className="hint" style={{ marginTop: 8 }}>
+                重发后旧验证码立即失效；同一申请每小时最多重发 5 次。
+              </p>
+            </div>
+            {resend.isError ? (
+              <div style={{ marginTop: 12 }}>
+                <ErrorNote>{(resend.error as Error).message}</ErrorNote>
+              </div>
+            ) : null}
             <p className="hint" style={{ marginTop: 10 }}>
-              如果邮箱填写有误，请返回申请表重新提交。重新提交后，旧验证码会立即失效。
+              如果邮箱填写有误，请返回申请表重新提交。
             </p>
           </div>
         </aside>

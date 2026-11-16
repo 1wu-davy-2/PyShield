@@ -116,6 +116,9 @@ export default function Licenses() {
           allowClear
           placeholder="序列号、授权 ID、邮箱、手机号或客户名称"
           onSearch={(value) => setQ(value.trim())}
+          onChange={(event) => {
+            if (!event.target.value) setQ('')
+          }}
           style={{ maxWidth: 380 }}
         />
         <Select

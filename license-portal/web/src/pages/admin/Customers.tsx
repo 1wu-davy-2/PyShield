@@ -1,6 +1,8 @@
-import { Input, Table } from 'antd'
+import { ReloadOutlined } from '@ant-design/icons'
+import { Button, Input, Table } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import { useCustomers } from '../../api/hooks'
 import type { Customer } from '../../api/types'
@@ -13,7 +15,15 @@ export default function Customers() {
   const customers = useCustomers(q)
 
   const columns: ColumnsType<Customer> = [
-    { title: '邮箱', dataIndex: 'email', render: (value: string) => <span className="mono">{value}</span> },
+    {
+      title: '邮箱',
+      dataIndex: 'email',
+      render: (value: string, row) => (
+        <Link className="mono" to={`/admin/customers/${row.id}`}>
+          {value}
+        </Link>
+      ),
+    },
     { title: '手机号', dataIndex: 'phone', width: 140, render: (value: string) => <span className="mono">{value}</span> },
     { title: '姓名', dataIndex: 'name', width: 130 },
     {
@@ -38,6 +48,16 @@ export default function Customers() {
         <span className="hint">{formatDateTime(value || row.updated_at)}</span>
       ),
     },
+    {
+      title: '',
+      key: 'action',
+      width: 76,
+      render: (_, row) => (
+        <Link className="table-link" to={`/admin/customers/${row.id}`}>
+          详情
+        </Link>
+      ),
+    },
   ]
 
   return (
@@ -45,7 +65,15 @@ export default function Customers() {
       <AdminHeader
         title="客户"
         sub={customers.data ? `共 ${customers.data.total} 位客户` : '正在读取客户列表…'}
-      />
+      >
+        <Button
+          icon={<ReloadOutlined />}
+          onClick={() => customers.refetch()}
+          loading={customers.isFetching}
+        >
+          刷新
+        </Button>
+      </AdminHeader>
 
       <div className="toolbar">
         <Input.Search
@@ -53,6 +81,9 @@ export default function Customers() {
           allowClear
           placeholder="邮箱、手机号、姓名或公司"
           onSearch={(value) => setQ(value.trim())}
+          onChange={(event) => {
+            if (!event.target.value) setQ('')
+          }}
           style={{ maxWidth: 360 }}
         />
       </div>

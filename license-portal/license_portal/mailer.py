@@ -6,8 +6,10 @@ import smtplib
 import ssl
 import sys
 from email.message import EmailMessage
+from email.utils import formataddr
 
 from .config import Config
+from .email_templates import render_code_email, render_notice_email
 
 
 class MailerError(Exception):
@@ -62,6 +64,12 @@ class SMTPMailer(Mailer):
         username: str = "",
         password: str = "",
         sender: str = "",
+        sender_name: str = "",
+        reply_to: str = "",
+        site_name: str = "",
+        site_url: str = "",
+        support_email: str = "",
+        contact_wechat: str = "",
         tls: str = "starttls",
         timeout: float = 12.0,
     ) -> None:
@@ -72,6 +80,12 @@ class SMTPMailer(Mailer):
         self.username = username
         self.password = password
         self.sender = sender
+        self.sender_name = sender_name or site_name or "PyShield 授权中心"
+        self.reply_to = reply_to
+        self.site_name = site_name or "PyShield 授权中心"
+        self.site_url = site_url
+        self.support_email = support_email
+        self.contact_wechat = contact_wechat
         self.tls = tls.lower()
         self.timeout = timeout
 
@@ -102,26 +116,39 @@ class SMTPMailer(Mailer):
                 raise MailerError(f"SMTP 登录失败：{exc}") from exc
 
     def send_code(self, email: str, code: str, purpose: str = "trial") -> None:
-        subject = "PyShield 邮箱验证码"
-        text = (
-            f"你的 PyShield 验证码是：{code}\n\n"
-            "验证码 10 分钟内有效。如果不是你本人操作，请忽略这封邮件。\n"
+        rendered = render_code_email(
+            code=code,
+            site_name=self.site_name,
+            site_url=self.site_url,
+            support_email=self.support_email,
+            contact_wechat=self.contact_wechat,
         )
-        html = (
-            "<p>你的 PyShield 验证码是：</p>"
-            f"<p style=\"font-size:28px;font-weight:600;letter-spacing:4px\">{code}</p>"
-            "<p>验证码 10 分钟内有效。如果不是你本人操作，请忽略这封邮件。</p>"
+        self._send(
+            self._message(email, rendered.subject, rendered.text, rendered.html),
         )
-        self._send(self._message(email, subject, text, html))
 
     def send_notice(self, email: str, subject: str, text: str) -> None:
-        self._send(self._message(email, subject, text, ""))
+        rendered = render_notice_email(
+            subject=subject,
+            text=text,
+            site_name=self.site_name,
+            site_url=self.site_url,
+            support_email=self.support_email,
+            contact_wechat=self.contact_wechat,
+        )
+        self._send(
+            self._message(email, rendered.subject, rendered.text, rendered.html),
+        )
 
     def _message(self, email: str, subject: str, text: str, html: str) -> EmailMessage:
         message = EmailMessage()
-        message["From"] = self.sender
+        message["From"] = formataddr((self.sender_name, self.sender))
         message["To"] = email
-        message["Subject"] = subject
+        message["Subject"] = " ".join(str(subject).split()) or "通知"
+        if self.reply_to:
+            message["Reply-To"] = self.reply_to
+        message["Auto-Submitted"] = "auto-generated"
+        message["X-Auto-Response-Suppress"] = "All"
         message.set_content(text)
         if html:
             message.add_alternative(html, subtype="html")
@@ -144,6 +171,12 @@ def build_mailer(config: Config) -> Mailer:
             username=config.smtp_user,
             password=config.smtp_password,
             sender=config.smtp_from,
+            sender_name=config.smtp_from_name,
+            reply_to=config.smtp_reply_to,
+            site_name=config.site_name,
+            site_url=config.site_url,
+            support_email=config.support_email,
+            contact_wechat=config.contact_wechat,
             tls=config.smtp_tls,
         )
     if config.dev:

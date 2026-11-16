@@ -6,6 +6,7 @@ import type {
   CreateKeysResult,
   CreatedKey,
   Customer,
+  CustomerDetailResult,
   DashboardResult,
   FilterOptions,
   LicenseDetail,
@@ -22,6 +23,7 @@ import type {
   TrialApplicationMeta,
   TrialApplyResponse,
   TrialFormPayload,
+  TrialResendResult,
 } from './types'
 
 export const queryKeys = {
@@ -36,6 +38,7 @@ export const queryKeys = {
   keys: (params: Record<string, string>) => ['admin', 'keys', params] as const,
   key: (id: number) => ['admin', 'key', id] as const,
   customers: (q: string) => ['admin', 'customers', q] as const,
+  customer: (id: number) => ['admin', 'customer', id] as const,
   orders: (status: string) => ['admin', 'orders', status] as const,
   audit: (params: Record<string, string>) => ['admin', 'audit', params] as const,
   signing: ['admin', 'signing'] as const,
@@ -88,6 +91,19 @@ export function useVerifyTrial() {
   return useMutation({
     mutationFn: (payload: { application_id: number; code: string }) =>
       api.post<PublicLicense>('/api/public/trial/verify', payload),
+  })
+}
+
+export function useResendTrialCode() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (applicationId: number) =>
+      api.post<TrialResendResult>('/api/public/trial/resend', {
+        application_id: applicationId,
+      }),
+    onSuccess: (_result, applicationId) => {
+      client.invalidateQueries({ queryKey: queryKeys.trialApplication(applicationId) })
+    },
   })
 }
 
@@ -214,6 +230,7 @@ function useLicenseMutation<TBody>(
     onSuccess: (_result, variables) => {
       client.invalidateQueries({ queryKey: queryKeys.license(variables.serial) })
       client.invalidateQueries({ queryKey: ['admin', 'licenses'] })
+      client.invalidateQueries({ queryKey: ['admin', 'customer'] })
       client.invalidateQueries({ queryKey: queryKeys.dashboard })
     },
   })
@@ -291,6 +308,7 @@ export function useRevokeKey() {
     onSuccess: (_result, variables) => {
       client.invalidateQueries({ queryKey: queryKeys.key(variables.id) })
       client.invalidateQueries({ queryKey: ['admin', 'keys'] })
+      client.invalidateQueries({ queryKey: ['admin', 'customer'] })
       client.invalidateQueries({ queryKey: queryKeys.dashboard })
     },
   })
@@ -301,6 +319,16 @@ export function useCustomers(search: string) {
     queryKey: queryKeys.customers(search),
     queryFn: () => api.get<ListResult<Customer>>(`/api/admin/customers${queryString({ q: search })}`),
     placeholderData: (previous) => previous,
+  })
+}
+
+export function useCustomer(id: number) {
+  return useQuery({
+    queryKey: queryKeys.customer(id),
+    queryFn: () =>
+      api.get<CustomerDetailResult>(`/api/admin/customers/${id}`),
+    enabled: id > 0,
+    retry: false,
   })
 }
 
@@ -326,6 +354,7 @@ export function useMarkOrder() {
     }) => api.post<{ ok: true }>(`/api/admin/orders/${id}/status`, { status, amount }),
     onSuccess: () => {
       client.invalidateQueries({ queryKey: ['admin', 'orders'] })
+      client.invalidateQueries({ queryKey: ['admin', 'customer'] })
       client.invalidateQueries({ queryKey: queryKeys.dashboard })
     },
   })

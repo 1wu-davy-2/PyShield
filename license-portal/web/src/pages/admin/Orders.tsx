@@ -1,4 +1,5 @@
-import { App, Button, Form, InputNumber, Modal, Popconfirm, Select, Table } from 'antd'
+import { ReloadOutlined } from '@ant-design/icons'
+import { Alert, App, Button, Form, InputNumber, Modal, Popconfirm, Select, Table } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -23,6 +24,7 @@ export default function Orders() {
   const orders = useOrders(status || '')
   const mark = useMarkOrder()
   const [paidOrder, setPaidOrder] = useState<Order | null>(null)
+  const [paidError, setPaidError] = useState('')
   const [amountForm] = Form.useForm<{ amount?: number | string | null }>()
 
   const update = (order: Order, next: OrderStatus, amount?: string) => {
@@ -32,6 +34,68 @@ export default function Orders() {
         onSuccess: () => message.success('订单状态已更新'),
         onError: (error) => message.error((error as Error).message),
       },
+    )
+  }
+
+  const openPaid = (order: Order) => {
+    setPaidError('')
+    setPaidOrder(order)
+  }
+
+  const closePaid = () => {
+    setPaidOrder(null)
+    setPaidError('')
+    amountForm.resetFields()
+  }
+
+  const renderActions = (row: Order) => {
+    if (row.status === 'pending') {
+      return (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <Button size="small" onClick={() => openPaid(row)}>
+            已收款
+          </Button>
+          <Popconfirm title="取消这笔订单？" onConfirm={() => update(row, 'cancelled')}>
+            <Button size="small" danger>
+              取消
+            </Button>
+          </Popconfirm>
+        </div>
+      )
+    }
+    if (row.status === 'paid') {
+      return (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <Popconfirm
+            title="确认已完成发码？"
+            description="确认已向客户发放激活码并完成交付。"
+            onConfirm={() => update(row, 'fulfilled')}
+          >
+            <Button size="small" type="primary">
+              完成发码
+            </Button>
+          </Popconfirm>
+          <Popconfirm title="取消这笔订单？" onConfirm={() => update(row, 'cancelled')}>
+            <Button size="small" danger>
+              取消
+            </Button>
+          </Popconfirm>
+        </div>
+      )
+    }
+    if (row.status === 'cancelled') {
+      return (
+        <Popconfirm title="恢复为待处理？" onConfirm={() => update(row, 'pending')}>
+          <Button size="small">恢复待处理</Button>
+        </Popconfirm>
+      )
+    }
+    return row.serial ? (
+      <Link className="table-link" to={`/admin/licenses/${encodeURIComponent(row.serial)}`}>
+        查看授权
+      </Link>
+    ) : (
+      <span className="hint">已完成</span>
     )
   }
 
@@ -82,34 +146,31 @@ export default function Orders() {
     {
       title: '操作',
       key: 'action',
-      width: 220,
-      render: (_, row) => (
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <Button size="small" onClick={() => setPaidOrder(row)}>
-            已收款
-          </Button>
-          <Popconfirm
-            title="标记为已完成？"
-            description="确认已发码并完成交付。"
-            onConfirm={() => update(row, 'fulfilled')}
-          >
-            <Button size="small">完成</Button>
-          </Popconfirm>
-          <Popconfirm title="取消这笔订单？" onConfirm={() => update(row, 'cancelled')}>
-            <Button size="small" danger>
-              取消
-            </Button>
-          </Popconfirm>
-        </div>
-      ),
+      width: 230,
+      render: (_, row) => renderActions(row),
     },
   ]
 
   const submitAmount = (values: { amount?: number | string | null }) => {
     if (!paidOrder) return
-    update(paidOrder, 'paid', values.amount === null || values.amount === undefined ? '' : String(values.amount))
-    setPaidOrder(null)
-    amountForm.resetFields()
+    setPaidError('')
+    mark.mutate(
+      {
+        id: paidOrder.id,
+        status: 'paid',
+        amount:
+          values.amount === null || values.amount === undefined ? '' : String(values.amount),
+      },
+      {
+        onSuccess: () => {
+          message.success('已记录收款金额')
+          closePaid()
+        },
+        onError: (error) => {
+          setPaidError((error as Error).message)
+        },
+      },
+    )
   }
 
   return (
@@ -117,7 +178,15 @@ export default function Orders() {
       <AdminHeader
         title="订单"
         sub={orders.data ? `共 ${orders.data.total} 条记录 · 人工收款后在此标记并发码` : '正在读取订单…'}
-      />
+      >
+        <Button
+          icon={<ReloadOutlined />}
+          onClick={() => orders.refetch()}
+          loading={orders.isFetching}
+        >
+          刷新
+        </Button>
+      </AdminHeader>
 
       <div className="toolbar">
         <Select
@@ -156,14 +225,17 @@ export default function Orders() {
         title={`标记已收款 · 订单 #${paidOrder?.id ?? ''}`}
         okText="保存"
         cancelText="取消"
-        onCancel={() => setPaidOrder(null)}
+        onCancel={closePaid}
         onOk={() => amountForm.submit()}
         confirmLoading={mark.isPending}
         destroyOnClose
       >
         <p className="hint" style={{ marginBottom: 14 }}>
-          金额仅用于对账，可留空。
+          金额仅用于对账，可留空。确认到账后再标记，避免与客户对账不一致。
         </p>
+        {paidError ? (
+          <Alert type="error" showIcon message={paidError} style={{ marginBottom: 14 }} />
+        ) : null}
         <Form
           form={amountForm}
           layout="vertical"

@@ -18,6 +18,8 @@
   "smtp_user": "portal@example.com",
   "smtp_password": "",
   "smtp_from": "portal@example.com",
+  "smtp_from_name": "PyShield 授权中心",
+  "smtp_reply_to": "support@example.com",
   "smtp_tls": "starttls",
 
   "turnstile_site_key": "",

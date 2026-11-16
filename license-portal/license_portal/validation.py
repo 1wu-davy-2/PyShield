@@ -270,6 +270,16 @@ def validate_email_code(payload: dict) -> dict:
     return {"application_id": application_id, "code": code}
 
 
+def validate_resend_request(payload: dict) -> dict:
+    try:
+        application_id = int(str(payload.get("application_id") or "").strip())
+        if application_id <= 0:
+            raise ValueError
+    except (TypeError, ValueError) as exc:
+        raise ValidationError({"application_id": "申请编号无效"}) from exc
+    return {"application_id": application_id}
+
+
 def validate_upgrade_request(payload: dict) -> dict:
     errors: dict[str, str] = {}
     result: dict = {}

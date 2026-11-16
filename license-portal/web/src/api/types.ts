@@ -52,6 +52,15 @@ export interface TrialApplicationResult {
 
 export type TrialApplyResponse = PublicLicense | TrialApplicationResult
 
+export interface TrialResendResult {
+  ok: true
+  application_id: number
+  email: string
+  verification_required: true
+  expires_in: number
+  resend_after: number
+}
+
 export interface TrialApplicationMeta {
   ok: true
   application_id: number
@@ -206,11 +215,21 @@ export interface DashboardCounts {
   expiring_30d: number
 }
 
+export interface DashboardEmail {
+  verification: boolean
+  configured: boolean
+  sender: string
+  from_name: string
+  reply_to: string
+  host: string
+}
+
 export interface DashboardResult {
   ok: true
   counts: DashboardCounts
   expiring: LicenseSummary[]
   signing_key: SigningKey
+  email: DashboardEmail
 }
 
 export interface Customer {
@@ -225,6 +244,25 @@ export interface Customer {
   updated_at: string
   license_count: number
   last_license_at: string | null
+}
+
+export interface CustomerApplication {
+  id: number
+  serial: string
+  machine: string
+  edition: Edition
+  status: string
+  code_expires: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CustomerDetailResult {
+  ok: true
+  customer: Customer
+  licenses: LicenseSummary[]
+  orders: Order[]
+  applications: CustomerApplication[]
 }
 
 export interface Order {

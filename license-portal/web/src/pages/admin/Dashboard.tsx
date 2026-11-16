@@ -5,7 +5,7 @@ import type { ColumnsType } from 'antd/es/table'
 import { useDashboard } from '../../api/hooks'
 import type { LicenseSummary } from '../../api/types'
 import { AdminHeader, Kpi, TABLE_PAGINATION } from '../../components/admin'
-import { CopyButton, EditionChip, ErrorNote, LoadingScreen, SectionCard, StatusTag } from '../../components/ui'
+import { Callout, CopyButton, EditionChip, ErrorNote, LoadingScreen, SectionCard, StatusTag } from '../../components/ui'
 import { expiryHint, formatDate } from '../../lib/format'
 
 export default function Dashboard() {
@@ -16,8 +16,11 @@ export default function Dashboard() {
     return <ErrorNote>{(dashboard.error as Error)?.message ?? '无法读取概览数据'}</ErrorNote>
   }
 
-  const { counts, expiring, signing_key } = dashboard.data
+  const { counts, expiring, signing_key, email } = dashboard.data
   const paid = counts.pro + counts.enterprise
+  const sender = email.sender
+    ? (email.from_name ? `${email.from_name} <${email.sender}>` : email.sender)
+    : '—'
 
   const columns: ColumnsType<LicenseSummary> = [
     {
@@ -85,7 +88,7 @@ export default function Dashboard() {
         <Kpi label="客户" value={counts.customers} hint="按邮箱 / 手机号去重" />
         <Kpi label="待兑换激活码" value={counts.keys_unused} hint="已生成未使用" />
         <Kpi label="待处理订单" value={counts.orders_pending} hint="升级 / 续费意向" />
-        <Kpi label="已过期" value={counts.expired} hint="含宽限期内未续费" />
+        <Kpi label="已过期" value={counts.expired} hint="宽限期已结束，客户端将拒绝" />
         <Kpi label="已吊销" value={counts.revoked} hint="客户端刷新后拒绝" />
       </div>
 
@@ -105,6 +108,47 @@ export default function Dashboard() {
           pagination={expiring.length > 20 ? TABLE_PAGINATION : false}
           locale={{ emptyText: '暂无临近到期的授权' }}
         />
+      </SectionCard>
+
+      <SectionCard
+        title="邮件服务"
+        extra={
+          <span className={email.configured ? 'status-tag ok' : 'status-tag danger'}>
+            {email.configured ? 'SMTP 已配置' : 'SMTP 未配置'}
+          </span>
+        }
+      >
+        <div className="detail-grid">
+          <div className="detail-item">
+            <div className="detail-label">邮箱验证码</div>
+            <div className="detail-value">{email.verification ? '已开启' : '已关闭'}</div>
+          </div>
+          <div className="detail-item">
+            <div className="detail-label">发件人</div>
+            <div className="detail-value">{sender}</div>
+          </div>
+          <div className="detail-item">
+            <div className="detail-label">回复地址</div>
+            <div className="detail-value mono">{email.reply_to || '—'}</div>
+          </div>
+          <div className="detail-item">
+            <div className="detail-label">SMTP 主机</div>
+            <div className="detail-value mono">{email.host || '—'}</div>
+          </div>
+        </div>
+        <div className="divider" />
+        {email.verification && !email.configured ? (
+          <Callout tone="danger">
+            邮箱验证已开启，但 SMTP 尚未配置，试用申请会失败。请设置
+            <span className="mono"> PYSHELD_PORTAL_SMTP_* </span>
+            后重启服务。
+          </Callout>
+        ) : (
+          <p className="hint" style={{ maxWidth: '62ch' }}>
+            验证码与系统通知使用品牌 HTML 模板，并附带纯文本正文。SMTP 凭据只从
+            config.json 或环境变量读取，修改后需重启服务。
+          </p>
+        )}
       </SectionCard>
 
       <SectionCard

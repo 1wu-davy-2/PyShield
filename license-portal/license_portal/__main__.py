@@ -8,6 +8,7 @@ import logging
 import os
 import sys
 import tempfile
+from datetime import datetime
 from pathlib import Path
 
 from pyshield import license_admin
@@ -15,6 +16,7 @@ from pyshield import license_admin
 from . import __version__
 from .config import Config, ConfigError
 from .db import Database
+from .mailer import MailerError, SMTPMailer, build_mailer
 from .security import SecurityError
 from .service import PortalService, ServiceError, create_service, load_or_create_secret
 from .signing import SigningKeyError, SigningKeyStore
@@ -54,6 +56,16 @@ def _logging(dev: bool) -> None:
         level=logging.DEBUG if dev else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+
+
+def _configure_stdio() -> None:
+    # Windows pipes default to the ANSI code page, which garbles Chinese
+    # diagnostics in Git Bash and CI logs.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
 
 
 def _cmd_init(args) -> int:
@@ -187,6 +199,34 @@ def _cmd_selftest(args) -> int:
     return 0
 
 
+def _cmd_mail_test(args) -> int:
+    config = _load_config(args)
+    if not config.mailer_is_configured:
+        print(
+            "SMTP 未配置：请设置 SMTP_HOST、SMTP_USER、SMTP_PASSWORD、SMTP_FROM"
+            "（以及可选的 SMTP_FROM_NAME / SMTP_REPLY_TO）后重试。",
+            file=sys.stderr,
+        )
+        return 2
+    mailer = build_mailer(config)
+    if not isinstance(mailer, SMTPMailer):
+        print("当前配置没有启用真实 SMTP 发送，请检查配置。", file=sys.stderr)
+        return 2
+    sent_at = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+    try:
+        mailer.send_notice(
+            args.to,
+            "SMTP 配置测试",
+            f"这是一封来自 {config.site_name} 的测试邮件。\n\n"
+            f"如果你收到这封邮件，说明发件配置已经生效。\n发送时间：{sent_at}",
+        )
+    except MailerError as exc:
+        print(f"[license-portal] ERROR: {exc}", file=sys.stderr)
+        return 1
+    print(f"测试邮件已发送至 {args.to}（{config.smtp_host}:{config.smtp_port}）")
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="license_portal",
@@ -242,12 +282,20 @@ def _build_parser() -> argparse.ArgumentParser:
     rotate.add_argument("--yes", action="store_true", help="confirm the rotation")
     rotate.set_defaults(func=_cmd_signing_rotate)
 
+    mail = subparsers.add_parser("mail", help="e-mail configuration and delivery")
+    mail_sub = mail.add_subparsers(dest="mail_command", required=True)
+    mail_test = mail_sub.add_parser("test", help="send a branded SMTP test e-mail")
+    add_config(mail_test)
+    mail_test.add_argument("--to", required=True, help="recipient address")
+    mail_test.set_defaults(func=_cmd_mail_test)
+
     selftest = subparsers.add_parser("selftest", help="run a quick self check")
     selftest.set_defaults(func=_cmd_selftest)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
+    _configure_stdio()
     parser = _build_parser()
     args = parser.parse_args(argv)
     try:

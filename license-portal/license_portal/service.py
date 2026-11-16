@@ -29,6 +29,7 @@ from .signing import SigningKey, SigningKeyStore
 LOGGER = logging.getLogger("license_portal")
 
 CODE_TTL_SECONDS = 10 * 60
+CODE_RESEND_HINT_SECONDS = 60
 MAX_CODE_ATTEMPTS = 5
 MAX_LIST_ROWS = 500
 
@@ -659,6 +660,64 @@ class PortalService:
             raise failure
         assert result is not None
         return result
+
+    def resend_trial_code(self, application_id: int, remote_ip: str) -> dict:
+        ip_hash = self.hash_ip(remote_ip)
+        self._consume_limits([
+            (f"resend-ip:{ip_hash}", 10, 3600),
+            (f"resend-app:{int(application_id)}", 5, 3600),
+        ])
+        code = security.random_digits(6)
+        code_expires = _iso_offset(CODE_TTL_SECONDS)
+        serial = ""
+        email = ""
+        with self.db.transaction() as connection:
+            application = self._find_application(connection, application_id)
+            if application is None:
+                raise ServiceError("申请记录不存在或已失效", 404, "application_not_found")
+            if application["status"] == "verified":
+                raise ServiceError(
+                    "该申请已完成验证，无需重新发送验证码", 409, "application_verified",
+                )
+            if application["status"] != "pending_email":
+                raise ServiceError(
+                    "该申请已失效，请重新提交申请表", 409, "application_not_pending",
+                )
+            customer = connection.execute(
+                "SELECT email FROM customers WHERE id = ?", (application["customer_id"],),
+            ).fetchone()
+            if customer is None:
+                raise ServiceError("客户记录不存在，请重新提交申请表", 409)
+            serial = str(application["serial"])
+            email = str(customer["email"])
+            connection.execute(
+                "UPDATE applications SET code_hash = ?, code_expires = ?, attempts = 0,"
+                " updated_at = ? WHERE id = ?",
+                (self._hash_code(code), code_expires, now_iso(), int(application_id)),
+            )
+            connection.execute(
+                "INSERT INTO email_codes (application_id, email, code_hash, purpose,"
+                " expires_at, created_at) VALUES (?, ?, ?, 'trial', ?, ?)",
+                (int(application_id), email, self._hash_code(code), code_expires, now_iso()),
+            )
+            self._log(
+                connection, "public", email, "trial_resend",
+                serial=serial, ip_hash=ip_hash,
+                detail={"application_id": int(application_id)},
+            )
+        try:
+            self.mailer.send_code(email, code, "trial")
+        except MailerError as exc:
+            self._log_failure("trial_mail_failed", serial, ip_hash, str(exc))
+            raise ServiceError("验证码发送失败，请稍后重试", 502, "mail_failed") from exc
+        return {
+            "ok": True,
+            "application_id": int(application_id),
+            "email": validation.mask_email(email),
+            "verification_required": True,
+            "expires_in": CODE_TTL_SECONDS,
+            "resend_after": CODE_RESEND_HINT_SECONDS,
+        }
 
     def _issue_trial_locked(self, connection: sqlite3.Connection, application: dict) -> dict:
         serial = application["serial"]
@@ -1538,15 +1597,22 @@ class PortalService:
         counts["orders_pending"] = int(row["total"]) if row else 0
 
         horizon = (today() + timedelta(days=30)).isoformat()
+        expiring_clause = (
+            " WHERE l.status <> 'revoked' AND l.expires IS NOT NULL"
+            " AND l.expires >= ? AND l.expires <= ?"
+        )
+        row = self.db.query_one(
+            "SELECT COUNT(*) AS total FROM licenses l" + expiring_clause,
+            (today().isoformat(), horizon),
+        )
+        counts["expiring_30d"] = int(row["total"]) if row else 0
         expiring = self.db.query_all(
             "SELECT l.*, c.email AS customer_email, c.company_name AS customer_company"
             " FROM licenses l LEFT JOIN customers c ON c.id = l.customer_id"
-            " WHERE l.status <> 'revoked' AND l.expires IS NOT NULL"
-            " AND l.expires >= ? AND l.expires <= ?"
+            + expiring_clause +
             " ORDER BY l.expires LIMIT 100",
             (today().isoformat(), horizon),
         )
-        counts["expiring_30d"] = len(expiring)
         return {
             "counts": counts,
             "expiring": [self._row_to_license(row) for row in expiring],
@@ -1555,6 +1621,14 @@ class PortalService:
                 "public_key": self.signing_key.public_b85,
                 "fingerprint": self.signing_key.fingerprint,
                 "created": self.signing_key.created,
+            },
+            "email": {
+                "verification": self.config.email_verification_enabled,
+                "configured": self.config.mailer_is_configured,
+                "sender": self.config.smtp_from,
+                "from_name": self.config.smtp_from_name,
+                "reply_to": self.config.smtp_reply_to,
+                "host": self.config.smtp_host,
             },
         }
 
@@ -1574,6 +1648,38 @@ class PortalService:
             tuple(params) + (MAX_LIST_ROWS,),
         )
         return rows
+
+    def get_customer(self, customer_id: int) -> dict | None:
+        customer = self.db.query_one(
+            "SELECT c.*, (SELECT COUNT(*) FROM licenses l WHERE l.customer_id = c.id)"
+            " AS license_count, (SELECT MAX(l.updated_at) FROM licenses l WHERE l.customer_id = c.id)"
+            " AS last_license_at FROM customers c WHERE c.id = ?",
+            (int(customer_id),),
+        )
+        if customer is None:
+            return None
+        licenses = [
+            data for row in self.db.query_all(
+                "SELECT * FROM licenses WHERE customer_id = ? ORDER BY id DESC LIMIT ?",
+                (int(customer_id), MAX_LIST_ROWS),
+            )
+            if (data := self._row_to_license(row)) is not None
+        ]
+        orders = self.db.query_all(
+            "SELECT * FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT ?",
+            (int(customer_id), MAX_LIST_ROWS),
+        )
+        applications = self.db.query_all(
+            "SELECT id, serial, machine, edition, status, code_expires, created_at, updated_at"
+            " FROM applications WHERE customer_id = ? ORDER BY id DESC LIMIT ?",
+            (int(customer_id), MAX_LIST_ROWS),
+        )
+        return {
+            "customer": customer,
+            "licenses": licenses,
+            "orders": orders,
+            "applications": applications,
+        }
 
     def list_orders(self, status: str = "") -> list[dict]:
         if status:

@@ -73,6 +73,8 @@ class Config:
     smtp_user: str = ""
     smtp_password: str = ""
     smtp_from: str = ""
+    smtp_from_name: str = ""
+    smtp_reply_to: str = ""
     smtp_tls: str = "starttls"  # starttls | ssl | none
 
     turnstile_site_key: str = ""
@@ -103,6 +105,10 @@ class Config:
             )
         if self.smtp_from == "" and self.smtp_user:
             object.__setattr__(self, "smtp_from", self.smtp_user)
+        if not self.smtp_from_name:
+            object.__setattr__(self, "smtp_from_name", self.site_name or "PyShield 授权中心")
+        if not self.smtp_reply_to:
+            object.__setattr__(self, "smtp_reply_to", self.support_email or self.smtp_from)
         local_site = (
             self.site_url.startswith("http://127.")
             or self.site_url.startswith("http://localhost")
@@ -192,6 +198,8 @@ class Config:
             "smtp_user": "SMTP_USER",
             "smtp_password": "SMTP_PASSWORD",
             "smtp_from": "SMTP_FROM",
+            "smtp_from_name": "SMTP_FROM_NAME",
+            "smtp_reply_to": "SMTP_REPLY_TO",
             "smtp_tls": "SMTP_TLS",
             "turnstile_site_key": "TURNSTILE_SITE_KEY",
             "turnstile_secret": "TURNSTILE_SECRET",

@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>复制验证码 · PyShield 授权中心</title>
+<style>
+  :root {
+    --ink: #0b0f18;
+    --lime: #c6f24e;
+    --blue: #2b5ce6;
+    --paper: #f6f7fa;
+    --border: #e7ebf2;
+    --muted: #6b7385;
+    --hint: #9aa3b5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px 14px;
+    background: #eef1f7;
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+  }
+  .card {
+    width: min(440px, 100%);
+    overflow: hidden;
+    background: #fff;
+    border-radius: 18px;
+    box-shadow: 0 18px 60px rgba(11, 15, 24, .12);
+  }
+  .head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 22px 26px;
+    background: var(--ink);
+  }
+  .mark {
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    background: var(--lime);
+    font: 800 20px/1 Arial, sans-serif;
+  }
+  .brand { color: #fff; font-size: 18px; font-weight: 700; line-height: 1.3; }
+  .sub {
+    margin-top: 4px;
+    color: #8f97ab;
+    font: 10px/1.4 Arial, sans-serif;
+    letter-spacing: 2.4px;
+  }
+  .body { padding: 30px 26px 26px; }
+  .eyebrow {
+    color: var(--blue);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2.2px;
+  }
+  h1 { margin: 9px 0 10px; font-size: 24px; line-height: 1.35; }
+  .intro { margin: 0 0 20px; color: #5c6475; font-size: 14px; line-height: 1.75; }
+  .code {
+    padding: 20px 10px;
+    border: 1px dashed #c8cfdd;
+    border-radius: 14px;
+    background: var(--paper);
+    color: var(--ink);
+    font: 700 36px/1.25 Consolas, "SFMono-Regular", Menlo, "Liberation Mono", monospace;
+    letter-spacing: 9px;
+    text-align: center;
+    user-select: all;
+    -webkit-user-select: all;
+  }
+  .copy {
+    width: 100%;
+    margin-top: 16px;
+    padding: 13px 18px;
+    border: 0;
+    border-radius: 10px;
+    background: var(--lime);
+    color: var(--ink);
+    font: 700 15px/1.2 inherit;
+    cursor: pointer;
+  }
+  .copy:active { transform: translateY(1px); }
+  .copy:disabled { cursor: not-allowed; opacity: .55; }
+  .status {
+    min-height: 20px;
+    margin: 12px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.6;
+    text-align: center;
+  }
+  .security {
+    margin: 20px 0 0;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.75;
+  }
+  .security strong { color: var(--ink); }
+  .details {
+    margin-top: 16px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: var(--paper);
+    font-size: 12px;
+    line-height: 1.7;
+  }
+  .detail { display: flex; justify-content: space-between; gap: 18px; }
+  .detail + .detail { margin-top: 8px; }
+  .detail-label { color: var(--muted); flex: none; }
+  .detail-value { color: var(--ink); text-align: right; overflow-wrap: anywhere; }
+  .detail-value a { color: var(--blue); text-decoration: none; }
+  [hidden] { display: none !important; }
+  .back {
+    display: block;
+    margin-top: 18px;
+    color: var(--blue);
+    font-size: 12px;
+    text-align: center;
+    text-decoration: none;
+  }
+  .foot {
+    padding: 18px 26px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--paper);
+    color: var(--hint);
+    font-size: 11px;
+    line-height: 1.7;
+    text-align: center;
+  }
+  .foot p { margin: 0; }
+  .foot p + p { margin-top: 6px; }
+</style>
+</head>
+<body>
+<main class="card">
+  <header class="head">
+    <div class="mark">P</div>
+    <div>
+      <div class="brand" id="site-name">PyShield 授权中心</div>
+      <div class="sub">LICENSE CENTER</div>
+    </div>
+  </header>
+  <section class="body">
+    <div class="eyebrow">EMAIL VERIFICATION</div>
+    <h1>复制验证码</h1>
+    <p class="intro">将验证码粘贴到授权中心的验证页面即可继续完成邮箱验证。</p>
+    <div class="code" id="code">------</div>
+    <button class="copy" id="copy" type="button">复制验证码</button>
+    <p class="status" id="status" role="status" aria-live="polite"></p>
+
+    <p class="security">
+      验证码在邮件发送后 <strong id="minutes">10</strong> 分钟内有效，请勿转发给他人。
+      此页面只用于复制验证码，不会修改授权、不会自动激活，也不会绑定其他机器。
+    </p>
+
+    <div class="details" id="details" hidden>
+      <div class="detail" id="support-row" hidden>
+        <span class="detail-label">支持邮箱</span>
+        <span class="detail-value"><a id="support" href="mailto:support@example.com"></a></span>
+      </div>
+      <div class="detail" id="wechat-row" hidden>
+        <span class="detail-label">客服微信</span>
+        <span class="detail-value" id="wechat"></span>
+      </div>
+      <div class="detail" id="site-row" hidden>
+        <span class="detail-label">授权中心</span>
+        <span class="detail-value"><a id="site-link" href="/"></a></span>
+      </div>
+    </div>
+
+    <a class="back" id="back" href="/">返回授权中心</a>
+  </section>
+  <footer class="foot">
+    <p id="note">此页面由授权中心提供，仅用于复制邮箱验证码。</p>
+    <p id="help-note" hidden>如需帮助，请通过上方支持邮箱联系我们。</p>
+    <p>如果你没有申请邮箱验证，请忽略验证邮件。</p>
+    <p>© <span id="year"></span> <span id="owner">PyShield 授权中心</span> · 授权与签发服务</p>
+  </footer>
+</main>
+<script>
+(function () {
+  var codeNode = document.getElementById('code');
+  var copyButton = document.getElementById('copy');
+  var status = document.getElementById('status');
+  var minutesNode = document.getElementById('minutes');
+  var raw = decodeURIComponent((location.hash || '').slice(1)).trim();
+  var code = /^[0-9]{4,8}$/.test(raw) ? raw : '';
+  var params = new URLSearchParams(location.search || '');
+  var minutes = parseInt(params.get('minutes') || '10', 10);
+  if (!(minutes >= 1 && minutes <= 120)) minutes = 10;
+  var fallbackConfig = {
+    site_name: params.get('site') || '',
+    support_email: params.get('support') || '',
+    contact_wechat: params.get('wechat') || ''
+  };
+  minutesNode.textContent = String(minutes);
+  document.getElementById('year').textContent = String(new Date().getFullYear());
+
+  function setSiteChrome(config) {
+    var name = (config && config.site_name) || fallbackConfig.site_name || 'PyShield 授权中心';
+    document.title = '复制验证码 · ' + name;
+    document.getElementById('site-name').textContent = name;
+    document.getElementById('owner').textContent = name;
+    document.getElementById('note').textContent = '此页面由 ' + name + ' 提供，仅用于复制邮箱验证码。';
+
+    var hasDetails = false;
+    var support = (config && config.support_email) || fallbackConfig.support_email || '';
+    if (support) {
+      var supportLink = document.getElementById('support');
+      supportLink.textContent = support;
+      supportLink.href = 'mailto:' + support;
+      document.getElementById('support-row').hidden = false;
+      document.getElementById('help-note').hidden = false;
+      hasDetails = true;
+    }
+
+    var wechat = (config && config.contact_wechat) || fallbackConfig.contact_wechat || '';
+    if (wechat) {
+      document.getElementById('wechat').textContent = wechat;
+      document.getElementById('wechat-row').hidden = false;
+      hasDetails = true;
+    }
+
+    if (location.protocol === 'http:' || location.protocol === 'https:') {
+      document.getElementById('site-link').textContent = location.host;
+      document.getElementById('site-row').hidden = false;
+      hasDetails = true;
+    }
+
+    document.getElementById('details').hidden = !hasDetails;
+  }
+
+  setSiteChrome(fallbackConfig);
+  fetch('/api/public/config', { cache: 'no-store' })
+    .then(function (response) { return response.ok ? response.json() : null; })
+    .then(function (config) { setSiteChrome(config || fallbackConfig); })
+    .catch(function () { setSiteChrome(fallbackConfig); });
+
+  if (!code) {
+    status.textContent = '缺少验证码，请返回邮件重新打开链接。';
+    copyButton.disabled = true;
+    return;
+  }
+
+  codeNode.textContent = code;
+  history.replaceState(null, '', location.pathname);
+
+  function copied() {
+    status.textContent = '已复制，可以返回验证页面粘贴。';
+    copyButton.textContent = '已复制';
+  }
+
+  function failed() {
+    status.textContent = '自动复制失败，请选中上方验证码后手动复制。';
+  }
+
+  function copyCode() {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(code).then(copied, function () {
+        fallbackCopy() ? copied() : failed();
+      });
+      return;
+    }
+    fallbackCopy() ? copied() : failed();
+  }
+
+  function fallbackCopy() {
+    var field = document.createElement('textarea');
+    field.value = code;
+    field.setAttribute('readonly', '');
+    field.style.position = 'fixed';
+    field.style.opacity = '0';
+    document.body.appendChild(field);
+    field.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (error) { ok = false; }
+    field.remove();
+    return ok;
+  }
+
+  copyButton.addEventListener('click', copyCode);
+  copyCode();
+})();
+</script>
+</body>
+</html>

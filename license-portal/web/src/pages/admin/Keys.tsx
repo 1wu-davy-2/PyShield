@@ -115,6 +115,9 @@ export default function Keys() {
           allowClear
           placeholder="激活码前缀或备注"
           onSearch={(value) => setQ(value.trim())}
+          onChange={(event) => {
+            if (!event.target.value) setQ('')
+          }}
           style={{ maxWidth: 320 }}
         />
         <Select

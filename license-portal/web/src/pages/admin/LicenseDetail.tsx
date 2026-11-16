@@ -188,7 +188,11 @@ export default function LicenseDetail() {
         </Callout>
       ) : null}
       {!locked && data.effective_status === 'expired' ? (
-        <Callout tone="warn">该授权已过期，客户端会进入宽限期（{data.grace_days} 天）后拒绝使用。</Callout>
+        <Callout tone="danger">
+          {data.grace_days > 0
+            ? `该授权已过期，${data.grace_days} 天宽限期也已结束，客户端刷新后将拒绝使用。`
+            : '该授权已过期，客户端刷新后将拒绝使用。'}
+        </Callout>
       ) : null}
 
       <SectionCard title="授权信息">

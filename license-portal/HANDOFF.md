@@ -4,12 +4,13 @@
 
 | 层 | 状态 | 位置 |
 | --- | --- | --- |
-| 后端业务逻辑 | 已完成，未改动 | `license_portal/service.py`、`validation.py`、`db.py`、`signing.py` |
+| 后端业务逻辑 | 已完成，含验证码重发与客户详情 | `license_portal/service.py`、`validation.py`、`db.py`、`signing.py` |
+| 邮件 | 已完成：SMTP + 品牌 HTML 模板 + 纯文本正文 | `license_portal/mailer.py`、`email_templates.py` |
 | 浏览器 JSON API | 已完成 | `license_portal/api.py`（`/api/public/*`、`/api/admin/*`） |
 | 桌面端 5 个 API | 契约未变 | `license_portal/server.py` 的 `_client_api` |
 | 前端 | **已改为 React SPA**，旧服务端渲染已删除 | `web/`（Vite + React 18 + TS + antd） |
 | HTTP 托管 | 后端可托管 `web/dist`，生产由 Nginx 托管 | `server.py` 的 `_serve_spa` |
-| 测试 | `license-portal/tests` 98 项通过 | 新增 `test_api.py`，重写 `test_server.py` |
+| 测试 | `license-portal/tests` 107 项通过 | 新增 `test_api.py`、`test_mailer.py`，重写 `test_server.py` |
 
 **接手第一件事**：`cd license-portal/web && npm install && npm run build`，否则根路径返回 503（提示构建），`/api/*` 仍然可用。
 
@@ -28,8 +29,11 @@ license-portal/
 │   ├── signing.py           # Ed25519 签发密钥
 │   ├── db.py                # SQLite schema / WAL
 │   ├── config.py            # JSON + PYSHELD_PORTAL_*；新增 web_dir
-│   ├── mailer.py / captcha.py
+│   ├── mailer.py             # SMTP / Console / Memory；From 显示名、Reply-To
+│   ├── email_templates.py    # 品牌 HTML + 纯文本邮件模板（全部内联样式）
+│   ├── captcha.py
 ├── web/                     # React 控制台
+│   ├── public/copy-code.html # 邮件“复制”按钮打开的品牌复制页（含联系方式回退）
 │   ├── src/api/client.ts    # fetch 封装、ApiError、CSRF 头、401 回调
 │   ├── src/api/hooks.ts     # TanStack Query：所有 query/mutation
 │   ├── src/api/types.ts     # 与后端响应对应的类型
@@ -42,7 +46,7 @@ license-portal/
 │   ├── src/styles/app.css   # 设计 token + 全部布局（无 CSS 框架）
 │   └── dist/                # 构建产物（被 .gitignore 的 dist*/ 忽略）
 ├── tests/                   # test_service / test_validation / test_security
-│                            # test_api（新）/ test_server（重写）
+│                            # test_api / test_mailer / test_server
 ├── deploy/nginx|systemd|backup.md
 └── README.md                # 已按 React + JSON API 更新
 ```
@@ -58,7 +62,7 @@ license-portal/
 ### 2.2 路由
 
 公共：`/`、`/activate`、`/verify`、`/success`、`/upgrade`、`/redeem`，未匹配走 `NotFound`。
-管理端：`/admin/login` 独立页；`/admin` 下嵌套 `licenses`、`licenses/:serial`、`keys`、`keys/new`、`keys/:id`、`customers`、`orders`、`audit`、`signing`，未匹配 `Navigate to="/admin"`。
+管理端：`/admin/login` 独立页；`/admin` 下嵌套 `licenses`、`licenses/:serial`、`keys`、`keys/new`、`keys/:id`、`customers`、`customers/:id`、`orders`、`audit`、`signing`，未匹配 `Navigate to="/admin"`。管理端页面按路由 `React.lazy` 分包，公共页保持首包直出。
 
 **路由必须与 Nginx / `_serve_spa` 的 history fallback 配合**：`LicenseDetail` 的地址是 `/admin/licenses/PS-XXXX-XXXX-XXXX`，刷新时要能回到 `index.html`。
 
@@ -70,6 +74,7 @@ license-portal/
   - 授权写操作 → `license(serial)` + `['admin','licenses']` + `dashboard`
   - 发码 / 吊销码 → `key(id)` + `['admin','keys']` + `dashboard`
   - 订单 → `['admin','orders']` + `dashboard`
+  - 授权/激活码/订单变更 → 同时失效 `['admin','customer']`，保证客户详情页数据同步
 - `useAdminMe` 是鉴权入口，同时把 `csrf_token` 写回客户端；`AdminLayout` 用它决定渲染、跳转或加载态。
 
 ### 2.4 设计系统
@@ -110,7 +115,20 @@ Turnstile 在 `config.captcha_site_key` 为空时不渲染（本地/测试环境
 - 公共接口的返回值会经过 `_public_license`：**签名文档 `document` 永远不下发给浏览器**，只给 `trial_code` 与 `deep_link`。
 - 列表接口返回 `{ok, items, total}`；详情接口返回 `{ok, license|key}`。
 - 列表里的授权会经过 `_slim_license` 去掉 `document`/`fingerprints` 等大字段。
+- `POST /api/public/trial/resend` 复用 `email_codes`：轮换 `code_hash`/`code_expires`、清零尝试次数，按 IP 与申请限流；验证完成后再重发返回 409 `application_verified`。
+- `GET /api/admin/customers/<id>` 返回客户资料、授权、订单和脱敏试用申请，不返回 `code_hash`/`ip_hash`/`user_agent`。
 - `GET /api/admin/filters` 给前端提供版本/状态/动作枚举，避免前端硬编码和数据库不一致。
+- `GET /api/admin/dashboard` 额外返回 `email`：`verification`、`configured`、`sender`、`from_name`、`reply_to`、`host`。只有 SMTP 主机和地址，**没有密码**；前端据此提示“验证已开启但 SMTP 未配置”。
+
+### 3.3 邮件
+
+- `email_templates.py` 统一渲染验证码邮件和系统通知：深色页头、站点名、石灰绿强调、验证码卡片、页脚客服信息；全部内联样式，不引用外部字体/图片，附带纯文本正文。
+- 动态值全部 `html.escape`；`site_url` 只允许 `http`/`https`，非法协议不生成链接。
+- 验证码旁有“复制”按钮。邮件客户端不支持脚本/剪贴板，按钮指向静态页 `/copy-code.html?minutes=<n>&site=…&support=…&wechat=…#<code>`；验证码只在 URL fragment，不进入服务器日志，页面读取后清除地址栏哈希。复制页优先用 Clipboard API，失败回退到选中文本复制，再失败提示手动复制。页面先用查询参数回退渲染站点名、支持邮箱、客服微信，再请求 `/api/public/config` 覆盖为权威配置；展示有效期、安全提示、联系方式、授权中心地址和页脚，配置接口不可用时仍可复制，只是隐藏未提供的联系方式。
+- `SMTP_FROM_NAME` 控制发件人显示名（默认 `site_name`）；`SMTP_REPLY_TO` 控制回复地址（回退 `support_email` → `smtp_from`）。`From` 使用 `formataddr`，中文显示名正确编码。
+- 邮件头带 `Auto-Submitted: auto-generated` 与 `X-Auto-Response-Suppress: All`，避免自动回复循环。
+- `python -m license_portal mail test --to <address>` 发送一封品牌化测试邮件；SMTP 未配置或发送失败返回非零。
+- `--dev` 仍使用 `ConsoleMailer`，验证码打印到 stderr，不发送真实邮件。
 
 ## 4. 不可破坏的约束
 
@@ -124,7 +142,7 @@ Turnstile 在 `config.captcha_site_key` 为空时不渲染（本地/测试环境
 ## 5. 运行 / 测试 / 构建
 
 ```bash
-# 后端测试（98 项）
+# 后端测试（107 项）
 cd PyShield
 python -m unittest discover -s license-portal/tests -v
 
@@ -144,6 +162,9 @@ export PYTHONPATH="$PWD:$PWD/.."     # PowerShell 用分号
 python -m license_portal init
 PYSHELD_PORTAL_ADMIN_PASSWORD=password12345 python -m license_portal admin create --username admin
 python -m license_portal run --dev --port 8091
+
+# 真实 SMTP 测试（需要先配置 SMTP_*，不加 --dev）
+python -m license_portal mail test --to you@example.com
 ```
 
 PowerShell 对应写法与完整环境变量见 `README.md` 第 3 节。
@@ -158,26 +179,25 @@ PowerShell 对应写法与完整环境变量见 `README.md` 第 3 节。
 
 已验证：
 
-- 后端 98 项 unittest；桌面端授权客户端 65 项。
-- 浏览器端到端（Playwright + Chromium，真实页面操作）：首页渲染 → 填试用表单 → 提交得到 `PST-` → 管理端登录 → 生成 2 个激活码 → 网页兑换 → 授权详情 + 续费弹窗。
+- 后端 107 项 unittest；桌面端授权客户端 65 项。
+- 邮件模板与 SMTP 报文构造：品牌 HTML、纯文本正文、From 显示名/Reply-To、HTML 转义、非法 URL 过滤（`tests/test_mailer.py`）。
+- 浏览器端到端（真实页面操作）：首页 → 试用表单 → 邮箱验证码重发（旧码失效）→ 验证签发 → 成功页深链；管理端登录 → 概览 → 客户列表/详情 → 订单标记已收款 → 审计 CSV 导出（核对表头与 CRLF）→ 授权/激活码列表。
 - 桌面端 API 冒烟：`/api/trial/status`、`/api/trial/claim`、`/api/license/activate`、`/api/license/status`、`/api/license/revocations`。
 - 移动端 390px：首页、试用表单不横向溢出。
 
 未验证 / 需要注意：
 
 - 没有接入真实 Cloudflare Turnstile（本地 site key 为空）。上线前用测试密钥走一遍，重点看 CSP 是否拦截 `challenges.cloudflare.com` 的 iframe。
-- 没有做真实 SMTP 发信测试（测试用 `MemoryMailer`）。
-- 前端没有单元测试/组件测试框架；回归靠 `npm run typecheck` + 上面那条 E2E 脚本（未入库，可要求重写）。
-- 前端首包 1.2MB（gzip 385KB），antd 占大头。若在意公共页 LCP，可把 `/admin/*` 改成 `React.lazy` 分包；目前未做。
+- 没有用真实服务商凭据跑通 SMTP 投递（测试覆盖到邮件报文与模板；上线前用 `mail test` 对 QQ/163/企业邮实际发一封）。
+- 前端没有单元测试/组件测试框架；回归靠 `npm run typecheck` + 浏览器手工/脚本验证。
+- 前端首包已从 1.2MB 降到约 690KB（gzip 225KB）：`/admin/*` 全部 `React.lazy`，表格与详情拆成独立 chunk；公共页不再加载管理端代码。
 
 ## 8. 已知未做 & 建议下一步
 
 1. **在线支付**：仍是人工微信收款 + 管理端发码。接支付时要新增 `payments` 表、回调验签和幂等处理，订单状态由回调推进。
 2. **短信验证码 / 管理端 TOTP 2FA**：`validate_login` 只校验用户名密码；2FA 需要给 `admins` 加 `totp_secret` 与登录中间态。
-3. **重新发送验证码**：现在只能回到申请表重新提交（旧申请会被 `superseded`）。要做的话建议 `POST /api/public/trial/resend`，复用 `email_codes` 和限流。
-4. **PostgreSQL / 多实例**：`service.py` 直接用了 `sqlite3` 事务，抽象成 repository 才能换库；SQLite 单机在早期客户量下够用。
-5. **授权文档轮换**：轮换签名密钥会让所有旧客户端失效，需要配套的客户端更新流程。
-6. **审计导出 / 客户详情页**：目前客户只有列表，点不进详情；审计只能按动作/关键字过滤。
+3. **PostgreSQL / 多实例**：`service.py` 直接用了 `sqlite3` 事务，抽象成 repository 才能换库；SQLite 单机在早期客户量下够用。
+4. **授权文档轮换**：轮换签名密钥会让所有旧客户端失效，需要配套的客户端更新流程。
 
 ## 9. 优先阅读的文件
 
@@ -188,4 +208,5 @@ PowerShell 对应写法与完整环境变量见 `README.md` 第 3 节。
 5. `web/src/pages/public/Activate.tsx` —— 表单 + Turnstile + 服务端错误回填的范例。
 6. `web/src/pages/admin/LicenseDetail.tsx` —— 续费/升级/吊销三个弹窗的范例。
 7. `license-portal/tests/test_api.py` —— 接口行为的可执行规格。
-8. `license_portal/service.py` —— 业务规则（只读，不要重写）。
+8. `license_portal/email_templates.py` —— 品牌邮件的 HTML/纯文本结构与转义规则。
+9. `license_portal/service.py` —— 业务规则（只读，不要重写）。

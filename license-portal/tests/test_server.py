@@ -118,7 +118,11 @@ class SpaHostingTests(ServerBase, unittest.TestCase):
             self.assertIn('<div id="root">', body, path)
 
     def test_hashed_asset_is_served_with_long_cache(self) -> None:
-        assets = sorted((DIST / "assets").glob("*.js"))
+        assets = sorted(
+            (DIST / "assets").glob("*.js"),
+            key=lambda path: path.stat().st_size,
+            reverse=True,
+        )
         self.assertTrue(assets, "web/dist is missing; run npm run build")
         status, content_type, body = self.fetch(f"/assets/{assets[0].name}")
         self.assertEqual(status, 200)

@@ -19,6 +19,7 @@ export const STATUS_LABEL: Record<string, string> = {
   unknown: '未找到',
   pending_email: '待验证邮箱',
   verified: '已完成',
+  superseded: '已失效',
 }
 
 export type Tone = 'ok' | 'warn' | 'danger' | 'info' | 'neutral'

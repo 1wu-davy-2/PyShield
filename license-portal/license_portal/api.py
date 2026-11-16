@@ -106,6 +106,11 @@ def _handle_public(service: PortalService, config: Config, request: ApiRequest) 
         )
         return ApiResponse(_trial_step(result))
 
+    if path == "/trial/resend":
+        data = validation.validate_resend_request(request.payload)
+        result = service.resend_trial_code(data["application_id"], request.ip)
+        return ApiResponse(result)
+
     if path == "/trial/verify":
         data = validation.validate_email_code(request.payload)
         result = service.verify_trial(data["application_id"], data["code"], request.ip)
@@ -288,6 +293,9 @@ def _handle_admin(service: PortalService, config: Config, request: ApiRequest) -
         items = service.list_customers(search=str(request.query.get("q") or ""))
         return ApiResponse({"ok": True, "items": items, "total": len(items)})
 
+    if path.startswith("/customers/"):
+        return _admin_customer(service, request, path)
+
     if path == "/orders":
         items = service.list_orders(status=str(request.query.get("status") or ""))
         return ApiResponse({"ok": True, "items": items, "total": len(items)})
@@ -426,6 +434,28 @@ def _admin_key(
         return ApiResponse({"ok": True, "id": key_id, "key": plaintext})
     service.revoke_license_key(actor, key_id, str(request.payload.get("reason") or ""))
     return ApiResponse({"ok": True, "id": key_id, "status": "revoked"})
+
+
+def _admin_customer(
+    service: PortalService, request: ApiRequest, path: str,
+) -> ApiResponse:
+    rest = path[len("/customers/"):].strip("/")
+    if request.method != "GET":
+        raise ServiceError("unknown endpoint", 404, "not_found")
+    try:
+        customer_id = int(rest)
+    except ValueError as exc:
+        raise ServiceError("客户编号无效", 400, "invalid_customer_id") from exc
+    data = service.get_customer(customer_id)
+    if data is None:
+        raise ServiceError("客户不存在", 404, "customer_not_found")
+    return ApiResponse({
+        "ok": True,
+        "customer": data["customer"],
+        "licenses": [_slim_license(item) for item in data["licenses"]],
+        "orders": data["orders"],
+        "applications": data["applications"],
+    })
 
 
 def _admin_order(

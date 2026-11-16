@@ -261,6 +261,36 @@ class EmailVerificationApiTests(ApiBase, unittest.TestCase):
         self.assertEqual(payload["status"], "granted")
         self.assertTrue(payload["deep_link"].startswith("pyshield://"))
 
+    def test_resend_code_and_finish_verification(self) -> None:
+        status, payload = self.post("/api/public/trial/apply", self.trial_payload())
+        self.assertEqual(status, 200, payload)
+        application_id = payload["application_id"]
+
+        status, payload = self.post("/api/public/trial/resend", {
+            "application_id": application_id,
+        })
+        self.assertEqual(status, 200, payload)
+        self.assertTrue(payload["verification_required"])
+        self.assertEqual(payload["application_id"], application_id)
+        self.assertEqual(payload["resend_after"], 60)
+
+        status, payload = self.post("/api/public/trial/verify", {
+            "application_id": application_id, "code": self.mailer.last_code,
+        })
+        self.assertEqual(status, 200, payload)
+
+        status, payload = self.post("/api/public/trial/resend", {
+            "application_id": application_id,
+        })
+        self.assertEqual(status, 409)
+        self.assertEqual(payload["code"], "application_verified")
+
+        status, payload = self.post("/api/public/trial/resend", {
+            "application_id": 0,
+        })
+        self.assertEqual(status, 400)
+        self.assertEqual(payload["code"], "validation_failed")
+
 
 class AdminApiTests(ApiBase, unittest.TestCase):
     def test_login_me_logout(self) -> None:
@@ -305,6 +335,9 @@ class AdminApiTests(ApiBase, unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("counts", payload)
         self.assertIn("signing_key", payload)
+        self.assertIn("email", payload)
+        self.assertFalse(payload["email"]["configured"])
+        self.assertFalse(payload["email"]["verification"])
         status, payload = self.get("/api/admin/signing")
         self.assertEqual(status, 200)
         self.assertTrue(payload["signing_key"]["public_key"])
@@ -390,7 +423,20 @@ class AdminApiTests(ApiBase, unittest.TestCase):
         status, payload = self.get("/api/admin/customers")
         self.assertEqual(status, 200)
         self.assertEqual(payload["total"], 1)
+        customer_id = payload["items"][0]["id"]
         self.assertEqual(payload["items"][0]["email"], "browser@example.com")
+
+        status, payload = self.get(f"/api/admin/customers/{customer_id}")
+        self.assertEqual(status, 200, payload)
+        self.assertEqual(payload["customer"]["email"], "browser@example.com")
+        self.assertEqual(len(payload["licenses"]), 1)
+        self.assertEqual(payload["licenses"][0]["serial"], self.serial)
+        self.assertEqual(len(payload["applications"]), 1)
+        self.assertNotIn("code_hash", payload["applications"][0])
+
+        status, payload = self.get("/api/admin/customers/999999")
+        self.assertEqual(status, 404)
+        self.assertEqual(payload["code"], "customer_not_found")
 
         status, payload = self.get("/api/admin/orders")
         self.assertEqual(status, 200)
