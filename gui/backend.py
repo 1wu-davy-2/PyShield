@@ -26,7 +26,7 @@ from pyshield import (
     trial_license,
 )
 
-from . import core, instance, state as state_db
+from . import core, instance, mcp_host, state as state_db
 
 STAGE_LABELS = {
     "init": "校验配置",
@@ -381,6 +381,8 @@ class Api:
 
     def __init__(self) -> None:
         self.manager = BuildManager()
+        self.mcp = mcp_host.McpHost()
+        self._mcp_started = False
         self._python_job = python_runtime.InstallJob()
         self._window = None
 
@@ -423,6 +425,7 @@ class Api:
             "state": self.manager.snapshot(),
             "integrity": core.state_status(),
             "native_runtime": self._native_runtime_state(),
+            "mcp": self.mcp.status(),
         }
 
     def inspect(self, payload: dict | None = None) -> dict:
@@ -971,8 +974,97 @@ class Api:
     def cancel_build(self) -> dict:
         return self.manager.cancel()
 
+    # -------------------------------------------------------------- mcp
+    def start_mcp(self) -> dict:
+        """Start the embedded MCP endpoint once per process."""
+        if self._mcp_started:
+            return self.mcp.status()
+        self._mcp_started = True
+        settings = core.load_settings()
+        if not settings.get("mcp_enabled", True):
+            return self.mcp.status()
+        try:
+            self.mcp.start(settings)
+        except Exception as exc:  # noqa: BLE001 - never block the UI
+            return {**self.mcp.status(), "error": str(exc)}
+        return self.mcp.status()
+
+    def mcp_status(self) -> dict:
+        return {"ok": True, "mcp": self.mcp.status()}
+
+    def mcp_start_server(self) -> dict:
+        settings = core.load_settings()
+        settings["mcp_enabled"] = True
+        try:
+            core.save_settings(settings)
+        except (OSError, state_db.StateError) as exc:
+            return {"ok": False, "error": f"无法保存设置：{exc}", "mcp": self.mcp.status()}
+        self._mcp_started = True
+        response = self.mcp.start(settings)
+        return {"ok": bool(response.get("ok")), **response, "mcp": self.mcp.status()}
+
+    def mcp_stop_server(self) -> dict:
+        settings = core.load_settings()
+        settings["mcp_enabled"] = False
+        try:
+            core.save_settings(settings)
+        except (OSError, state_db.StateError) as exc:
+            return {"ok": False, "error": f"无法保存设置：{exc}", "mcp": self.mcp.status()}
+        response = self.mcp.stop()
+        return {"ok": True, **response, "mcp": self.mcp.status()}
+
+    def mcp_save(self, payload: dict | None = None) -> dict:
+        data = payload if isinstance(payload, dict) else {}
+        settings = core.load_settings()
+        for key in ("mcp_port", "mcp_allow_build", "mcp_project_root", "mcp_enabled"):
+            if key in data:
+                settings[key] = data[key]
+        try:
+            settings = core.save_settings(settings)
+        except (OSError, state_db.StateError) as exc:
+            return {"ok": False, "error": f"无法保存设置：{exc}", "mcp": self.mcp.status()}
+        if settings.get("mcp_enabled", True):
+            self._mcp_started = True
+            response = self.mcp.apply_settings(settings)
+        else:
+            response = self.mcp.stop()
+        return {
+            "ok": bool(response.get("ok")),
+            "message": response.get("message", ""),
+            "error": response.get("error", ""),
+            "settings": settings,
+            "mcp": self.mcp.status(),
+        }
+
+    def mcp_config(self, kind: str = "http-json") -> dict:
+        try:
+            return self.mcp.snippet(kind)
+        except mcp_host.McpHostError as exc:
+            return {"ok": False, "error": exc.message, "code": exc.code}
+
+    def mcp_rotate_token(self) -> dict:
+        settings = core.load_settings()
+        mcp_host.rotate_token()
+        if self.mcp.running:
+            response = self.mcp.restart(settings)
+            if not response.get("ok"):
+                return {"ok": False, "error": response.get("error", ""), "mcp": self.mcp.status()}
+        return {"ok": True, "mcp": self.mcp.status(), "message": "令牌已轮换，旧令牌立即失效"}
+
+    def shutdown_mcp(self) -> dict:
+        self.mcp.stop()
+        return {"ok": True}
+
+    # ------------------------------------------------------------ settings
+
     def save_settings(self, payload: dict | None = None) -> dict:
-        candidate = core._normalized_settings(payload or {})
+        # Merge over the stored settings: the settings page only submits the
+        # fields it owns, and a partial payload must not reset MCP or trial
+        # configuration back to defaults.
+        merged = core.load_settings()
+        if isinstance(payload, dict):
+            merged.update(payload)
+        candidate = core._normalized_settings(merged)
         warning = ""
         if candidate["runtime"] == "native":
             reason = self._native_runtime_block_reason()

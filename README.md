@@ -12,7 +12,7 @@ PyShield 是一套自研的 Python / Django 源码保护工具。构建期把业
 
 - **提高源码逆向成本**：模块编译为 code object 后经 zlib 压缩，再用每个模块独立的 AEAD 密钥加密；发布目录只保留 Base85 stub，runtime 默认发布 sourceless `.pyc`。这是提高攻击成本，不是“攻击者拿不到明文”的承诺。
 - **桌面构建器**：`PyShieldBuilder.exe` 是免安装的 Windows 单文件程序，选择 Django 目录、配置参数、点击一次即可完成加密；Web UI、runtime 模板与构建引擎全部内嵌，不依赖外部 Python 或 PyShield 源码。runtime 模板以压缩资源嵌入，不再作为明文 `.py` 随 exe 发布。
-- **MCP 构建服务**：`PyShieldMCP.exe` 提供本地 stdio MCP，让 Claude Code、Cursor、CI agent 直接调用构建能力。默认只读、不执行目标项目代码；严格预检后才扣额度，只有目标项目代码错误才退款；构建密钥与日志不通过 MCP 返回。
+- **MCP 构建服务**：`PyShieldMCP.exe` 提供本地 stdio MCP，让 Claude Code、Cursor、CI agent 直接调用构建能力。桌面构建器把同一套服务内置进 `PyShieldBuilder.exe`：GUI 启动即监听 `127.0.0.1:8790/mcp`，也可用 `--mcp` 作为 stdio 子进程拉起，「AI 接入」页直接给出可复制的客户端配置。默认只读、不执行目标项目代码；严格预检后才扣额度，只有目标项目代码错误才退款；构建密钥与日志不通过 MCP 返回。
 - **单实例启动**：同一用户会话只允许一个构建器窗口；重复启动会转发深链并唤起已有窗口，不再出现两个实例。主 exe 与自保护 exe 共用同一把全局锁，切换 `PYSHELD_GUI_CONFIG_DIR` 也不能绕过；仅自动化并行 UI 测试可设置 `PYSHELD_ALLOW_MULTI_INSTANCE=1`。
 - **Django 友好**：保留正常导入、反射、模板、ORM、URL 路由与管理命令；迁移、测试和静态资源默认不加密。
 - **签名完整性清单**：构建时生成 Ed25519 签名的 `.pyshield-manifest.json`，首次加载先校验受保护代码与 runtime 的 SHA-256；许可证、配置、数据库、日志、媒体与 staticfiles 等现场可变文件不受影响。
@@ -113,6 +113,8 @@ python -m pyshield.mcp_server --project-root E:\work --output-root E:\pyshield-o
 ```
 
 服务只使用 stdio，默认只暴露只读工具；`--allow-build` 开启构建，`--allow-project-execution` 才允许沙箱执行目标项目代码。构建建议先用 `pyshield_validate_build` 拿到 `plan_hash`，再调用 `pyshield_start_build`。配置、安全边界、额度与退款规则见[MCP 构建服务](docs/mcp-server.md)。
+
+桌面构建器内置同一套 MCP：打开 `PyShieldBuilder.exe` 后自动监听 `http://127.0.0.1:<端口>/mcp`（默认 8790，回环 only、Bearer 令牌），「AI 接入」页可开关服务、改端口、选项目目录、轮换令牌，并一键复制 Claude Code / Cursor / 通用 JSON 配置；同一个 exe 也支持 `PyShieldBuilder.exe --mcp --project-root <dir> --allow-build` 走 stdio。
 
 ## 工具授权（商业许可）
 

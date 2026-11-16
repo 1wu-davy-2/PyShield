@@ -60,6 +60,11 @@
           <span>构建记录</span>
           <span class="nav-count" id="historyCount">0</span>
         </button>
+        <button class="nav-item" id="navMcp" data-view="mcp">
+          <svg class="icon"><use href="#i-terminal"/></svg>
+          <span>AI 接入</span>
+          <span class="nav-live" id="navMcpDot" hidden></span>
+        </button>
         <p class="nav-caption">应用</p>
         <button class="nav-item" id="navTrial" data-view="trial">
           <svg class="icon"><use href="#i-key"/></svg>
@@ -561,6 +566,143 @@
                 <button class="btn secondary" id="emptyGoBuild">去构建</button>
               </div>
             </div>
+          </section>
+        </section>
+
+        <section class="view" id="view-mcp" hidden>
+          <section class="card mcp-hero">
+            <header class="card-head">
+              <div>
+                <h2>AI 接入</h2>
+                <p>把加密构建能力交给本地 AI agent：内置 MCP 服务，随应用启动监听回环端口。</p>
+              </div>
+              <span class="status-badge" id="mcpBadge">检测中</span>
+            </header>
+            <div class="mcp-stat-grid">
+              <div class="mcp-stat">
+                <span class="mcp-stat-label">服务地址</span>
+                <code class="mono" id="mcpUrl">—</code>
+              </div>
+              <div class="mcp-stat">
+                <span class="mcp-stat-label">访问令牌</span>
+                <span class="mcp-token-row">
+                  <code class="mono mcp-token" id="mcpToken">—</code>
+                  <button class="icon-btn" id="mcpCopyToken" title="复制令牌" aria-label="复制令牌">
+                    <svg class="icon"><use href="#i-copy"/></svg>
+                  </button>
+                </span>
+              </div>
+              <div class="mcp-stat compact">
+                <span class="mcp-stat-label">已处理请求</span>
+                <strong id="mcpRequests">0</strong>
+              </div>
+              <div class="mcp-stat compact">
+                <span class="mcp-stat-label">最近调用</span>
+                <strong id="mcpLastCall">—</strong>
+              </div>
+            </div>
+            <div class="inline-note" id="mcpNote">
+              <svg class="icon"><use href="#i-lock"/></svg>
+              <span>服务只绑定 127.0.0.1，令牌等同本机构建权限，不要发到公开仓库或聊天群。</span>
+            </div>
+          </section>
+
+          <div class="mcp-grid">
+            <section class="card">
+              <header class="card-head">
+                <div>
+                  <h2>服务控制</h2>
+                  <p>修改后点「保存并应用」生效，构建器仍在同一个进程内运行</p>
+                </div>
+              </header>
+              <div class="field-grid">
+                <div class="field">
+                  <label for="mcpPort">监听端口</label>
+                  <div class="input-shell">
+                    <input id="mcpPort" type="number" min="1024" max="65535" step="1" placeholder="8790" inputmode="numeric">
+                  </div>
+                  <p class="field-hint">端口被占用时会自动向后顺延，实际地址以上方为准。</p>
+                </div>
+                <div class="field">
+                  <label for="mcpProjectRoot">AI 可访问的项目目录</label>
+                  <div class="input-shell input-with-button">
+                    <input id="mcpProjectRoot" type="text" placeholder="默认：文档目录" spellcheck="false">
+                    <button class="btn ghost small" id="mcpBrowseRoot" type="button">选择</button>
+                  </div>
+                  <p class="field-hint">agent 只能在这个目录下发现项目，越界路径会被拒绝。</p>
+                </div>
+              </div>
+              <div class="toggle-grid">
+                <label class="toggle-row">
+                  <span><strong>随应用启动</strong><small>打开构建器时自动监听端口；隐藏到托盘仍运行，退出应用才停止</small></span>
+                  <input type="checkbox" class="switch" id="mcpEnabled">
+                </label>
+                <label class="toggle-row">
+                  <span><strong>允许 AI 触发构建</strong><small>关闭后 agent 只能查看状态、预检与读取日志</small></span>
+                  <input type="checkbox" class="switch" id="mcpAllowBuild">
+                </label>
+              </div>
+              <div class="settings-actions">
+                <button class="btn primary" id="mcpSave">保存并应用</button>
+                <button class="btn secondary" id="mcpStart">启动</button>
+                <button class="btn secondary" id="mcpStop">停止</button>
+                <button class="btn ghost danger-text" id="mcpRotate">轮换令牌</button>
+              </div>
+            </section>
+
+            <section class="card">
+              <header class="card-head">
+                <div>
+                  <h2>可用工具</h2>
+                  <p>令牌与授权一起决定 agent 能做什么</p>
+                </div>
+                <span class="nav-count" id="mcpToolCount">0</span>
+              </header>
+              <ul class="mcp-tool-list" id="mcpToolList"></ul>
+            </section>
+          </div>
+
+          <section class="card">
+            <header class="card-head">
+              <div>
+                <h2>复制给 AI Agent</h2>
+                <p>按客户端任选一种，粘贴后重启对应客户端即可生效</p>
+              </div>
+            </header>
+            <div class="mcp-copy-list">
+              <div class="mcp-copy-row">
+                <div class="mcp-copy-head">
+                  <strong>Claude Code · HTTP</strong>
+                  <button class="btn ghost small" data-copy-kind="claude-http">复制命令</button>
+                </div>
+                <pre class="mcp-code" id="mcpCodeClaudeHttp">—</pre>
+              </div>
+              <div class="mcp-copy-row">
+                <div class="mcp-copy-head">
+                  <strong>通用 JSON · HTTP</strong>
+                  <button class="btn ghost small" data-copy-kind="http-json">复制 JSON</button>
+                </div>
+                <pre class="mcp-code" id="mcpCodeHttpJson">—</pre>
+              </div>
+              <div class="mcp-copy-row">
+                <div class="mcp-copy-head">
+                  <strong>通用 JSON · stdio</strong>
+                  <button class="btn ghost small" data-copy-kind="stdio-json">复制 JSON</button>
+                </div>
+                <pre class="mcp-code" id="mcpCodeStdioJson">—</pre>
+              </div>
+              <div class="mcp-copy-row">
+                <div class="mcp-copy-head">
+                  <strong>命令行 · stdio</strong>
+                  <button class="btn ghost small" data-copy-kind="stdio">复制命令</button>
+                </div>
+                <pre class="mcp-code" id="mcpCodeStdio">—</pre>
+              </div>
+            </div>
+            <p class="security-note">
+              <svg class="icon"><use href="#i-info"/></svg>
+              <span>HTTP 方式需要构建器保持运行；stdio 方式由客户端自行拉起 <code>--mcp</code> 子进程，不依赖端口。</span>
+            </p>
           </section>
         </section>
 

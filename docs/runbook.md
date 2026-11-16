@@ -356,6 +356,8 @@ python -m pyshield.mcp_server \
 
 或使用 `PyShieldMCP.exe`（参数相同）。服务只使用 stdio，不监听端口。默认只注册只读工具；`--allow-build` 开启构建，`--allow-project-execution` + `--verify-python ID=PATH` 才开启 `pyshield_check_output`。
 
+桌面构建器内置同一套服务：GUI 打开后监听 `http://127.0.0.1:8790/mcp`（可在「AI 接入」页改端口或停止），请求需带 `Authorization: Bearer <令牌>`；也可用 `PyShieldBuilder.exe --mcp --project-root <dir> --allow-build` 走 stdio。内置模式不开放 `pyshield_check_output`。
+
 - `pyshield_validate_build` 不写输出、不扣额度；先拿 `plan_hash`，再 `pyshield_start_build`。
 - 构建受理时扣 1 次额度；只有目标项目代码错误（`PROJECT_CODE`）退还，环境/取消/超时/内部错误不退。
 - 构建默认 `no_verify`，不执行目标项目代码；`check_output` 在沙箱复制中执行 `manage.py check`。

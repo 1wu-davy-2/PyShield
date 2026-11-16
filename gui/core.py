@@ -36,6 +36,7 @@ MIN_PYTHON = (3, 10)
 MAX_GRACE_DAYS = 3650
 MAX_EXPIRE_DAYS = 36500
 HISTORY_LIMIT = 100
+MCP_DEFAULT_PORT = 8790
 
 DEFAULT_CIPHER = "chacha-pure"
 DEFAULT_INTEGRITY = "protected"
@@ -55,6 +56,11 @@ DEFAULT_SETTINGS = {
     "no_verify": False,
     "activation_server": "",
     "trial_server": "",
+    # Embedded MCP endpoint (see gui/mcp_host.py).
+    "mcp_enabled": True,
+    "mcp_port": MCP_DEFAULT_PORT,
+    "mcp_allow_build": True,
+    "mcp_project_root": "",
 }
 
 PROBE_SCRIPT = r"""
@@ -453,6 +459,14 @@ def _normalized_settings(payload: dict | None) -> dict:
     settings["no_verify"] = bool(settings.get("no_verify"))
     settings["activation_server"] = str(settings.get("activation_server") or "").strip().rstrip("/")
     settings["trial_server"] = str(settings.get("trial_server") or "").strip().rstrip("/")
+    settings["mcp_enabled"] = bool(settings.get("mcp_enabled", True))
+    settings["mcp_allow_build"] = bool(settings.get("mcp_allow_build", True))
+    settings["mcp_project_root"] = str(settings.get("mcp_project_root") or "").strip()
+    try:
+        port = int(settings.get("mcp_port") or MCP_DEFAULT_PORT)
+    except (TypeError, ValueError):
+        port = MCP_DEFAULT_PORT
+    settings["mcp_port"] = port if 1024 <= port <= 65535 else MCP_DEFAULT_PORT
     return settings
 
 

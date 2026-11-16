@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -14,7 +15,9 @@ if __package__ in (None, ""):
 from gui import core  # noqa: E402
 from gui import instance  # noqa: E402
 from gui import tray  # noqa: E402
-from gui.backend import Api  # noqa: E402
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from gui.backend import Api
 
 
 def resource_root() -> Path:
@@ -92,6 +95,19 @@ def _run_embedded_setup(argv: list[str]) -> bool:
     os._exit(code)
 
 
+def _run_mcp(argv: list[str]) -> bool:
+    """Run the MCP stdio server from the same executable.
+
+    ``PyShieldBuilder.exe --mcp ...`` turns the GUI binary into a headless
+    stdio MCP server so a single download can serve both humans and agents.
+    """
+    if len(argv) < 2 or argv[1] != "--mcp":
+        return False
+    from pyshield.mcp_server import main as mcp_main
+
+    raise SystemExit(mcp_main(argv[2:]))
+
+
 def _wait_for_primary(link: str, timeout: float = 5.0) -> bool:
     """Wait for a starting primary to publish its loopback pointer."""
     payload = {"link": link, "show": True}
@@ -107,7 +123,10 @@ def _wait_for_primary(link: str, timeout: float = 5.0) -> bool:
 def main() -> int:
     if _run_embedded_setup(sys.argv):
         return 0
+    _run_mcp(sys.argv)
     import webview
+
+    from gui.backend import Api
 
     link = instance.deep_link_from_argv(sys.argv)
     if instance.send_to_primary({"link": link, "show": True}):
@@ -129,6 +148,12 @@ def main() -> int:
             raise SystemExit(f"界面资源缺失：{index}")
 
         api = Api()
+        # Start the loopback MCP endpoint before the window so the port is
+        # ready as soon as the first paint shows the AI 接入 page.
+        try:
+            api.start_mcp()
+        except Exception:  # noqa: BLE001 - a busy port must not block the GUI
+            pass
         window = webview.create_window(
             core.APP_TITLE,
             url=index.as_uri(),
@@ -172,6 +197,10 @@ def main() -> int:
             webview.start(**start_options)
         finally:
             listener.stop()
+            try:
+                api.shutdown_mcp()
+            except Exception:  # noqa: BLE001 - shutdown is best effort
+                pass
         return 0
     finally:
         lock.release()

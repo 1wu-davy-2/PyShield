@@ -59,11 +59,13 @@ class JsonRpcServer:
     ):
         self.service = service
         self.policy = service.policy
-        self.stdin = stdin or (sys.stdin.buffer if sys.stdin is not None else None)
-        self.stdout = stdout or (sys.stdout.buffer if sys.stdout is not None else None)
-        self.stderr = stderr or sys.stderr
-        if self.stdin is None or self.stdout is None:
-            raise RuntimeError("MCP stdio requires a console stdin/stdout")
+        self.stdin = stdin if stdin is not None else (
+            sys.stdin.buffer if sys.stdin is not None else None
+        )
+        self.stdout = stdout if stdout is not None else (
+            sys.stdout.buffer if sys.stdout is not None else None
+        )
+        self.stderr = stderr if stderr is not None else sys.stderr
         self.tools = tool_definitions(
             allow_build=self.policy.allow_build,
             allow_execution=self.policy.allow_project_execution,
@@ -79,6 +81,8 @@ class JsonRpcServer:
     # Transport
     # ------------------------------------------------------------------
     def send(self, payload: dict) -> None:
+        if self.stdout is None:
+            raise RuntimeError("MCP stdio requires a console stdout")
         data = json.dumps(
             payload, ensure_ascii=False, separators=(",", ":"),
         ).encode("utf-8") + b"\n"
@@ -95,6 +99,8 @@ class JsonRpcServer:
             pass
 
     def serve(self) -> int:
+        if self.stdin is None or self.stdout is None:
+            raise RuntimeError("MCP stdio requires a console stdin/stdout")
         while not self._shutdown:
             try:
                 line = self.stdin.readline(MAX_MESSAGE_BYTES + 1)
@@ -124,19 +130,39 @@ class JsonRpcServer:
         return 0
 
     # ------------------------------------------------------------------
-    # Dispatch
+    # Dispatch (transport neutral)
     # ------------------------------------------------------------------
+    def handle(self, message: Any) -> list[dict]:
+        """Return the JSON-RPC responses for one message or batch.
+
+        The stdio loop and the HTTP transport share this method so both
+        expose exactly the same tools and validation rules.  Notifications
+        return an empty list; a batch returns one entry per request.
+        """
+        if isinstance(message, list):
+            if not message:
+                return [_error(None, INVALID_REQUEST, "empty batch")]
+            responses: list[dict] = []
+            for item in message:
+                response = self._dispatch(item)
+                if response is not None:
+                    responses.append(response)
+            return responses
+        response = self._dispatch(message)
+        return [] if response is None else [response]
+
     def _handle(self, message: Any) -> None:
+        for response in self.handle(message):
+            self.send(response)
+
+    def _dispatch(self, message: Any) -> dict | None:
         if not isinstance(message, dict):
-            self.send(_error(None, INVALID_REQUEST, "request must be an object"))
-            return
+            return _error(None, INVALID_REQUEST, "request must be an object")
         if message.get("jsonrpc") != "2.0":
-            self.send(_error(message.get("id"), INVALID_REQUEST, "jsonrpc must be 2.0"))
-            return
+            return _error(message.get("id"), INVALID_REQUEST, "jsonrpc must be 2.0")
         method = message.get("method")
         if not isinstance(method, str):
-            self.send(_error(message.get("id"), INVALID_REQUEST, "method is required"))
-            return
+            return _error(message.get("id"), INVALID_REQUEST, "method is required")
         has_id = "id" in message
         request_id = message.get("id")
         params = message.get("params")
@@ -145,55 +171,43 @@ class JsonRpcServer:
 
         if not has_id:
             self._handle_notification(method, params)
-            return
+            return None
 
         try:
             if method == "initialize":
-                self._handle_initialize(request_id, params)
-                return
+                return self._handle_initialize(request_id, params)
             if method == "ping":
-                self.send(_result(request_id, {}))
-                return
+                return _result(request_id, {})
             if not self._initialized:
-                self.send(_error(request_id, SERVER_NOT_INITIALIZED, "initialize first"))
-                return
+                return _error(request_id, SERVER_NOT_INITIALIZED, "initialize first")
             if method == "tools/list":
-                self.send(_result(request_id, {"tools": self.tools}))
-                return
+                return _result(request_id, {"tools": self.tools})
             if method == "tools/call":
-                self._handle_tools_call(request_id, params)
-                return
+                return self._handle_tools_call(request_id, params)
             if method == "resources/list":
-                self.send(_result(request_id, {"resources": resources.RESOURCES}))
-                return
+                return _result(request_id, {"resources": resources.RESOURCES})
             if method == "resources/templates/list":
-                self.send(_result(request_id, {"resourceTemplates": []}))
-                return
+                return _result(request_id, {"resourceTemplates": []})
             if method == "resources/read":
-                self._handle_resource_read(request_id, params)
-                return
+                return self._handle_resource_read(request_id, params)
             if method == "prompts/list":
-                self.send(_result(request_id, {"prompts": resources.PROMPTS}))
-                return
+                return _result(request_id, {"prompts": resources.PROMPTS})
             if method == "prompts/get":
-                self._handle_prompt_get(request_id, params)
-                return
+                return self._handle_prompt_get(request_id, params)
             if method == "logging/setLevel":
-                self.send(_result(request_id, {}))
-                return
+                return _result(request_id, {})
             if method == "shutdown":
-                self.send(_result(request_id, None))
                 self._shutdown = True
-                return
-            self.send(_error(request_id, METHOD_NOT_FOUND, f"unknown method: {method}"))
+                return _result(request_id, None)
+            return _error(request_id, METHOD_NOT_FOUND, f"unknown method: {method}")
         except schemas.ArgumentError as exc:
-            self.send(_error(
+            return _error(
                 request_id, INVALID_PARAMS, exc.message,
                 {"path": exc.path},
-            ))
+            )
         except Exception as exc:  # noqa: BLE001 - never leak a traceback
             self._log(f"internal error in {method}: {type(exc).__name__}")
-            self.send(_error(request_id, INTERNAL_ERROR, "internal error"))
+            return _error(request_id, INTERNAL_ERROR, "internal error")
 
     def _handle_notification(self, method: str, params: Any) -> None:
         if method in (
@@ -209,7 +223,7 @@ class JsonRpcServer:
     # ------------------------------------------------------------------
     # Handlers
     # ------------------------------------------------------------------
-    def _handle_initialize(self, request_id: Any, params: Any) -> None:
+    def _handle_initialize(self, request_id: Any, params: Any) -> dict:
         if not isinstance(params, dict):
             raise schemas.ArgumentError("initialize params must be an object", "$.params")
         requested = params.get("protocolVersion")
@@ -218,7 +232,7 @@ class JsonRpcServer:
             else LATEST_PROTOCOL_VERSION
         )
         self._initialized = True
-        self.send(_result(request_id, {
+        return _result(request_id, {
             "protocolVersion": version,
             "capabilities": {
                 "tools": {"listChanged": False},
@@ -228,9 +242,9 @@ class JsonRpcServer:
             },
             "serverInfo": {"name": "pyshield", "version": __version__},
             "instructions": INSTRUCTIONS,
-        }))
+        })
 
-    def _handle_tools_call(self, request_id: Any, params: Any) -> None:
+    def _handle_tools_call(self, request_id: Any, params: Any) -> dict:
         if not isinstance(params, dict):
             raise schemas.ArgumentError("tools/call params must be an object", "$.params")
         name = params.get("name")
@@ -241,18 +255,18 @@ class JsonRpcServer:
             tool, params.get("arguments", {}),
         )
         result = self.dispatcher.call_safe(name, arguments)
-        self.send(_result(request_id, result))
+        return _result(request_id, result)
 
-    def _handle_resource_read(self, request_id: Any, params: Any) -> None:
+    def _handle_resource_read(self, request_id: Any, params: Any) -> dict:
         if not isinstance(params, dict):
             raise schemas.ArgumentError("resources/read params must be an object", "$.params")
         uri = params.get("uri")
         if not isinstance(uri, str) or not uri:
             raise schemas.ArgumentError("uri is required", "$.params.uri")
         item = resources.read_resource(uri, self.service)
-        self.send(_result(request_id, {"contents": [item]}))
+        return _result(request_id, {"contents": [item]})
 
-    def _handle_prompt_get(self, request_id: Any, params: Any) -> None:
+    def _handle_prompt_get(self, request_id: Any, params: Any) -> dict:
         if not isinstance(params, dict):
             raise schemas.ArgumentError("prompts/get params must be an object", "$.params")
         name = params.get("name")
@@ -261,4 +275,4 @@ class JsonRpcServer:
         arguments = params.get("arguments") or {}
         if not isinstance(arguments, dict):
             raise schemas.ArgumentError("arguments must be an object", "$.params.arguments")
-        self.send(_result(request_id, resources.get_prompt(name, arguments)))
+        return _result(request_id, resources.get_prompt(name, arguments))

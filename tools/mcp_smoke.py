@@ -31,6 +31,11 @@ def main(argv: list[str] | None = None) -> int:
         "--server", required=True,
         help="PyShieldMCP executable, or 'module' for python -m pyshield.mcp_server",
     )
+    parser.add_argument(
+        "--arg", action="append", default=[], metavar="VALUE",
+        help="extra argv inserted before the generated flags "
+             "(use --arg=--mcp for PyShieldBuilder.exe)",
+    )
     parser.add_argument("--timeout", type=float, default=180.0)
     args = parser.parse_args(argv)
 
@@ -41,6 +46,7 @@ def main(argv: list[str] | None = None) -> int:
         command = [sys.executable, "-m", "pyshield.mcp_server"]
     else:
         command = [str(Path(args.server).resolve())]
+    command += list(args.arg)
     command += [
         "--project-root", str(projects),
         "--output-root", str(root / "out"),

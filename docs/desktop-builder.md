@@ -52,11 +52,31 @@ $env:PYSHELD_GUI_CONFIG_DIR = "D:\pyshield-config"
 
 配置目录覆盖不会解除单实例限制：同一用户会话内再次启动只会唤醒已运行窗口并转发深链。并行 UI 测试需要显式设置 `PYSHELD_ALLOW_MULTI_INSTANCE=1`。
 
+### AI 接入（内置 MCP）
+
+侧边栏「AI 接入」把 MCP 构建服务暴露给本地 agent，不再需要单独下载 console 版：
+
+- 打开构建器时自动监听 `http://127.0.0.1:8790/mcp`（端口可改，被占用时自动顺延并在页面提示）；
+- 页面展示服务状态、令牌、已处理请求、最近调用与可用工具；
+- 「复制给 AI Agent」提供四种现成片段：Claude Code HTTP 命令、通用 HTTP JSON、通用 stdio JSON、stdio 命令行；
+- 「随应用启动」控制是否开机即监听；「允许 AI 触发构建」关闭后只保留状态、预检与日志类工具；
+- 「AI 可访问的项目目录」限定 agent 能看到的上层目录，越界路径由构建服务拒绝；
+- 「轮换令牌」立即更换 bearer token，旧令牌立刻失效。
+
+HTTP 端点只绑定回环地址，除 `/health` 外都要求 `Authorization: Bearer <令牌>`；令牌保存在 `%APPDATA%\PyShieldBuilder\mcp-token.txt`（0600），页面可一键复制。客户端配置与协议细节见 [mcp-server.md](mcp-server.md)。
+
+同一个 exe 仍然保留 stdio 入口，供客户端自行拉起子进程：
+
+```powershell
+PyShieldBuilder.exe --mcp --project-root E:\work --allow-build
+```
+
 ## 2. 内置引擎与部署约束
 
 桌面版把 PyShield 构建引擎运行在 exe 进程内，不调用外部 `shield.py`。所有构建资源均已内嵌：
 
 - `gui/web/`：HTML / CSS / JavaScript 界面；
+- `pyshield/mcp_server/` 与 `pyshield/build_service/`：内置 MCP 服务（stdio + 回环 HTTP），与独立 `PyShieldMCP.exe` 共用同一套工具与额度账本；
 - `pyshield/_runtime_bundle.py`：由 `tools/embed_runtime.py` 生成的压缩资源，内含 runtime 模板与 `crypto.py`、`fingerprint.py`、`ed25519.py`、`secure_store.py`；构建器不再把 `runtime_template/` 或这些 `.py` 作为 PyInstaller 明文 `datas` 发布；
 - `cryptography`：启用 AES-256-GCM / ChaCha20-Poly1305 构建；
 - pywebview、pythonnet、clr-loader：桌面窗口与 WebView2 宿主。
@@ -127,6 +147,7 @@ python -m gui
 | `gui/main.py` | 创建无边框 pywebview 窗口，定位内嵌资源，注册 `pyshield://` 深链 |
 | `gui/instance.py` | 全局单实例锁与深链转发（Windows 命名互斥锁 / POSIX flock；第二个进程转发参数后退出，不打开第二个窗口） |
 | `gui/backend.py` | JS 桥接 API、构建线程、进度/日志快照、历史记录、试用状态与 Python 运行时下载任务 |
+| `gui/mcp_host.py` | 内置 MCP 主机：从设置构造 `BuildPolicy`、管理令牌、启停 HTTP 监听、生成客户端配置片段 |
 | `gui/core.py` | 表单校验、默认输出、解释器探测、设置与历史持久化 |
 | `gui/state.py` | SQLite 双副本状态库、摘要/代数校验、中断写入恢复、篡改隔离与修复 |
 | `gui/web/` | 界面与前端逻辑（`index.html` / `app.js` / `styles.css`） |
@@ -195,4 +216,4 @@ exe 冒烟测试建议：
 - 源码保护提高逆向成本，不构成绝对 DRM；离线分发下主密钥最终会进入客户环境，具备逆向能力的攻击者仍可能提取内存中的代码或主密钥；
 - Pro/Enterprise 在工具链可用时默认原生 runtime，Trial 或工具链缺失时回退字节码；`--runtime-source` 仅用于调试，会以明文发布解密逻辑；
 - 完整性清单只在进程首次加载时扫描一次，5 分钟重验不覆盖清单；它用于发现现场误改或局部篡改，不能阻止整体替换 runtime。状态 HMAC 由 `build_key` 派生，但提取 master 后仍可伪造，正确表述是“防单点丢失/误损坏”，不是绝对防篡改。发布卫生详见 [security-hardening.md](security-hardening.md)。
-- 桌面构建器不是 MCP 入口。agent 构建请使用独立的 console 产物 `PyShieldMCP.exe`；两者的额度账本最终会统一，但当前 MCP 的“代码错误退款”规则与桌面端“启动即扣、失败不退”不同，详见 [mcp-server.md](mcp-server.md)。
+- 桌面构建器同时是 MCP 入口：GUI 启动时监听回环端口，客户端也可用 `PyShieldBuilder.exe --mcp ...` 走 stdio；两种方式共用工具授权与额度账本。MCP 的“代码错误退款”规则仍与桌面端“启动即扣、失败不退”不同，额度账本统一留待 Phase 3，详见 [mcp-server.md](mcp-server.md)。

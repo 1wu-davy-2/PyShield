@@ -41,6 +41,11 @@
       subtitle: "查看本机最近的构建输出、状态与耗时。",
       pill: "Local",
     },
+    mcp: {
+      title: "AI 接入",
+      subtitle: "内置 MCP 服务，把构建能力交给 Claude Code、Cursor 等本地 agent。",
+      pill: "MCP",
+    },
     trial: {
       title: "版本与试用",
       subtitle: "选择版本，用本机序列号在官网自助申请试用授权。",
@@ -85,6 +90,9 @@
     nativeRuntime: null,
     trialTimer: null,
     trialTries: 0,
+    mcp: null,
+    mcpTimer: null,
+    mcpSnippets: {},
   };
 
   const LICENSE_MODE_LABELS = {
@@ -1619,6 +1627,234 @@
 
   // ---------------------------------------------------------------- navigation
 
+  // ------------------------------------------------------------------ mcp
+
+  const MCP_TOOL_HINTS = {
+    pyshield_status: "授权、配额与服务策略",
+    pyshield_inspect_project: "列出项目结构、文件数与敏感文件",
+    pyshield_validate_build: "严格预检并返回 plan_hash",
+    pyshield_start_build: "受理异步构建任务",
+    pyshield_build_status: "查询任务状态与阶段",
+    pyshield_build_logs: "读取脱敏后的构建日志",
+    pyshield_cancel_build: "取消任务（已扣额度不退）",
+    pyshield_verify_output: "静态校验产物清单与发布卫生",
+    pyshield_check_output: "沙箱执行 manage.py check",
+  };
+
+  function renderMcp(status) {
+    if (!status) return;
+    state.mcp = status;
+    const running = !!status.running;
+    const badge = $("#mcpBadge");
+    if (badge) {
+      badge.textContent = running ? "运行中" : status.enabled ? "启动中" : "已停止";
+      badge.className = `status-badge ${running ? "success" : "soft"}`;
+    }
+    const dot = $("#navMcpDot");
+    if (dot) dot.hidden = !running;
+
+    $("#mcpUrl").textContent = running ? status.url : "服务未启动";
+    const token = status.token || "";
+    $("#mcpToken").textContent = token || "—";
+    $("#mcpToken").title = token;
+    $("#mcpRequests").textContent = String(status.requests ?? 0);
+    const last = status.last_method
+      ? `${status.last_method}${status.last_at ? ` · ${String(status.last_at).slice(11)}` : ""}`
+      : "—";
+    $("#mcpLastCall").textContent = last;
+    $("#mcpToolCount").textContent = String((status.tools || []).length);
+
+    const note = $("#mcpNote").querySelector("span");
+    if (note) {
+      if (status.error) {
+        note.textContent = `启动失败：${status.error}`;
+      } else if (status.port_fallback) {
+        note.textContent = `端口 ${status.requested_port} 被占用，已改用 ${status.port}；配置片段已同步实际端口。`;
+      } else if (running) {
+        note.textContent = `仅监听 127.0.0.1:${status.port}，令牌等同本机构建权限，不要外传。`;
+      } else {
+        note.textContent = "服务已停止：HTTP 方式的 agent 无法连接，可点「启动」重新监听。";
+      }
+    }
+    renderMcpTools(status);
+  }
+
+  function renderMcpTools(status) {
+    const list = $("#mcpToolList");
+    if (!list) return;
+    const tools = status.tools || [];
+    if (!tools.length) {
+      list.innerHTML = '<li><span class="mcp-tool-dot is-off"></span><div><span class="tool-name">无可用工具</span></div></li>';
+      return;
+    }
+    list.innerHTML = tools
+      .map((name) => {
+        const hint = MCP_TOOL_HINTS[name] || "";
+        return `<li><span class="mcp-tool-dot"></span><div><div class="tool-name">${escapeHtml(name)}</div>${
+          hint ? `<div class="tool-desc">${escapeHtml(hint)}</div>` : ""
+        }</div></li>`;
+      })
+      .join("");
+  }
+
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, (char) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    })[char]);
+  }
+
+  function syncMcpForm(status) {
+    if (!status) return;
+    const settings = state.settings || {};
+    const port = $("#mcpPort");
+    if (port && document.activeElement !== port) {
+      port.value = String(status.port || status.requested_port || settings.mcp_port || 8790);
+    }
+    const root = $("#mcpProjectRoot");
+    if (root && document.activeElement !== root) {
+      root.value = status.project_root || settings.mcp_project_root || "";
+    }
+    const enabled = $("#mcpEnabled");
+    if (enabled && document.activeElement !== enabled) {
+      enabled.checked = settings.mcp_enabled !== false;
+    }
+    const allow = $("#mcpAllowBuild");
+    if (allow && document.activeElement !== allow) {
+      allow.checked = settings.mcp_allow_build !== false;
+    }
+  }
+
+  async function refreshMcp(options = {}) {
+    const response = await call("mcp_status");
+    if (!response.ok) {
+      if (!options.silent) toast(response.error || "读取 MCP 状态失败", "error");
+      return null;
+    }
+    renderMcp(response.mcp);
+    await loadMcpSnippets(response.mcp, options.force === true);
+    return response.mcp;
+  }
+
+  async function loadMcpSnippets(status, force) {
+    const stamp = `${status.port}|${status.token}|${status.running}|${status.project_root}`;
+    const targets = {
+      "claude-http": "#mcpCodeClaudeHttp",
+      "http-json": "#mcpCodeHttpJson",
+      "stdio-json": "#mcpCodeStdioJson",
+      "stdio": "#mcpCodeStdio",
+    };
+    if (!force && state.mcpSnippets.stamp === stamp) {
+      return;
+    }
+    const snippets = {};
+    for (const kind of Object.keys(targets)) {
+      const response = await call("mcp_config", kind);
+      const node = $(targets[kind]);
+      const text = response.ok ? response.text : `生成失败：${response.error || "未知错误"}`;
+      if (node) node.textContent = text;
+      if (response.ok) snippets[kind] = text;
+    }
+    state.mcpSnippets = { stamp, snippets };
+  }
+
+  async function copyText(text, message) {
+    if (!text) {
+      toast("没有可复制的内容", "error");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      toast(message, "success");
+    } catch (error) {
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.setAttribute("readonly", "readonly");
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      document.body.appendChild(area);
+      area.select();
+      try {
+        document.execCommand("copy");
+        toast(message, "success");
+      } catch (err) {
+        toast("复制失败，请手动选中复制", "error");
+      } finally {
+        document.body.removeChild(area);
+      }
+    }
+  }
+
+  function mcpFormPayload() {
+    const port = Number.parseInt($("#mcpPort").value, 10);
+    return {
+      mcp_port: Number.isFinite(port) ? port : 8790,
+      mcp_project_root: $("#mcpProjectRoot").value.trim(),
+      mcp_enabled: $("#mcpEnabled").checked,
+      mcp_allow_build: $("#mcpAllowBuild").checked,
+    };
+  }
+
+  async function saveMcp() {
+    const response = await call("mcp_save", mcpFormPayload());
+    if (!response.ok) {
+      toast(response.error || "保存 MCP 设置失败", "error");
+      return;
+    }
+    if (response.settings) state.settings = response.settings;
+    renderMcp(response.mcp);
+    await refreshMcp({ force: true });
+    toast(response.message || "MCP 设置已应用", "success");
+  }
+
+  async function startMcp() {
+    const response = await call("mcp_start_server");
+    renderMcp(response.mcp);
+    await refreshMcp({ force: true });
+    toast(response.ok ? "MCP 服务已启动" : response.error || "启动失败", response.ok ? "success" : "error");
+  }
+
+  async function stopMcp() {
+    const response = await call("mcp_stop_server");
+    renderMcp(response.mcp);
+    await refreshMcp({ force: true });
+    toast(response.ok ? "MCP 服务已停止" : response.error || "停止失败", response.ok ? "info" : "error");
+  }
+
+  async function rotateMcpToken() {
+    const response = await call("mcp_rotate_token");
+    if (!response.ok) {
+      toast(response.error || "轮换令牌失败", "error");
+      return;
+    }
+    renderMcp(response.mcp);
+    await refreshMcp({ force: true });
+    toast("令牌已轮换，旧令牌立即失效", "success");
+  }
+
+  async function browseMcpRoot() {
+    const response = await call("browse_project");
+    if (!response.ok) {
+      if (!response.cancelled) toast(response.error || "选择目录失败", "error");
+      return;
+    }
+    $("#mcpProjectRoot").value = response.project;
+  }
+
+  function startMcpPoll() {
+    stopMcpPoll();
+    state.mcpTimer = setInterval(() => {
+      if (state.view !== "mcp") return;
+      refreshMcp({ silent: true });
+    }, 4000);
+  }
+
+  function stopMcpPoll() {
+    if (state.mcpTimer) {
+      clearInterval(state.mcpTimer);
+      state.mcpTimer = null;
+    }
+  }
+
   function switchView(view) {
     if (!VIEW_META[view]) return;
     state.view = view;
@@ -1647,6 +1883,13 @@
     if (view === "settings") {
       syncSettingsForm();
       refreshLicense();
+    }
+    if (view === "mcp") {
+      syncMcpForm(state.mcp);
+      refreshMcp({ silent: true });
+      startMcpPoll();
+    } else {
+      stopMcpPoll();
     }
     $(".content").scrollTop = 0;
   }
@@ -1743,6 +1986,8 @@
     renderIntegrity(response.integrity);
     renderLicense(response.license || null);
     renderTrial({ trial: response.trial });
+    renderMcp(response.mcp || null);
+    syncMcpForm(response.mcp || null);
     maybeShowTrialEnded(response.license);
     const initialView = new URLSearchParams(location.search).get("view");
     const landingView =
@@ -1942,6 +2187,71 @@
     return trial;
   }
 
+  const mockMcpState = {
+    running: true,
+    port: 8790,
+    token: "7sQ2mK9dLx4TbV1nR8pYaZ3cE6hJ0uW",
+    allowBuild: true,
+    projectRoot: "C:\\Users\\demo\\Documents",
+    requests: 12,
+  };
+
+  function mockMcp() {
+    const tools = ["pyshield_status", "pyshield_inspect_project", "pyshield_validate_build",
+      "pyshield_build_status", "pyshield_build_logs", "pyshield_verify_output"];
+    if (mockMcpState.allowBuild) tools.push("pyshield_start_build", "pyshield_cancel_build");
+    return {
+      running: mockMcpState.running,
+      enabled: mockMcpState.running,
+      host: "127.0.0.1",
+      port: mockMcpState.port,
+      requested_port: mockMcpState.port,
+      port_fallback: false,
+      url: `http://127.0.0.1:${mockMcpState.port}/mcp`,
+      token: mockMcpState.token,
+      token_required: true,
+      tools,
+      tool_count: tools.length,
+      requests: mockMcpState.requests,
+      errors: 0,
+      rejected: 0,
+      sessions: 1,
+      last_method: "tools/list",
+      last_at: "2026-11-16T09:48:00",
+      methods: { "tools/list": 6, "tools/call": 6 },
+      uptime: 320,
+      allow_build: mockMcpState.allowBuild,
+      project_root: mockMcpState.projectRoot,
+      error: "",
+      pid: 4242,
+    };
+  }
+
+  function mockMcpSnippet(kind) {
+    const url = `http://127.0.0.1:${mockMcpState.port}/mcp`;
+    if (kind === "http-json") {
+      return JSON.stringify({
+        mcpServers: {
+          pyshield: { type: "http", url, headers: { Authorization: `Bearer ${mockMcpState.token}` } },
+        },
+      }, null, 2);
+    }
+    if (kind === "stdio-json") {
+      return JSON.stringify({
+        mcpServers: {
+          pyshield: {
+            command: "C:\\Program Files\\PyShield\\PyShieldBuilder.exe",
+            args: ["--mcp", "--project-root", mockMcpState.projectRoot, "--allow-build"],
+          },
+        },
+      }, null, 2);
+    }
+    if (kind === "claude-http") {
+      return `claude mcp add --transport http pyshield ${url} --header "Authorization: Bearer ${mockMcpState.token}"`;
+    }
+    return `"C:\\Program Files\\PyShield\\PyShieldBuilder.exe" --mcp --project-root ${mockMcpState.projectRoot} --allow-build`;
+  }
+
   function mockApi(name, args) {
     if (name === "bootstrap") {
       const history = mockHistory();
@@ -1972,6 +2282,10 @@
           no_verify: false,
           activation_server: "",
           trial_server: "https://license.pyshield.dev",
+          mcp_enabled: true,
+          mcp_port: 8790,
+          mcp_allow_build: true,
+          mcp_project_root: "",
         },
         history: history,
         machine: "9f3c1a72b0d84e51c4a201e57d8b16a3",
@@ -1988,7 +2302,39 @@
           available: false,
           reason: "预览模式未检测本机编译工具链",
         },
+        mcp: mockMcp(),
       });
+    }
+    if (name === "mcp_status") {
+      return Promise.resolve({ ok: true, mcp: mockMcp() });
+    }
+    if (name === "mcp_config") {
+      return Promise.resolve({ ok: true, kind: args[0], text: mockMcpSnippet(args[0]) });
+    }
+    if (name === "mcp_save") {
+      const payload = args[0] || {};
+      mockMcpState.port = Number(payload.mcp_port) || mockMcpState.port;
+      mockMcpState.projectRoot = payload.mcp_project_root || mockMcpState.projectRoot;
+      mockMcpState.allowBuild = payload.mcp_allow_build !== false;
+      mockMcpState.running = payload.mcp_enabled !== false;
+      return Promise.resolve({
+        ok: true, message: "MCP 设置已应用", settings: state.settings || {}, mcp: mockMcp(),
+      });
+    }
+    if (name === "mcp_start_server") {
+      mockMcpState.running = true;
+      return Promise.resolve({ ok: true, mcp: mockMcp() });
+    }
+    if (name === "mcp_stop_server") {
+      mockMcpState.running = false;
+      return Promise.resolve({ ok: true, mcp: mockMcp() });
+    }
+    if (name === "mcp_rotate_token") {
+      mockMcpState.token = "n3wT0ken" + Math.random().toString(36).slice(2, 16).toUpperCase();
+      return Promise.resolve({ ok: true, mcp: mockMcp() });
+    }
+    if (name === "browse_project") {
+      return Promise.resolve({ ok: true, project: "C:\\Users\\demo\\Documents\\shop", name: "shop" });
     }
     if (name === "license_status") {
       return Promise.resolve({
@@ -2530,6 +2876,22 @@
     });
     $("#emptyGoBuild").addEventListener("click", () => switchView("workspace"));
     $("#clearHistory").addEventListener("click", clearHistory);
+
+    $("#mcpSave").addEventListener("click", saveMcp);
+    $("#mcpStart").addEventListener("click", startMcp);
+    $("#mcpStop").addEventListener("click", stopMcp);
+    $("#mcpRotate").addEventListener("click", rotateMcpToken);
+    $("#mcpBrowseRoot").addEventListener("click", browseMcpRoot);
+    $("#mcpCopyToken").addEventListener("click", () => {
+      copyText(state.mcp ? state.mcp.token : "", "访问令牌已复制");
+    });
+    $$("[data-copy-kind]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const kind = button.dataset.copyKind;
+        const text = (state.mcpSnippets.snippets || {})[kind];
+        copyText(text || "", "配置片段已复制");
+      });
+    });
 
     $$(".win-btn").forEach((button) => {
       button.addEventListener("click", () => windowAction(button.dataset.window));

@@ -3380,3 +3380,175 @@ textarea {
   padding: 0 12px;
   font-size: 12.5px;
 }
+
+/* ------------------------------------------------------------- AI 接入 */
+
+.mcp-hero .card-head {
+  margin-bottom: 14px;
+}
+
+.mcp-stat-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1.35fr) repeat(2, minmax(0, 0.65fr));
+  gap: 12px;
+}
+
+.mcp-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--panel-muted);
+  min-width: 0;
+}
+
+.mcp-stat-label {
+  font-size: 11.5px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+.mcp-stat code {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-size: 12.5px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-stat strong {
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.mcp-token-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.mcp-token-row .mcp-token {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-soft);
+  letter-spacing: 0.01em;
+}
+
+.mcp-token-row .icon-btn {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+}
+
+.mcp-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.mcp-tool-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mcp-tool-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel-muted);
+}
+
+.mcp-tool-list .tool-name {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+}
+
+.mcp-tool-list .tool-desc {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.mcp-tool-dot {
+  width: 7px;
+  height: 7px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--green);
+  flex: 0 0 auto;
+}
+
+.mcp-tool-dot.is-off {
+  background: var(--faint);
+}
+
+.mcp-copy-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mcp-copy-row {
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  overflow: hidden;
+  background: var(--panel-muted);
+}
+
+.mcp-copy-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+
+.mcp-copy-head strong {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.mcp-code {
+  margin: 0;
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.65;
+  color: #344054;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 190px;
+  overflow: auto;
+}
+
+.input-with-button {
+  gap: 6px;
+  padding-right: 5px;
+}
+
+.input-with-button .btn {
+  flex: 0 0 auto;
+  height: 28px;
+}
+
+.mcp-hero + .mcp-grid .field-grid {
+  margin-top: 0;
+}

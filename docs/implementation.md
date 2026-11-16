@@ -271,6 +271,8 @@ MCP 是构建引擎之上的本地 agent 适配层，不改变产物格式或 ru
 | 层 | 职责 |
 | --- | --- |
 | `pyshield/mcp_server/` | stdlib newline-delimited JSON-RPC 2.0；initialize、tools、resources、prompts、取消与 shutdown |
+| `pyshield/mcp_server/http_transport.py` | 把同一分派逻辑暴露为回环 Streamable HTTP：`POST/DELETE /mcp`、`GET /health`、Bearer 令牌、1 MiB 上限 |
+| `gui/mcp_host.py` | 桌面端宿主：设置 → `BuildPolicy`、令牌文件、端口顺延、启停、客户端配置片段 |
 | `pyshield/build_service/` | `BuildRequestV1`、严格预检、异步 job、失败分类、额度结算、日志/审计 |
 | `pyshield/build_spec.py` | 路径/reparse、output_name、expiry/grace/bind/pattern 等纯校验基元 |
 | `pyshield/tool_license.py` | 跨进程账本 `begin_build/refund_build/finalize_build`，trial/quota v2（pending/refunded/credits） |
@@ -282,6 +284,8 @@ MCP 是构建引擎之上的本地 agent 适配层，不改变产物格式或 ru
 - 预检通过后才扣额度；只有 `PROJECT_CODE` 失败退款；预检失败不扣；取消/超时不退。
 - MCP 构建的 secret 写到独立 `--secret-dir`，不在输出目录同级；响应与日志不返回密钥。
 - stdout 只写 JSON-RPC；builder 用 `contextvars` 抑制所有构建日志到 stdout，日志进入 per-job 文件和 stderr。
+- 传输与协议分派解耦：`JsonRpcServer.handle()` 返回响应列表，stdio 循环负责写帧，HTTP 处理器负责序列化；两种形态工具集与校验完全一致。
+- 桌面构建器以 `console=True` + `hide_console="hide-early"` 打包，双击只出窗口，被 MCP 客户端拉起时仍保留 stdin/stdout。
 - 额度账本与 pending/refunded 状态一次原子写入，避免“扣了额度但没记幂等”或重复退款；跨月退款进入下月 credit。
 
 ### 8.1 工具面
@@ -315,6 +319,10 @@ MCP 是构建引擎之上的本地 agent 适配层，不改变产物格式或 ru
 python -m pyshield.mcp_server --project-root <projects> --output-root <outputs> --state-dir <state> --allow-build
 python -m PyInstaller --noconfirm --clean PyShieldMCP.spec
 python tools/mcp_smoke.py --server module
+
+# 同一个 exe 的另外两个入口
+PyShieldBuilder.exe --mcp --project-root <projects> --allow-build   # stdio
+PyShieldBuilder.exe                                                # GUI + http://127.0.0.1:8790/mcp
 ```
 
 - 输出：`<state-dir>/jobs/<job_id>/`（请求、预检、日志、结果、退款）

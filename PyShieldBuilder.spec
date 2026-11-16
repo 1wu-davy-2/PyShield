@@ -61,6 +61,25 @@ hiddenimports += collect_submodules("Cython", filter=_cython_module)
 datas += collect_data_files("Cython", excludes=["**/Tests/**", "**/Debugger/**"])
 datas += collect_data_files("setuptools")
 
+hiddenimports += [
+    "pyshield.mcp_server",
+    "pyshield.mcp_server.protocol",
+    "pyshield.mcp_server.http_transport",
+    "pyshield.mcp_server.schemas",
+    "pyshield.mcp_server.tools",
+    "pyshield.mcp_server.resources",
+    "pyshield.build_service",
+    "pyshield.build_service.models",
+    "pyshield.build_service.validation",
+    "pyshield.build_service.engine",
+    "pyshield.build_service.jobs",
+    "pyshield.build_service.artifacts",
+    "pyshield.build_service.verification",
+    "pyshield.build_spec",
+    "gui.mcp_host",
+    "gui.instance",
+]
+
 excludes = [
     "tkinter",
     "PyQt5",
@@ -79,6 +98,10 @@ exe_options = {}
 if IS_WINDOWS:
     exe_options["icon"] = str(ROOT / "gui" / "assets" / "icon.ico")
     exe_options["version"] = str(ROOT / "gui" / "assets" / "version_info.txt")
+    # One binary, two lives: double-click shows only the window, while an MCP
+    # client that spawns `PyShieldBuilder.exe --mcp` still gets real stdio
+    # pipes. A windowed (console=False) build would set sys.stdout to None.
+    exe_options["hide_console"] = "hide-early"
 
 a = Analysis(
     [str(ROOT / "gui" / "main.py")],
@@ -110,7 +133,9 @@ exe = EXE(
     upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,
+    # Console subsystem keeps stdin/stdout usable for `--mcp`; hide_console
+    # keeps the window invisible for normal GUI launches.
+    console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

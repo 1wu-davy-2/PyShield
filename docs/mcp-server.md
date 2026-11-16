@@ -1,6 +1,46 @@
 # PyShield MCP 构建服务
 
-`PyShieldMCP.exe`（或源码方式 `python -m pyshield.mcp_server`）是一个本地 stdio MCP 服务，把 PyShield 的构建能力暴露给 Claude Code、Cursor、CI agent 等客户端。它只提供构建侧能力，不暴露根私钥、许可证签发、任意文件读写或网络服务。
+PyShield 提供两种接入同一个构建服务的方式：
+
+| 形态 | 入口 | 传输 | 适用 |
+| --- | --- | --- | --- |
+| 独立 MCP 单文件 | `PyShieldMCP.exe`（源码 `python -m pyshield.mcp_server`） | stdio | CI、agent 专用节点、没有 GUI 的环境 |
+| 桌面构建器内置 | `PyShieldBuilder.exe --mcp ...` | stdio | 已安装构建器，客户端自己拉起子进程 |
+| 桌面构建器内置 | 打开构建器后自动监听 `127.0.0.1` | Streamable HTTP | Claude Code / Cursor 等走 HTTP 的客户端 |
+
+三种形态共用同一个 `build_service`、同一套工具 schema、同一份工具授权与额度账本。它只提供构建侧能力，不暴露根私钥、许可证签发、任意文件读写或远程网络服务。
+
+## 桌面端内置 HTTP 服务（单 exe）
+
+`PyShieldBuilder.exe` 是一个 exe 同时提供 GUI 与 MCP：启动后用 `http://127.0.0.1:<端口>/mcp` 提供 Streamable HTTP 子集。关闭窗口只是隐藏到托盘，服务继续运行；真正退出应用才释放端口。
+
+- 在「AI 接入」页可以直接开关服务、改端口、选 agent 可访问的项目目录、轮换令牌，并复制现成的客户端配置。
+- 默认端口 `8790`；被占用时自动向后顺延，页面显示实际端口，配置片段同步更新。
+- 只绑定 `127.0.0.1`；除 `/health` 外的请求必须带 `Authorization: Bearer <令牌>` 或 `X-PyShield-Token`。令牌保存在 `%APPDATA%\PyShieldBuilder\mcp-token.txt`（0600）。
+- 支持的 HTTP 方法：`POST /mcp`（单条、批量、通知）、`DELETE /mcp`（结束会话）、`GET /health`；`GET /mcp` 返回 405，因为服务不主动推送消息。
+- `initialize` 响应会带 `Mcp-Session-Id`；会话只是提示，服务端不要求回传，重启后客户端可继续用新会话。
+
+客户端配置（页面可直接复制）：
+
+```json
+{
+  "mcpServers": {
+    "pyshield": {
+      "type": "http",
+      "url": "http://127.0.0.1:8790/mcp",
+      "headers": { "Authorization": "Bearer <令牌>" }
+    }
+  }
+}
+```
+
+stdio 方式（由客户端拉起同一个 exe）：
+
+```powershell
+PyShieldBuilder.exe --mcp --project-root E:\work --allow-build
+```
+
+内置模式的策略由页面设置决定：`allow_build` 关掉后只暴露只读工具；`allow_project_execution` 不开放，`pyshield_check_output` 只在独立 `PyShieldMCP.exe` 且显式加参数时出现。
 
 ## 快速开始
 
@@ -56,8 +96,8 @@ claude mcp add pyshield -- "E:\path\PyShieldMCP.exe" `
 
 ## 安全边界
 
-- 只使用 stdio，不监听端口，不发起网络连接。
-- `project` 只接受 `--project-root` 内的相对路径；`output_name` 只是 `--output-root` 下的单段目录名，不接受绝对输出路径。
+- 独立 `PyShieldMCP.exe` 只使用 stdio，不监听端口，不发起网络连接；桌面端内置模式只绑定 `127.0.0.1`，默认要求令牌，可在页面关闭，不会对外网开放。
+- `project` 只接受 `--project-root` 内的相对路径；`output_name` 只是 `--output-root` 下的单段目录名，不接受绝对输出路径。内置模式下项目根、输出根、secret/job/audit 根由页面固定，互相不可包含。
 - 项目树中的 symlink、Windows junction 和其他 reparse point 会被拒绝。
 - 输出目录必须不存在；MCP 不暴露 `force`，不会删除已有目录。
 - 构建密钥写到 `--secret-dir`（默认 `<state-dir>/secrets`）下的私有目录，**不在输出目录同级**；MCP 响应和日志永远不返回密钥内容。
@@ -110,7 +150,7 @@ pyshield_status
 
 ## 协议
 
-服务使用换行分隔的 JSON-RPC 2.0，支持 MCP 协议版本 `2025-06-18` 和 `2024-11-05`。标准输出只承载协议帧；诊断信息写入 stderr。支持 `initialize`、`tools/list`、`tools/call`、`resources/list|read`、`prompts/list|get`、`ping`、`shutdown` 和取消通知。
+服务使用换行分隔的 JSON-RPC 2.0，支持 MCP 协议版本 `2025-06-18` 和 `2024-11-05`。标准输出只承载协议帧；诊断信息写入 stderr。支持 `initialize`、`tools/list`、`tools/call`、`resources/list|read`、`prompts/list|get`、`ping`、`shutdown` 和取消通知。HTTP 传输复用同一套分派逻辑（`JsonRpcServer.handle()`），因此两种形态的工具与校验完全一致。
 
 ## 打包
 
@@ -119,6 +159,8 @@ python -m PyInstaller --noconfirm --clean PyShieldMCP.spec
 ```
 
 产物是 console 单文件 `dist/PyShieldMCP.exe`。它不依赖 GUI/webview；原生 runtime 构建所需的 Cython/setuptools 会随包带上，但仍需要本机 C 编译器和 strip 工具。
+
+桌面构建器也内置同一套服务：`PyShieldBuilder.spec` 把 `pyshield.mcp_server` 与 `build_service` 打进 PYZ，并用 `console=True` + `hide_console="hide-early"` 构建——双击只出窗口，被客户端以 `--mcp` 拉起时仍有可用的 stdin/stdout。
 
 ## 常见问题
 

@@ -52,7 +52,8 @@ python -m http.server 8130 --directory gui/web
 | `pyshield/tool_license.py` | **构建器自身授权**：验签、配额、`trial_policy()`、错误码 `code`、账本 `begin_build`/`refund_build` | 试用/专业/企业共用这一层 |
 | `pyshield/build_spec.py` | 构建前置校验基元：路径/reparse、输出名、到期/绑定/pattern | 纯 stdlib，GUI 与 MCP 共用 |
 | `pyshield/build_service/` | MCP 构建服务：严格预检、异步 job、额度结算、退款、日志/审计 | 默认 `no_verify` |
-| `pyshield/mcp_server/` | stdio JSON-RPC MCP 协议层、严格 schema、资源与提示词 | 无运行时第三方依赖 |
+| `pyshield/mcp_server/` | stdio JSON-RPC 协议层、严格 schema、资源与提示词；`http_transport.py` 提供回环 Streamable HTTP | 无运行时第三方依赖 |
+| `gui/mcp_host.py` | 桌面端内置 MCP 主机：策略构造、令牌文件、启停、配置片段 | 与 backend 的 `mcp_*` API 配套 |
 | `shield_mcp.py` / `PyShieldMCP.spec` | MCP console 入口与 PyInstaller 配置 | 含冻结原生编译隐藏入口 |
 | `pyshield/license_admin.py` | 离线根密钥与授权签发 CLI | 私钥永不进构建器 |
 | `pyshield/trial_server.py` | 试用登记官网（SQLite + HTML + API） | 部署到服务器，见 `docs/trial.md` |
@@ -75,7 +76,8 @@ python -m http.server 8130 --directory gui/web
 6. **深链被浏览器拦是常态**：`pyshield://` 跳转需要用户手势；授权到账后 `Api._raise_window()` 自动置顶 + 轮询兜底（2.5s 一次）。
 7. **解释器下载只装到用户目录**：`%APPDATA%\PyShield\runtimes\`，`PYSHELD_RUNTIME_DIR` 可重定向；镜像只显示真正带 Windows 嵌入包的补丁版本（仅源码发布的安全补丁会被 HEAD 探测跳过）。
 8. **关闭是隐藏到托盘，不是退出**：`gui/tray.py` 给 frameless 窗口补回缺失的 `WS_MINIMIZEBOX`（否则点任务栏按钮不会最小化/还原），并用 WinForms `NotifyIcon` 接管 `FormClosing`：✕ / Alt+F4 隐藏窗口，托盘双击还原，右键「退出 PyShield」才真正结束；构建中拒绝退出。Linux 无托盘，关闭仍直接退出。第二次启动会先尝试通过 LinkServer 的 `show` 消息唤起已隐藏实例；全局命名互斥锁保证即使配置目录不同也不会新开窗口。
-9. **MCP 是独立的构建侧接口**：`pyshield/mcp_server/` 用 stdlib 实现 newline-delimited JSON-RPC；官方 `mcp` SDK 只作为测试 client。`pyshield/build_service/` 负责严格预检、异步 job、额度账本和退款。MCP 构建默认 `no_verify`，不执行目标项目代码；`pyshield_check_output` 才在沙箱执行 `manage.py check`。只有 `PROJECT_CODE` 失败退款；预检失败不扣额；secret 写到独立 `--secret-dir`，不返回给客户端。CLI/GUI 尚未迁移到同一账本，Phase 3 再统一。
+9. **MCP 是构建侧接口，但不再是第二个 exe**：`pyshield/mcp_server/` 用 stdlib 实现 newline-delimited JSON-RPC，`http_transport.py` 把它复用到回环 Streamable HTTP；`PyShieldBuilder.exe` 同时提供 GUI、`--mcp` stdio 与 `127.0.0.1:8790/mcp`。`pyshield/build_service/` 负责严格预检、异步 job、额度账本和退款。MCP 构建默认 `no_verify`，不执行目标项目代码；`pyshield_check_output` 才在沙箱执行 `manage.py check`。只有 `PROJECT_CODE` 失败退款；预检失败不扣额；secret 写到独立 `--secret-dir`，不返回给客户端。GUI 的额度语义仍是“启动即扣、失败不退”，与 MCP 不同，Phase 3 再统一。
+10. **单 exe 双入口靠 console + hide_console**：`PyShieldBuilder.spec` 用 `console=True` 保证被客户端拉起时 stdin/stdout 可用，同时 `hide_console="hide-early"` 让双击时不出现黑框；不要再改回 `console=False`，那会让冻结进程的 `sys.stdout` 变成 `None`，stdio MCP 直接不可用。
 
 ## 5. 测试与 CI
 
