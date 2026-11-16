@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 import socket
 import threading
+import time
 from pathlib import Path
 
 from . import ed25519, license_admin, tool_license, trial_server
@@ -119,11 +120,29 @@ def ensure(port: int = DEFAULT_PORT) -> str:
 def stop() -> None:
     with _lock:
         server = _running.get("server")
+        thread = _running.get("thread")
         _running.update(server=None, thread=None, url="")
-        if server is not None:
+        if server is None:
+            return
+        try:
+            server.shutdown()
+        except Exception:  # noqa: BLE001 - best effort cleanup
+            pass
+        if thread is not None:
+            thread.join(timeout=2)
+        # server_close() can raise on Windows while the listening socket is
+        # still winding down; never let that skip the SQLite close, or the
+        # temp cleanup in tests hits WinError 32.
+        try:
+            server.server_close()
+        except Exception:  # noqa: BLE001
+            pass
+        store = getattr(server, "store", None)
+        if store is None:
+            return
+        for _ in range(3):
             try:
-                server.shutdown()
-                server.server_close()
-                server.store.close()
-            except Exception:  # noqa: BLE001 - best effort cleanup
-                pass
+                store.close()
+                break
+            except Exception:  # noqa: BLE001
+                time.sleep(0.05)

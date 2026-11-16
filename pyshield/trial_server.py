@@ -159,7 +159,14 @@ class TrialStore:
 
     def close(self) -> None:
         with self._lock:
-            self._connection.close()
+            if self._connection is None:
+                return
+            try:
+                self._connection.close()
+            finally:
+                # Keep a marker so a second close (devsite retry loop) is a
+                # no-op instead of raising ProgrammingError.
+                self._connection = None
 
 
 def _trial_days() -> int:

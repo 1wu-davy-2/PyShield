@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import shutil
+import time
 import tempfile
 import unittest
 import urllib.parse
@@ -26,7 +28,11 @@ class DevSiteTests(unittest.TestCase):
     def tearDown(self) -> None:
         devsite.stop()
         self.patch.stop()
-        self.temp.cleanup()
+        try:
+            self.temp.cleanup()
+        except OSError:
+            time.sleep(0.3)
+            shutil.rmtree(self.temp.name, ignore_errors=True)
 
     def test_enabled_without_root_key(self) -> None:
         self.assertTrue(devsite.enabled())

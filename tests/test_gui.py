@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 import time
 import unittest
@@ -13,6 +14,20 @@ from gui import core, instance, main as gui_main, tray
 from gui.backend import Api, BuildManager
 from pyshield import crypto, devsite, license_admin, licensing, tool_license
 from tests.test_builder import make_project
+
+
+def _cleanup_temp(temp: tempfile.TemporaryDirectory) -> None:
+    """Windows may hold the dev-site SQLite file for a beat after stop()."""
+    try:
+        temp.cleanup()
+        return
+    except (PermissionError, OSError):
+        pass
+    time.sleep(0.4)
+    try:
+        temp.cleanup()
+    except OSError:
+        shutil.rmtree(temp.name, ignore_errors=True)
 
 
 class _FakeEvent:
@@ -514,7 +529,7 @@ class ApiTests(unittest.TestCase):
     def tearDown(self) -> None:
         devsite.stop()
         self.patch.stop()
-        self.temp.cleanup()
+        _cleanup_temp(self.temp)
 
     def test_bootstrap_shape(self) -> None:
         boot = self.api.bootstrap()
