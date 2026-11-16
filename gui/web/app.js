@@ -1671,10 +1671,18 @@
     $("#mcpToken").textContent = token || "—";
     $("#mcpToken").title = token;
     $("#mcpRequests").textContent = String(status.requests ?? 0);
+    $("#mcpToolCalls").textContent = String(status.tool_calls ?? 0);
+    $("#mcpBuilds").textContent = String(status.builds ?? 0);
     const last = status.last_method
       ? `${status.last_method}${status.last_at ? ` · ${String(status.last_at).slice(11)}` : ""}`
       : "—";
     $("#mcpLastCall").textContent = last;
+    const lastHint = $("#mcpLastHint");
+    if (lastHint) {
+      lastHint.textContent = status.last_method
+        ? "最近一次 JSON-RPC"
+        : "暂无请求";
+    }
     $("#mcpToolCount").textContent = String((status.tools || []).length);
     const toolsHint = $("#mcpToolsHint");
     if (toolsHint) toolsHint.hidden = running;
@@ -1854,6 +1862,57 @@
       return;
     }
     $("#mcpProjectRoot").value = response.project;
+  }
+
+  function renderMcpLog(events) {
+    const body = $("#mcpLogBody");
+    if (!body) return;
+    if (!events || !events.length) {
+      body.innerHTML =
+        '<p class="mcp-log-empty">还没有调用记录。agent 连接并调用工具后，这里会按时间倒序显示。</p>';
+      return;
+    }
+    const rows = events
+      .map((event) => {
+        const name = event.tool || event.method || "—";
+        const kind = event.tool ? "tool" : "rpc";
+        const state = event.ok ? "成功" : "失败";
+        const cls = event.ok ? "ok" : "bad";
+        return `<div class="mcp-log-row">
+          <span class="mcp-log-time">${escapeHtml(event.at || "")}</span>
+          <span class="mcp-log-kind">${kind}</span>
+          <code class="mcp-log-name">${escapeHtml(name)}</code>
+          <span class="mcp-log-state ${cls}">${state}</span>
+        </div>`;
+      })
+      .join("");
+    body.innerHTML = `<div class="mcp-log-row head">
+        <span>时间</span><span>类型</span><span>调用</span><span>结果</span>
+      </div>${rows}`;
+  }
+
+  async function refreshMcpLog() {
+    const response = await call("mcp_log");
+    if (!response.ok) {
+      toast(response.error || "读取执行日志失败", "error");
+      return;
+    }
+    const sub = $("#mcpLogSub");
+    if (sub) {
+      sub.textContent = response.running
+        ? "最近 200 次调用，保存在内存里，退出应用即清空"
+        : "服务已停止：下面是本次运行停止前的记录";
+    }
+    renderMcpLog(response.events || []);
+  }
+
+  async function openMcpLog() {
+    $("#mcpLogModal").hidden = false;
+    await refreshMcpLog();
+  }
+
+  function closeMcpLog() {
+    $("#mcpLogModal").hidden = true;
   }
 
   function startMcpPoll() {
@@ -2229,6 +2288,9 @@
       tools,
       tool_count: tools.length,
       requests: mockMcpState.requests,
+      tool_calls: 9,
+      tool_counts: { pyshield_status: 3, pyshield_validate_build: 2, pyshield_start_build: 1, pyshield_build_status: 3 },
+      builds: 1,
       errors: 0,
       rejected: 0,
       sessions: 1,
@@ -2333,6 +2395,18 @@
     }
     if (name === "mcp_status") {
       return Promise.resolve({ ok: true, mcp: mockMcp() });
+    }
+    if (name === "mcp_log") {
+      const now = "14:04:";
+      const events = [
+        { at: now + "17", method: "tools/call", tool: "pyshield_build_status", ok: true },
+        { at: now + "12", method: "tools/call", tool: "pyshield_start_build", ok: true },
+        { at: now + "08", method: "tools/call", tool: "pyshield_validate_build", ok: true },
+        { at: now + "03", method: "tools/call", tool: "pyshield_inspect_project", ok: true },
+        { at: "14:03:58", method: "tools/list", tool: "", ok: true },
+        { at: "14:03:55", method: "initialize", tool: "", ok: true },
+      ];
+      return Promise.resolve({ ok: true, running: mockMcpState.running, events });
     }
     if (name === "mcp_config") {
       return Promise.resolve({ ok: true, kind: args[0], text: mockMcpSnippet(args[0]) });
@@ -2912,6 +2986,13 @@
       copyText(state.mcp ? state.mcp.token : "", "访问令牌已复制");
     });
     $("#mcpQuickStart").addEventListener("click", startMcp);
+    $("#mcpRequestCard").addEventListener("click", openMcpLog);
+    $("#mcpLogClose").addEventListener("click", closeMcpLog);
+    $("#mcpLogDone").addEventListener("click", closeMcpLog);
+    $("#mcpLogRefresh").addEventListener("click", refreshMcpLog);
+    $("#mcpLogModal").addEventListener("click", (event) => {
+      if (event.target === $("#mcpLogModal")) closeMcpLog();
+    });
     $$("[data-copy-kind]").forEach((button) => {
       button.addEventListener("click", (event) => {
         event.preventDefault();

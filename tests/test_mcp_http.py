@@ -162,6 +162,32 @@ class McpHttpTransportTests(unittest.TestCase):
         self.assertEqual(status["requests"], 1)
         self.assertEqual(status["last_method"], "ping")
 
+    def test_tool_counters_and_call_log(self) -> None:
+        self.post({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+        status, _headers, payload = self.post({
+            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": {"name": "pyshield_status", "arguments": {}},
+        })
+        self.assertEqual(status, 200)
+        self.assertNotIn("error", payload)
+
+        snapshot = self.server.status()
+        self.assertEqual(snapshot["tool_calls"], 1)
+        self.assertEqual(snapshot["tool_counts"], {"pyshield_status": 1})
+        self.assertEqual(snapshot["builds"], 0)
+
+        events = self.server.log_events()
+        self.assertEqual(events[0]["tool"], "pyshield_status")
+        self.assertTrue(events[0]["ok"])
+
+        self.post({
+            "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+            "params": {"name": "pyshield_nope", "arguments": {}},
+        })
+        events = self.server.log_events()
+        self.assertFalse(events[0]["ok"])
+        self.assertEqual(self.server.status()["errors"], 1)
+
 
 class McpHostTests(unittest.TestCase):
     def setUp(self) -> None:

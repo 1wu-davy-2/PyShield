@@ -105,6 +105,7 @@ class McpHost:
         except Exception:  # noqa: BLE001 - a broken state DB must not block the UI
             self._allow_build = True
         self._requested_port = DEFAULT_PORT
+        self._events_cache: list[dict] = []
 
     # ------------------------------------------------------------------
     # State
@@ -143,6 +144,9 @@ class McpHost:
                 "tool_count": len(tools),
                 "sessions": 0,
                 "requests": 0,
+                "tool_calls": 0,
+                "tool_counts": {},
+                "builds": 0,
                 "errors": 0,
                 "rejected": 0,
                 "last_method": "",
@@ -237,6 +241,7 @@ class McpHost:
             server, self._server = self._server, None
             service, self._service = self._service, None
             if server is not None:
+                self._events_cache = server.log_events()
                 server.stop()
             if service is not None:
                 try:
@@ -267,6 +272,11 @@ class McpHost:
             self.stop()
             return self.start(settings)
         return {"ok": True, "status": self.status(), "message": "MCP 配置未变化"}
+
+    def log_events(self, limit: int = 200) -> list[dict]:
+        if self._server is not None:
+            return self._server.log_events(limit)
+        return list(self._events_cache[:limit])
 
     def rotate_token(self) -> dict:
         return {"ok": True, "status": self.status(), "token": rotate_token()}

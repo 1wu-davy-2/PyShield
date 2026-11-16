@@ -3389,8 +3389,12 @@ textarea {
 
 .mcp-stat-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1.35fr) repeat(2, minmax(0, 0.65fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
+}
+
+.mcp-stat.wide {
+  grid-column: span 2;
 }
 
 .mcp-stat {
@@ -3676,4 +3680,147 @@ details.mcp-copy-row[open] > summary {
 
 details.mcp-copy-row[open] .mcp-copy-tag {
   color: var(--accent);
+}
+
+/* ------------------------------------------- AI 接入：统计卡与执行日志 */
+
+button.mcp-stat {
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.mcp-stat.clickable {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.mcp-stat.clickable:hover {
+  border-color: #b9c2fb;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(75, 99, 232, 0.12);
+}
+
+.mcp-stat.clickable:focus-visible {
+  outline: 2px solid rgba(75, 99, 232, 0.45);
+  outline-offset: 1px;
+}
+
+.mcp-stat-hint {
+  font-size: 11px;
+  color: var(--faint);
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mcp-stat.clickable .mcp-stat-hint {
+  color: var(--accent);
+}
+
+.mcp-stat.compact strong {
+  font-size: 17px;
+}
+
+.mcp-log-card {
+  width: min(720px, 92vw);
+  max-height: 78vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.mcp-log-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.mcp-log-head h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.mcp-log-head p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.mcp-log-body {
+  flex: 1;
+  min-height: 180px;
+  max-height: 52vh;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-muted);
+}
+
+.mcp-log-row {
+  display: grid;
+  grid-template-columns: 76px 52px minmax(0, 1fr) 54px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.mcp-log-row:last-child {
+  border-bottom: 0;
+}
+
+.mcp-log-row.head {
+  position: sticky;
+  top: 0;
+  background: #fff;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.mcp-log-time {
+  font-family: var(--mono);
+  color: var(--muted);
+}
+
+.mcp-log-kind {
+  color: var(--faint);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.mcp-log-name {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-log-state {
+  font-size: 11.5px;
+  text-align: right;
+}
+
+.mcp-log-state.ok {
+  color: var(--green);
+}
+
+.mcp-log-state.bad {
+  color: var(--red);
+}
+
+.mcp-log-empty {
+  margin: 0;
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
 }

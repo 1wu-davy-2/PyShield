@@ -992,6 +992,13 @@ class Api:
     def mcp_status(self) -> dict:
         return {"ok": True, "mcp": self.mcp.status()}
 
+    def mcp_log(self) -> dict:
+        return {
+            "ok": True,
+            "running": self.mcp.running,
+            "events": self.mcp.log_events(200),
+        }
+
     def mcp_start_server(self) -> dict:
         settings = core.load_settings()
         settings["mcp_enabled"] = True

@@ -19,6 +19,7 @@ PyShield 只发布 **一个** 可执行文件：`PyShieldBuilder.exe`。MCP 构�
 - 只绑定 `127.0.0.1`；除 `/health` 外的请求必须带 `Authorization: Bearer <令牌>` 或 `X-PyShield-Token`。令牌保存在 `%APPDATA%\PyShieldBuilder\mcp-token.txt`（0600）。
 - 支持的 HTTP 方法：`POST /mcp`（单条、批量、通知）、`DELETE /mcp`（结束会话）、`GET /health`；`GET /mcp` 返回 405，因为服务不主动推送消息。
 - `initialize` 响应会带 `Mcp-Session-Id`；会话只是提示，服务端不要求回传，重启后客户端可继续用新会话。
+- 「AI 接入」页统计已处理请求、工具调用次数与经 MCP 受理的构建次数；点请求数可查看最近 200 次调用日志（内存态，退出清空）。
 
 HTTP 客户端配置（页面可直接复制）：
 

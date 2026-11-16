@@ -52,7 +52,9 @@ def format_token() -> str:
 
 
 class _Stats:
-    def __init__(self) -> None:
+    """Counters plus a bounded call log for the GUI."""
+
+    def __init__(self, log_limit: int = 200) -> None:
         self.lock = threading.Lock()
         self.started_at = time.time()
         self.requests = 0
@@ -61,14 +63,33 @@ class _Stats:
         self.last_method = ""
         self.last_at = ""
         self.methods: dict[str, int] = {}
+        self.tool_calls = 0
+        self.builds = 0
+        self.tool_counts: dict[str, int] = {}
+        self._events: list[dict[str, Any]] = []
+        self._log_limit = max(1, int(log_limit))
 
-    def record(self, method: str) -> None:
+    def record(self, method: str, tool: str = "", ok: bool = True) -> None:
         with self.lock:
             self.requests += 1
             self.last_method = method or ""
             self.last_at = time.strftime("%Y-%m-%dT%H:%M:%S")
             if method:
                 self.methods[method] = self.methods.get(method, 0) + 1
+            if tool:
+                self.tool_calls += 1
+                self.tool_counts[tool] = self.tool_counts.get(tool, 0) + 1
+                if tool == "pyshield_start_build" and ok:
+                    self.builds += 1
+            if method or tool:
+                self._events.append({
+                    "at": time.strftime("%H:%M:%S"),
+                    "method": method,
+                    "tool": tool,
+                    "ok": bool(ok),
+                })
+                if len(self._events) > self._log_limit:
+                    del self._events[: len(self._events) - self._log_limit]
 
     def record_error(self) -> None:
         with self.lock:
@@ -77,6 +98,10 @@ class _Stats:
     def record_rejected(self) -> None:
         with self.lock:
             self.rejected += 1
+
+    def events(self, limit: int = 200) -> list[dict[str, Any]]:
+        with self.lock:
+            return list(self._events[-max(1, int(limit)):])[::-1]
 
     def snapshot(self) -> dict[str, Any]:
         with self.lock:
@@ -87,6 +112,9 @@ class _Stats:
                 "last_method": self.last_method,
                 "last_at": self.last_at,
                 "methods": dict(self.methods),
+                "tool_calls": self.tool_calls,
+                "tool_counts": dict(self.tool_counts),
+                "builds": self.builds,
                 "uptime": int(time.time() - self.started_at),
             }
 
@@ -174,15 +202,28 @@ class McpHttpServer:
     def handle(self, message: Any) -> list[dict]:
         responses = self.rpc.handle(message)
         method = ""
+        tool = ""
         if isinstance(message, dict):
             method = str(message.get("method") or "")
+            if method == "tools/call":
+                params = message.get("params")
+                if isinstance(params, dict):
+                    tool = str(params.get("name") or "")
         elif isinstance(message, list):
             method = f"batch:{len(message)}"
-        self.stats.record(method)
+        ok = True
         for response in responses:
             if "error" in response:
                 self.stats.record_error()
+                ok = False
+            result = response.get("result")
+            if isinstance(result, dict) and result.get("isError") is True:
+                ok = False
+        self.stats.record(method, tool, ok)
         return responses
+
+    def log_events(self, limit: int = 200) -> list[dict]:
+        return self.stats.events(limit)
 
     def new_session(self) -> str:
         sid = secrets.token_hex(16)

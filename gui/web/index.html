@@ -579,14 +579,14 @@
               <span class="status-badge" id="mcpBadge">检测中</span>
             </header>
             <div class="mcp-stat-grid">
-              <div class="mcp-stat mcp-stat-url">
+              <div class="mcp-stat mcp-stat-url wide">
                 <span class="mcp-stat-label">服务地址</span>
                 <span class="mcp-url-row">
                   <code class="mono" id="mcpUrl">—</code>
                   <button class="btn primary small" id="mcpQuickStart" type="button" hidden>启动服务</button>
                 </span>
               </div>
-              <div class="mcp-stat">
+              <div class="mcp-stat wide">
                 <span class="mcp-stat-label">访问令牌</span>
                 <span class="mcp-token-row">
                   <code class="mono mcp-token" id="mcpToken">—</code>
@@ -595,13 +595,25 @@
                   </button>
                 </span>
               </div>
-              <div class="mcp-stat compact">
+              <button class="mcp-stat compact clickable" id="mcpRequestCard" type="button" title="查看执行日志">
                 <span class="mcp-stat-label">已处理请求</span>
                 <strong id="mcpRequests">0</strong>
+                <span class="mcp-stat-hint">点击查看执行日志</span>
+              </button>
+              <div class="mcp-stat compact">
+                <span class="mcp-stat-label">工具调用</span>
+                <strong id="mcpToolCalls">0</strong>
+                <span class="mcp-stat-hint">tools/call 次数</span>
+              </div>
+              <div class="mcp-stat compact">
+                <span class="mcp-stat-label">构建次数</span>
+                <strong id="mcpBuilds">0</strong>
+                <span class="mcp-stat-hint">经 MCP 受理的构建</span>
               </div>
               <div class="mcp-stat compact">
                 <span class="mcp-stat-label">最近调用</span>
                 <strong id="mcpLastCall">—</strong>
+                <span class="mcp-stat-hint" id="mcpLastHint">暂无请求</span>
               </div>
             </div>
             <div class="inline-note" id="mcpNote">
@@ -1081,6 +1093,25 @@
           <svg class="icon"><use href="#i-play"/></svg>
           <span>确认并开始加密</span>
         </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="mcpLogModal" hidden>
+    <div class="modal-card mcp-log-card" role="dialog" aria-modal="true" aria-labelledby="mcpLogTitle">
+      <header class="mcp-log-head">
+        <div>
+          <h2 id="mcpLogTitle">MCP 执行日志</h2>
+          <p id="mcpLogSub">最近 200 次调用，保存在内存里，退出应用即清空</p>
+        </div>
+        <button class="icon-btn bordered" id="mcpLogClose" title="关闭">
+          <svg class="icon"><use href="#i-close"/></svg>
+        </button>
+      </header>
+      <div class="mcp-log-body" id="mcpLogBody">—</div>
+      <div class="modal-actions">
+        <button class="btn secondary" id="mcpLogRefresh">刷新</button>
+        <button class="btn primary" id="mcpLogDone">关闭</button>
       </div>
     </div>
   </div>
