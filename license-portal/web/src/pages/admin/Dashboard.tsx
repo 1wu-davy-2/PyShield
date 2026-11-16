@@ -139,7 +139,8 @@ export default function Dashboard() {
         <div className="divider" />
         {email.verification && !email.configured ? (
           <Callout tone="danger">
-            邮箱验证已开启，但 SMTP 尚未配置，试用申请会失败。请设置
+            邮箱验证已开启，但 SMTP 尚未配置。开发模式会将验证码打印到控制台；
+            生产环境试用申请会失败，请设置
             <span className="mono"> PYSHELD_PORTAL_SMTP_* </span>
             后重启服务。
           </Callout>

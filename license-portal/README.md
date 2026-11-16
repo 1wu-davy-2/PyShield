@@ -45,6 +45,8 @@ license-portal/
 │   ├── src/pages/admin/            # 登录、概览、授权、激活码、客户、订单、审计、签发
 │   ├── src/styles/app.css          # 设计 token 与页面样式
 │   └── dist/                       # 构建产物（Nginx 托管的静态文件）
+├── docs/
+│   └── api-integration.md          # 完整接口对接流程（桌面端/公共/管理端）
 ├── deploy/
 │   ├── systemd/pyshield-license-portal.service
 │   ├── nginx/pyshield-license-portal.conf
@@ -659,6 +661,8 @@ Content-Type: application/json
 - 离线客户端不会自动获知吊销，仍可能使用已有本地授权直到到期。需要更强约束时，应在客户端加入定期心跳、构建时内置吊销列表或缩短授权有效期。
 
 ## 6. HTTP 接口
+
+> 完整的接口对接流程（时序、字段、验签、限流、错误码与 curl/Python 示例）见 [`docs/api-integration.md`](docs/api-integration.md)。本节只保留速查表。
 
 公共 API 不需要登录，使用 JSON 请求体（`/api/trial/status` 也支持 GET 查询参数），依赖机器码绑定和按 IP 限流。生产必须通过 HTTPS。
 

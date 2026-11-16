@@ -9,6 +9,7 @@
 | 浏览器 JSON API | 已完成 | `license_portal/api.py`（`/api/public/*`、`/api/admin/*`） |
 | 桌面端 5 个 API | 契约未变 | `license_portal/server.py` 的 `_client_api` |
 | 前端 | **已改为 React SPA**，旧服务端渲染已删除 | `web/`（Vite + React 18 + TS + antd） |
+| 接口文档 | 桌面端/公共/管理端全量对接流程 | `docs/api-integration.md` |
 | HTTP 托管 | 后端可托管 `web/dist`，生产由 Nginx 托管 | `server.py` 的 `_serve_spa` |
 | 测试 | `license-portal/tests` 107 项通过 | 新增 `test_api.py`、`test_mailer.py`，重写 `test_server.py` |
 
@@ -47,6 +48,7 @@ license-portal/
 │   └── dist/                # 构建产物（被 .gitignore 的 dist*/ 忽略）
 ├── tests/                   # test_service / test_validation / test_security
 │                            # test_api / test_mailer / test_server
+├── docs/api-integration.md  # 桌面端/公共/管理端接口与联调示例
 ├── deploy/nginx|systemd|backup.md
 └── README.md                # 已按 React + JSON API 更新
 ```

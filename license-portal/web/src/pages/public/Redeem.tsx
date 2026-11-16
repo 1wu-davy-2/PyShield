@@ -7,7 +7,7 @@ import { useRedeemKey } from '../../api/hooks'
 import type { PublicLicense } from '../../api/types'
 import { Callout, MetaList, SectionCard, StatusTag } from '../../components/ui'
 import { applyServerErrors } from '../../lib/formErrors'
-import { editionLabel, expiryHint, formatDate, shortMachine } from '../../lib/format'
+import { editionLabel, formatDate, remainingShort, shortMachine } from '../../lib/format'
 import { useSiteConfig } from '../../hooks/useSiteConfig'
 
 interface RedeemValues {
@@ -109,7 +109,7 @@ export default function Redeem() {
                 ['机器码', <span className="mono">{shortMachine(result.machine)}</span>],
                 ['授权 ID', <span className="mono">{result.license_id}</span>],
                 ['到期日', formatDate(result.expires)],
-                ['剩余', expiryHint(result.expires) || '—'],
+                ['剩余', remainingShort(result.expires)],
                 ['每月构建', `${result.max_builds ?? '—'} 次`],
                 ['revision', String(result.revision)],
               ]}
