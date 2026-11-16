@@ -29,7 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--server", required=True,
-        help="PyShieldMCP executable, or 'module' for python -m pyshield.mcp_server",
+        help="PyShieldBuilder executable, or 'module' for python -m pyshield.mcp_server",
     )
     parser.add_argument(
         "--arg", action="append", default=[], metavar="VALUE",

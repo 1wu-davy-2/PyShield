@@ -69,7 +69,7 @@ MCP_DOC = """# PyShield MCP server
 Start a console server with:
 
 ```
-PyShieldMCP --project-root E:\\work --output-root E:\\work\\pyshield-output --allow-build
+PyShieldBuilder.exe --mcp --project-root E:\\work --allow-build
 ```
 
 Read-only tools are always available. `--allow-build` enables build and cancel.

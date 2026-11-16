@@ -19,9 +19,8 @@ PyShield 是一套自研的 Python / Django 源码保护工具：构建期把 Py
 | `gui/` | 桌面构建器：pywebview 窗口、JS 桥接、表单校验与内嵌 Web UI |
 | `pyshield/build_spec.py` | 构建前置校验基元：路径/reparse、输出名、到期/绑定/模式 |
 | `pyshield/build_service/` | MCP 构建服务：严格预检、异步 job、额度结算、退款、审计 |
-| `pyshield/mcp_server/` | stdio JSON-RPC MCP 协议层、工具 schema、资源与提示词 |
-| `shield_mcp.py` | MCP console 入口（含冻结原生编译的隐藏 setup 入口） |
-| `PyShieldBuilder.spec` / `PyShieldMCP.spec` | PyInstaller 单文件打包配置 |
+| `pyshield/mcp_server/` | stdio JSON-RPC MCP 协议层、工具 schema、资源与提示词；`http_transport.py` 提供回环 HTTP |
+| `PyShieldBuilder.spec` | PyInstaller 单文件打包配置（GUI + MCP 同一个 exe） |
 | `tests/` | 加密、签名、许可证、构建流程、桌面构建器与 MCP 测试 |
 | `docs/` | 本手册与《实现思路》 |
 
@@ -354,9 +353,9 @@ python -m pyshield.mcp_server \
   --allow-build
 ```
 
-或使用 `PyShieldMCP.exe`（参数相同）。服务只使用 stdio，不监听端口。默认只注册只读工具；`--allow-build` 开启构建，`--allow-project-execution` + `--verify-python ID=PATH` 才开启 `pyshield_check_output`。
+或使用 `PyShieldBuilder.exe --mcp`（参数相同）。stdio 入口不监听端口。默认只注册只读工具；`--allow-build` 开启构建，`--allow-project-execution` + `--verify-python ID=PATH` 才开启 `pyshield_check_output`。
 
-桌面构建器内置同一套服务：GUI 打开后监听 `http://127.0.0.1:8790/mcp`（可在「AI 接入」页改端口或停止），请求需带 `Authorization: Bearer <令牌>`；也可用 `PyShieldBuilder.exe --mcp --project-root <dir> --allow-build` 走 stdio。内置模式不开放 `pyshield_check_output`。
+桌面构建器内置同一套服务：GUI 打开后监听 `http://127.0.0.1:8790/mcp`（可在「AI 接入」页改端口或停止），请求需带 `Authorization: Bearer <令牌>`；内置模式不开放 `pyshield_check_output`。
 
 - `pyshield_validate_build` 不写输出、不扣额度；先拿 `plan_hash`，再 `pyshield_start_build`。
 - 构建受理时扣 1 次额度；只有目标项目代码错误（`PROJECT_CODE`）退还，环境/取消/超时/内部错误不退。

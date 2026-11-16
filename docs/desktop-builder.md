@@ -76,7 +76,7 @@ PyShieldBuilder.exe --mcp --project-root E:\work --allow-build
 桌面版把 PyShield 构建引擎运行在 exe 进程内，不调用外部 `shield.py`。所有构建资源均已内嵌：
 
 - `gui/web/`：HTML / CSS / JavaScript 界面；
-- `pyshield/mcp_server/` 与 `pyshield/build_service/`：内置 MCP 服务（stdio + 回环 HTTP），与独立 `PyShieldMCP.exe` 共用同一套工具与额度账本；
+- `pyshield/mcp_server/` 与 `pyshield/build_service/`：内置 MCP 服务（stdio + 回环 HTTP），与 GUI 共用同一套工具授权与额度账本；
 - `pyshield/_runtime_bundle.py`：由 `tools/embed_runtime.py` 生成的压缩资源，内含 runtime 模板与 `crypto.py`、`fingerprint.py`、`ed25519.py`、`secure_store.py`；构建器不再把 `runtime_template/` 或这些 `.py` 作为 PyInstaller 明文 `datas` 发布；
 - `cryptography`：启用 AES-256-GCM / ChaCha20-Poly1305 构建；
 - pywebview、pythonnet、clr-loader：桌面窗口与 WebView2 宿主。

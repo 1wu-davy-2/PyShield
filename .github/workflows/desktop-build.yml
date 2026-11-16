@@ -69,52 +69,22 @@ jobs:
             throw "unexpected product version: $($exe.VersionInfo.ProductVersion), expected $expected"
           }
 
-      - uses: actions/upload-artifact@v7
-        with:
-          name: PyShieldBuilder-windows-x64
-          path: dist/PyShieldBuilder.exe
-          if-no-files-found: error
-          retention-days: 30
-
-  mcp:
-    name: MCP console executable
-    runs-on: windows-latest
-    needs: test
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-
-      - name: Install MCP build dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install pyinstaller==6.22.3 cryptography "Cython>=3" setuptools
-
-      - name: Build PyShieldMCP.exe
-        run: python -m PyInstaller --noconfirm --clean PyShieldMCP.spec
-
-      - name: Release hygiene scan
-        run: python tools/check_release.py --skip-key-scan dist
-
-      - name: Selftest and stdio smoke
+      - name: MCP stdio smoke (single executable)
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/mcp-smoke/projects/demo"
           printf "print('ok')\n" > "$RUNNER_TEMP/mcp-smoke/projects/demo/manage.py"
-          PYSHELD_DEV=1 dist/PyShieldMCP.exe \
+          PYSHELD_DEV=1 dist/PyShieldBuilder.exe --mcp \
             --project-root "$RUNNER_TEMP/mcp-smoke/projects" \
-            --output-root "$RUNNER_TEMP/mcp-smoke/out" \
             --state-dir "$RUNNER_TEMP/mcp-smoke/state" \
             --allow-build --selftest
-          python tools/mcp_smoke.py --server dist/PyShieldMCP.exe
+          python tools/mcp_smoke.py --server dist/PyShieldBuilder.exe --arg=--mcp
 
       - uses: actions/upload-artifact@v7
         with:
-          name: PyShieldMCP-windows-x64
-          path: dist/PyShieldMCP.exe
+          name: PyShieldBuilder-windows-x64
+          path: dist/PyShieldBuilder.exe
           if-no-files-found: error
           retention-days: 30
 

@@ -239,7 +239,7 @@ python tools/build_commercial.py build --public-key root-keys/root.pub \
 
 ### MCP 自动化构建的授权与额度
 
-`PyShieldMCP.exe` 复用同一套工具授权与配额，不提供切换授权文件或开发模式的启动参数：
+内置 MCP（`PyShieldBuilder.exe` 的 HTTP / `--mcp` 入口）复用同一套工具授权与配额，不提供切换授权文件或开发模式的启动参数：
 
 - 启动时必须能通过 `tool_license.check()`；trial/Pro/Enterprise 的 feature 限制与 CLI/GUI 一致；`runtime=native` 需要 `native-runtime` feature，`--ci` 需要 `ci` feature。
 - `inspect`、`validate`、`status`、日志和静态校验不扣额度。

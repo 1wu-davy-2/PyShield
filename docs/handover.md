@@ -54,7 +54,6 @@ python -m http.server 8130 --directory gui/web
 | `pyshield/build_service/` | MCP 构建服务：严格预检、异步 job、额度结算、退款、日志/审计 | 默认 `no_verify` |
 | `pyshield/mcp_server/` | stdio JSON-RPC 协议层、严格 schema、资源与提示词；`http_transport.py` 提供回环 Streamable HTTP | 无运行时第三方依赖 |
 | `gui/mcp_host.py` | 桌面端内置 MCP 主机：策略构造、令牌文件、启停、配置片段 | 与 backend 的 `mcp_*` API 配套 |
-| `shield_mcp.py` / `PyShieldMCP.spec` | MCP console 入口与 PyInstaller 配置 | 含冻结原生编译隐藏入口 |
 | `pyshield/license_admin.py` | 离线根密钥与授权签发 CLI | 私钥永不进构建器 |
 | `pyshield/trial_server.py` | 试用登记官网（SQLite + HTML + API） | 部署到服务器，见 `docs/trial.md` |
 | `pyshield/trial_license.py` | 客户端序列号/深链/领取 | |
@@ -82,14 +81,14 @@ python -m http.server 8130 --directory gui/web
 ## 5. 测试与 CI
 
 - 本地：`python -m unittest discover -s tests`（数量以实际输出为准，部分原生/符号链接用例按环境跳过）；
-- CI job：Unit ×2（ubuntu/windows）、Trial registration flow（真起进程）、Windows/Linux builder、MCP console ×2（构建 + `--selftest` + stdio 冒烟）、Protected Django demo（`PYSHELD_DEV=1`，新门禁会拦自检构建，别删这个 env）、Publish CI snapshot；
-- 产物：release tag `ci-develop-latest`，包含 `PyShieldBuilder.exe`、`PyShieldMCP.exe` 和 Linux 对应 binary。
-- MCP 冒烟：`python tools/mcp_smoke.py --server module` 或指向 `dist/PyShieldMCP.exe`。
+- CI job：Unit ×2（ubuntu/windows）、Trial registration flow（真起进程）、Windows/Linux builder（含单 exe 的 `--mcp` 自检 + stdio 冒烟）、Protected Django demo（`PYSHELD_DEV=1`，新门禁会拦自检构建，别删这个 env）、Publish CI snapshot；
+- 产物：release tag `ci-develop-latest`，只有 `PyShieldBuilder.exe` 与 Linux 对应 binary；MCP 已内置，不再产出第二个 exe。
+- MCP 冒烟：`python tools/mcp_smoke.py --server module`，或 `--server dist/PyShieldBuilder.exe --arg=--mcp`。
 
 ## 6. 发布清单
 
 1. 版本号：**保持 0.6.0，等 owner 明确说升再升**（`pyshield/__init__.py`、`gui/web` 关于页、spec）。
-2. 打正式包：`python tools/build_commercial.py build --public-key root-keys/root.pub --site https://license.你的域名`；MCP 另打 `python -m PyInstaller --noconfirm --clean PyShieldMCP.spec`，并对产物运行 `python tools/mcp_smoke.py --server dist/PyShieldMCP.exe`；
+2. 打正式包：`python tools/build_commercial.py build --public-key root-keys/root.pub --site https://license.你的域名`，只有一个 `PyShieldBuilder.exe`；发布前运行 `python tools/mcp_smoke.py --server dist/PyShieldBuilder.exe --arg=--mcp`；
 3. 私有根密钥离线保管，绝不提交；
 4. 官网部署：`python -m pyshield.trial_server --root-key ... --data-dir ...`，Nginx + HTTPS 样例在 `docs/trial.md` 第 7 节；
 5. 未签名 exe 首次运行会被 SmartScreen 拦（预期），下载页注明 SHA256。

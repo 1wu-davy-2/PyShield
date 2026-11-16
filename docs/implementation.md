@@ -316,13 +316,13 @@ MCP 是构建引擎之上的本地 agent 适配层，不改变产物格式或 ru
 ### 8.3 入口与产物
 
 ```bash
-python -m pyshield.mcp_server --project-root <projects> --output-root <outputs> --state-dir <state> --allow-build
-python -m PyInstaller --noconfirm --clean PyShieldMCP.spec
+python -m PyInstaller --noconfirm --clean PyShieldBuilder.spec
 python tools/mcp_smoke.py --server module
 
-# 同一个 exe 的另外两个入口
-PyShieldBuilder.exe --mcp --project-root <projects> --allow-build   # stdio
+# 唯一产物 PyShieldBuilder.exe 的三个入口
 PyShieldBuilder.exe                                                # GUI + http://127.0.0.1:8790/mcp
+PyShieldBuilder.exe --mcp --project-root <projects> --allow-build   # stdio
+python -m pyshield.mcp_server --project-root <projects> --state-dir <state> --allow-build  # 源码调试
 ```
 
 - 输出：`<state-dir>/jobs/<job_id>/`（请求、预检、日志、结果、退款）

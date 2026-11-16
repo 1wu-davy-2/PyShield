@@ -131,10 +131,10 @@ CPython 对 timestamp-based `.pyc` 只校验源文件的 `mtime`/`size`，不校
 
 ### MCP 构建服务的额外边界
 
-`PyShieldMCP.exe` 是一个本地 stdio 服务，不是远程 API：
+唯一产物 `PyShieldBuilder.exe` 内置 MCP，stdio 入口不是远程 API：
 
-- 只接受 stdio，不监听端口；测试会 mock `socket.socket` 断言无网络调用。
-- 桌面构建器内置的 HTTP 变体是唯一监听端口的形态：只绑定 `127.0.0.1`，默认要求 `Authorization: Bearer <令牌>`（令牌文件 0600），请求体上限 1 MiB，`GET /mcp` 不提供 SSE 推送；不申请管理员权限、不写系统代理、不做 mDNS/UPnP 暴露。它继承同一套策略校验，内置模式不开放 `pyshield_check_output`。
+- `--mcp` 入口只接受 stdio，不监听端口；测试会 mock `socket.socket` 断言无网络调用。
+- GUI 启动时附带回环 HTTP 入口，是唯一监听端口的形态：只绑定 `127.0.0.1`，默认要求 `Authorization: Bearer <令牌>`（令牌文件 0600），请求体上限 1 MiB，`GET /mcp` 不提供 SSE 推送；不申请管理员权限、不写系统代理、不做 mDNS/UPnP 暴露。它继承同一套策略校验，内置模式不开放 `pyshield_check_output`。
 - 项目根、输出根、secret/job/audit 根必须显式配置且互不包含；项目树中的 symlink/junction/reparse point 会被拒绝。
 - 输出目录必须不存在；MCP 不暴露 `force`，不会删除已有目录。
 - 构建密钥写到独立的 secret 根，不在输出目录同级；响应、日志、审计不会返回密钥。
@@ -159,7 +159,7 @@ python tools/check_release.py --skip-key-scan dist      # 没有构建密钥时�
 
 # MCP 冒烟（源码或冻结产物）
 python tools/mcp_smoke.py --server module
-python tools/mcp_smoke.py --server dist/PyShieldMCP.exe
+python tools/mcp_smoke.py --server dist/PyShieldBuilder.exe --arg=--mcp
 
 # 在带 Cython + C 编译器 + strip 的环境验证原生 runtime
 python shield.py build -p <project> -o dist-native --runtime-native --no-verify --force

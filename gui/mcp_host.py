@@ -107,9 +107,6 @@ class McpHost:
     def _stdio_command(self) -> list[str]:
         if getattr(sys, "frozen", False):
             return [str(Path(sys.executable).resolve()), "--mcp"]
-        script = Path(__file__).resolve().parents[1] / "shield_mcp.py"
-        if script.is_file():
-            return [sys.executable or "python", str(script)]
         return [sys.executable or "python", "-m", "pyshield.mcp_server"]
 
     def status(self) -> dict:
