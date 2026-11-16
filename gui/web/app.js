@@ -1645,15 +1645,28 @@
     if (!status) return;
     state.mcp = status;
     const running = !!status.running;
+    const failed = !running && !!status.error;
     const badge = $("#mcpBadge");
     if (badge) {
-      badge.textContent = running ? "运行中" : status.enabled ? "启动中" : "已停止";
-      badge.className = `status-badge ${running ? "success" : "soft"}`;
+      badge.textContent = running ? "运行中" : failed ? "启动失败" : "已停止";
+      badge.className = `status-badge ${running ? "success" : "danger"}`;
     }
     const dot = $("#navMcpDot");
     if (dot) dot.hidden = !running;
 
-    $("#mcpUrl").textContent = running ? status.url : "服务未启动";
+    const hero = $("#mcpHero");
+    if (hero) {
+      hero.classList.toggle("is-stopped", !running);
+      hero.classList.toggle("is-failed", failed);
+    }
+    const quickStart = $("#mcpQuickStart");
+    if (quickStart) quickStart.hidden = running;
+
+    const urlNode = $("#mcpUrl");
+    if (urlNode) {
+      urlNode.textContent = running ? status.url : `未监听 · 端口 ${status.port}`;
+      urlNode.classList.toggle("is-off", !running);
+    }
     const token = status.token || "";
     $("#mcpToken").textContent = token || "—";
     $("#mcpToken").title = token;
@@ -1663,17 +1676,19 @@
       : "—";
     $("#mcpLastCall").textContent = last;
     $("#mcpToolCount").textContent = String((status.tools || []).length);
+    const toolsHint = $("#mcpToolsHint");
+    if (toolsHint) toolsHint.hidden = running;
 
     const note = $("#mcpNote").querySelector("span");
     if (note) {
       if (status.error) {
         note.textContent = `启动失败：${status.error}`;
       } else if (status.port_fallback) {
-        note.textContent = `端口 ${status.requested_port} 被占用，已改用 ${status.port}；配置片段已同步实际端口。`;
+        note.textContent = `端口 ${status.requested_port} 被占用，已在 8000-8999 随机改用 ${status.port}；配置片段已同步实际端口。`;
       } else if (running) {
         note.textContent = `仅监听 127.0.0.1:${status.port}，令牌等同本机构建权限，不要外传。`;
       } else {
-        note.textContent = "服务已停止：HTTP 方式的 agent 无法连接，可点「启动」重新监听。";
+        note.textContent = "服务已停止：HTTP 方式的 agent 无法连接，点上方「启动服务」即可重新监听。";
       }
     }
     renderMcpTools(status);
@@ -1682,6 +1697,7 @@
   function renderMcpTools(status) {
     const list = $("#mcpToolList");
     if (!list) return;
+    list.classList.toggle("is-off", !status.running);
     const tools = status.tools || [];
     if (!tools.length) {
       list.innerHTML = '<li><span class="mcp-tool-dot is-off"></span><div><span class="tool-name">无可用工具</span></div></li>';
@@ -2223,21 +2239,30 @@
       allow_build: mockMcpState.allowBuild,
       project_root: mockMcpState.projectRoot,
       error: "",
+      tools_available: mockMcpState.running,
       pid: 4242,
     };
   }
 
   function mockMcpSnippet(kind) {
     const url = `http://127.0.0.1:${mockMcpState.port}/mcp`;
+    const preamble = [
+      "你正在接入 PyShield MCP：这是运行在本机的 Django 源码保护构建服务，由 PyShieldBuilder.exe 提供。",
+      "",
+      "【可用工具】pyshield_status、pyshield_validate_build、pyshield_start_build…",
+      "【调用顺序】pyshield_status → pyshield_inspect_project → pyshield_validate_build（保存 plan_hash）→ pyshield_start_build。",
+      "【配置】",
+      "",
+    ].join("\n");
+    let body = "";
     if (kind === "http-json") {
-      return JSON.stringify({
+      body = JSON.stringify({
         mcpServers: {
           pyshield: { type: "http", url, headers: { Authorization: `Bearer ${mockMcpState.token}` } },
         },
       }, null, 2);
-    }
-    if (kind === "stdio-json") {
-      return JSON.stringify({
+    } else if (kind === "stdio-json") {
+      body = JSON.stringify({
         mcpServers: {
           pyshield: {
             command: "C:\\Program Files\\PyShield\\PyShieldBuilder.exe",
@@ -2245,11 +2270,12 @@
           },
         },
       }, null, 2);
+    } else if (kind === "claude-http") {
+      body = `claude mcp add --transport http pyshield ${url} --header "Authorization: Bearer ${mockMcpState.token}"`;
+    } else {
+      body = `"C:\\Program Files\\PyShield\\PyShieldBuilder.exe" --mcp --project-root ${mockMcpState.projectRoot} --allow-build`;
     }
-    if (kind === "claude-http") {
-      return `claude mcp add --transport http pyshield ${url} --header "Authorization: Bearer ${mockMcpState.token}"`;
-    }
-    return `"C:\\Program Files\\PyShield\\PyShieldBuilder.exe" --mcp --project-root ${mockMcpState.projectRoot} --allow-build`;
+    return preamble + body;
   }
 
   function mockApi(name, args) {
@@ -2885,11 +2911,20 @@
     $("#mcpCopyToken").addEventListener("click", () => {
       copyText(state.mcp ? state.mcp.token : "", "访问令牌已复制");
     });
+    $("#mcpQuickStart").addEventListener("click", startMcp);
     $$("[data-copy-kind]").forEach((button) => {
-      button.addEventListener("click", () => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
         const kind = button.dataset.copyKind;
         const text = (state.mcpSnippets.snippets || {})[kind];
         copyText(text || "", "配置片段已复制");
+      });
+    });
+    $$(".mcp-copy-row").forEach((row) => {
+      row.addEventListener("toggle", () => {
+        const tag = row.querySelector(".mcp-copy-tag");
+        if (tag) tag.textContent = row.open ? "收起" : "展开";
       });
     });
 

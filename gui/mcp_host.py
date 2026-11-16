@@ -14,6 +14,7 @@ Claude Code / Cursor / generic JSON-RPC agents.
 from __future__ import annotations
 
 import os
+import random
 import sys
 import threading
 from pathlib import Path
@@ -26,6 +27,7 @@ from pyshield.mcp_server.http_transport import (
     McpHttpServer,
     format_token,
 )
+from pyshield.mcp_server.schemas import tool_definitions
 
 from . import core
 
@@ -33,7 +35,11 @@ TOKEN_FILENAME = "mcp-token.txt"
 STATE_DIRNAME = "mcp"
 PORT_MIN = 1024
 PORT_MAX = 65535
-PORT_SCAN = 20
+# When the configured port is taken, fall back to a random port in the
+# conventional 8xxx range instead of walking a fixed window.
+FALLBACK_PORT_MIN = 8000
+FALLBACK_PORT_MAX = 8999
+FALLBACK_ATTEMPTS = 24
 
 
 class McpHostError(RuntimeError):
@@ -94,7 +100,10 @@ class McpHost:
         self._error = ""
         self._fallback = False
         self._project_root = ""
-        self._allow_build = False
+        try:
+            self._allow_build = bool(core.load_settings().get("mcp_allow_build", True))
+        except Exception:  # noqa: BLE001 - a broken state DB must not block the UI
+            self._allow_build = True
         self._requested_port = DEFAULT_PORT
 
     # ------------------------------------------------------------------
@@ -109,8 +118,20 @@ class McpHost:
             return [str(Path(sys.executable).resolve()), "--mcp"]
         return [sys.executable or "python", "-m", "pyshield.mcp_server"]
 
+    def _tool_names(self) -> list[str]:
+        if self._server is not None:
+            return [tool["name"] for tool in self._server.rpc.tools]
+        return [
+            tool["name"] for tool in tool_definitions(
+                allow_build=self._allow_build,
+                allow_execution=False,
+                allow_runtime_source=False,
+            )
+        ]
+
     def status(self) -> dict:
         with self._lock:
+            tools = self._tool_names()
             payload = self._server.status() if self._server else {
                 "running": False,
                 "host": "127.0.0.1",
@@ -118,8 +139,8 @@ class McpHost:
                 "url": f"http://127.0.0.1:{self._requested_port}/mcp",
                 "token_required": True,
                 "server": "pyshield-mcp-http",
-                "tools": [],
-                "tool_count": 0,
+                "tools": tools,
+                "tool_count": len(tools),
                 "sessions": 0,
                 "requests": 0,
                 "errors": 0,
@@ -138,6 +159,7 @@ class McpHost:
                 "token": load_token(),
                 "error": self._error,
                 "stdio_command": _join(self._stdio_command()),
+                "tools_available": self.running,
                 "pid": os.getpid(),
             })
             return payload
@@ -169,7 +191,15 @@ class McpHost:
 
             server: McpHttpServer | None = None
             last_error = ""
-            for candidate in range(port, min(port + PORT_SCAN, PORT_MAX) + 1):
+            candidates = [port]
+            if not self._port_is_free(port):
+                pool = [
+                    value
+                    for value in range(FALLBACK_PORT_MIN, FALLBACK_PORT_MAX + 1)
+                    if value != port
+                ]
+                candidates += random.sample(pool, min(FALLBACK_ATTEMPTS, len(pool)))
+            for candidate in candidates:
                 instance = McpHttpServer(service, port=candidate, token=token)
                 try:
                     instance.start()
@@ -198,7 +228,7 @@ class McpHost:
                 "message": (
                     f"MCP 已监听 {server.url}"
                     if not self._fallback
-                    else f"端口 {port} 被占用，已改用 {server.port}"
+                    else f"端口 {port} 被占用，已在 {FALLBACK_PORT_MIN}-{FALLBACK_PORT_MAX} 随机改用 {server.port}"
                 ),
             }
 
@@ -244,6 +274,31 @@ class McpHost:
     # ------------------------------------------------------------------
     # Snippets
     # ------------------------------------------------------------------
+    def _preamble(self, kind: str, status: dict) -> str:
+        """Agent-facing instructions copied together with the config."""
+        tools = "、".join(status.get("tools") or []) or "（服务停止时不暴露工具）"
+        transport = {
+            "http-json": "HTTP：客户端连接下列 URL，请求必须带 Bearer 令牌。",
+            "claude-http": "HTTP：执行下面这条命令，把服务注册到 Claude Code。",
+            "stdio-json": "stdio：客户端拉起 PyShieldBuilder.exe --mcp 子进程，不依赖端口。",
+            "stdio": "stdio：直接运行下面的命令，由客户端通过标准输入输出通信。",
+        }.get(kind, "")
+        return (
+            "你正在接入 PyShield MCP：这是运行在本机的 Django 源码保护构建服务，"
+            "由 PyShieldBuilder.exe 提供。\n\n"
+            f"【可用工具】{tools}\n"
+            "【调用顺序】pyshield_status → pyshield_inspect_project → "
+            "pyshield_validate_build（保存 plan_hash）→ pyshield_start_build"
+            "（confirm=true 且 expect_plan_hash 一致）→ 轮询 pyshield_build_status → "
+            "pyshield_build_logs / pyshield_verify_output。\n"
+            "【额度】严格预检通过才扣 1 次；只有目标项目代码错误（PROJECT_CODE）退款，"
+            "取消、超时、环境错误都不退。\n"
+            "【边界】服务不执行目标项目代码，也不返回构建密钥；"
+            "*.shield-secret.json 只留在构建方，不要复制进项目目录或提交到仓库。\n"
+            f"【接入方式】{transport}\n\n"
+            "【配置】\n"
+        )
+
     def snippet(self, kind: str = "http") -> dict:
         status = self.status()
         url = status["url"]
@@ -283,11 +338,24 @@ class McpHost:
             text = _join(["curl", f"http://127.0.0.1:{status['port']}/health"])
         else:
             raise McpHostError("snippet", f"unknown snippet: {kind}")
+        if kind != "health":
+            text = self._preamble(kind, status) + text
         return {"ok": True, "kind": kind, "text": text, "status": status}
 
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+    @staticmethod
+    def _port_is_free(port: int) -> bool:
+        import socket
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            try:
+                probe.bind(("127.0.0.1", port))
+            except OSError:
+                return False
+        return True
+
     @staticmethod
     def _policy(project_root: Path, state_dir: Path, allow_build: bool) -> BuildPolicy:
         root = project_root.expanduser()

@@ -570,7 +570,7 @@
         </section>
 
         <section class="view" id="view-mcp" hidden>
-          <section class="card mcp-hero">
+          <section class="card mcp-hero" id="mcpHero">
             <header class="card-head">
               <div>
                 <h2>AI 接入</h2>
@@ -579,9 +579,12 @@
               <span class="status-badge" id="mcpBadge">检测中</span>
             </header>
             <div class="mcp-stat-grid">
-              <div class="mcp-stat">
+              <div class="mcp-stat mcp-stat-url">
                 <span class="mcp-stat-label">服务地址</span>
-                <code class="mono" id="mcpUrl">—</code>
+                <span class="mcp-url-row">
+                  <code class="mono" id="mcpUrl">—</code>
+                  <button class="btn primary small" id="mcpQuickStart" type="button" hidden>启动服务</button>
+                </span>
               </div>
               <div class="mcp-stat">
                 <span class="mcp-stat-label">访问令牌</span>
@@ -621,7 +624,7 @@
                   <div class="input-shell">
                     <input id="mcpPort" type="number" min="1024" max="65535" step="1" placeholder="8790" inputmode="numeric">
                   </div>
-                  <p class="field-hint">端口被占用时会自动向后顺延，实际地址以上方为准。</p>
+                  <p class="field-hint">端口被占用时会在 8000-8999 随机挑一个空闲端口，实际地址以上方为准。</p>
                 </div>
                 <div class="field">
                   <label for="mcpProjectRoot">AI 可访问的项目目录</label>
@@ -658,6 +661,7 @@
                 </div>
                 <span class="nav-count" id="mcpToolCount">0</span>
               </header>
+              <p class="mcp-tools-hint" id="mcpToolsHint" hidden>服务已停止：下列工具在启动后可用，当前无法调用。</p>
               <ul class="mcp-tool-list" id="mcpToolList"></ul>
             </section>
           </div>
@@ -670,34 +674,46 @@
               </div>
             </header>
             <div class="mcp-copy-list">
-              <div class="mcp-copy-row">
-                <div class="mcp-copy-head">
-                  <strong>Claude Code · HTTP</strong>
-                  <button class="btn ghost small" data-copy-kind="claude-http">复制命令</button>
-                </div>
+              <details class="mcp-copy-row">
+                <summary class="mcp-copy-head">
+                  <span class="mcp-copy-title"><strong>Claude Code · HTTP</strong><small>一条命令注册，适合已安装 Claude Code CLI</small></span>
+                  <span class="mcp-copy-actions">
+                    <span class="mcp-copy-tag">展开</span>
+                    <button class="btn ghost small" data-copy-kind="claude-http">复制指令</button>
+                  </span>
+                </summary>
                 <pre class="mcp-code" id="mcpCodeClaudeHttp">—</pre>
-              </div>
-              <div class="mcp-copy-row">
-                <div class="mcp-copy-head">
-                  <strong>通用 JSON · HTTP</strong>
-                  <button class="btn ghost small" data-copy-kind="http-json">复制 JSON</button>
-                </div>
+              </details>
+              <details class="mcp-copy-row">
+                <summary class="mcp-copy-head">
+                  <span class="mcp-copy-title"><strong>通用 JSON · HTTP</strong><small>Cursor / Claude Desktop 等支持 url 的客户端</small></span>
+                  <span class="mcp-copy-actions">
+                    <span class="mcp-copy-tag">展开</span>
+                    <button class="btn ghost small" data-copy-kind="http-json">复制配置</button>
+                  </span>
+                </summary>
                 <pre class="mcp-code" id="mcpCodeHttpJson">—</pre>
-              </div>
-              <div class="mcp-copy-row">
-                <div class="mcp-copy-head">
-                  <strong>通用 JSON · stdio</strong>
-                  <button class="btn ghost small" data-copy-kind="stdio-json">复制 JSON</button>
-                </div>
+              </details>
+              <details class="mcp-copy-row">
+                <summary class="mcp-copy-head">
+                  <span class="mcp-copy-title"><strong>通用 JSON · stdio</strong><small>客户端自己拉起 --mcp 子进程，不需要端口</small></span>
+                  <span class="mcp-copy-actions">
+                    <span class="mcp-copy-tag">展开</span>
+                    <button class="btn ghost small" data-copy-kind="stdio-json">复制配置</button>
+                  </span>
+                </summary>
                 <pre class="mcp-code" id="mcpCodeStdioJson">—</pre>
-              </div>
-              <div class="mcp-copy-row">
-                <div class="mcp-copy-head">
-                  <strong>命令行 · stdio</strong>
-                  <button class="btn ghost small" data-copy-kind="stdio">复制命令</button>
-                </div>
+              </details>
+              <details class="mcp-copy-row">
+                <summary class="mcp-copy-head">
+                  <span class="mcp-copy-title"><strong>命令行 · stdio</strong><small>排查连接问题时可先在终端直接运行</small></span>
+                  <span class="mcp-copy-actions">
+                    <span class="mcp-copy-tag">展开</span>
+                    <button class="btn ghost small" data-copy-kind="stdio">复制命令</button>
+                  </span>
+                </summary>
                 <pre class="mcp-code" id="mcpCodeStdio">—</pre>
-              </div>
+              </details>
             </div>
             <p class="security-note">
               <svg class="icon"><use href="#i-info"/></svg>

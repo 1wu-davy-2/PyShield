@@ -223,6 +223,50 @@ class McpHostTests(unittest.TestCase):
         finally:
             host.stop()
 
+    def test_busy_port_falls_back_to_random_8xxx(self) -> None:
+        import socket
+
+        from gui import mcp_host
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as busy:
+            busy.bind(("127.0.0.1", 0))
+            busy.listen(1)
+            port = busy.getsockname()[1]
+            host = mcp_host.McpHost()
+            result = host.start({
+                "mcp_port": port,
+                "mcp_project_root": str(self.projects),
+                "mcp_allow_build": False,
+            })
+            try:
+                self.assertTrue(result["ok"], result.get("error"))
+                status = host.status()
+                self.assertNotEqual(status["port"], port)
+                self.assertGreaterEqual(status["port"], mcp_host.FALLBACK_PORT_MIN)
+                self.assertLessEqual(status["port"], mcp_host.FALLBACK_PORT_MAX)
+                self.assertTrue(status["port_fallback"])
+            finally:
+                host.stop()
+
+    def test_snippet_carries_agent_instructions(self) -> None:
+        from gui import mcp_host
+
+        host = mcp_host.McpHost()
+        result = host.start({
+            "mcp_port": 0,
+            "mcp_project_root": str(self.projects),
+            "mcp_allow_build": True,
+        })
+        try:
+            self.assertTrue(result["ok"], result.get("error"))
+            text = host.snippet("http-json")["text"]
+            self.assertIn("你正在接入 PyShield MCP", text)
+            self.assertIn("plan_hash", text)
+            self.assertIn("mcpServers", text)
+            self.assertIn(host.status()["token"], text)
+        finally:
+            host.stop()
+
     def test_missing_project_root_reports_policy_error(self) -> None:
         from gui import mcp_host
 

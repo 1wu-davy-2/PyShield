@@ -15,7 +15,7 @@ PyShield 只发布 **一个** 可执行文件：`PyShieldBuilder.exe`。MCP 构�
 `PyShieldBuilder.exe` 同时提供 GUI 与 MCP：启动后用 `http://127.0.0.1:<端口>/mcp` 提供 Streamable HTTP 子集。关闭窗口只是隐藏到托盘，服务继续运行；真正退出应用才释放端口。
 
 - 侧边栏「AI 接入」页可以直接开关服务、改端口、选 agent 可访问的项目目录、轮换令牌，并复制现成的客户端配置。
-- 默认端口 `8790`；被占用时自动向后顺延，页面显示实际端口，配置片段同步更新。
+- 默认端口 `8790`；被占用时在 `8000-8999` 里随机挑一个空闲端口，页面显示实际端口，配置片段同步更新。
 - 只绑定 `127.0.0.1`；除 `/health` 外的请求必须带 `Authorization: Bearer <令牌>` 或 `X-PyShield-Token`。令牌保存在 `%APPDATA%\PyShieldBuilder\mcp-token.txt`（0600）。
 - 支持的 HTTP 方法：`POST /mcp`（单条、批量、通知）、`DELETE /mcp`（结束会话）、`GET /health`；`GET /mcp` 返回 405，因为服务不主动推送消息。
 - `initialize` 响应会带 `Mcp-Session-Id`；会话只是提示，服务端不要求回传，重启后客户端可继续用新会话。
