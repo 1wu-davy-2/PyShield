@@ -132,6 +132,17 @@ def main(argv: list[str] | None = None) -> int:
         allow_execution=service.policy.allow_project_execution,
         allow_runtime_source=service.policy.allow_runtime_source,
     )
+    # Redirected stdout/stderr default to the locale encoding on Windows;
+    # Chinese reasons in the status payload would then reach clients as GBK
+    # bytes and break JSON parsing. Force UTF-8 on both text streams.
+    for stream in (sys.stdout, sys.stderr):
+        if stream is None:
+            continue
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):  # pragma: no cover - odd wrappers
+            pass
+
     if args.selftest:
         payload = {
             "ok": True,

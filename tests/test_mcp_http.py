@@ -189,6 +189,38 @@ class McpHttpTransportTests(unittest.TestCase):
         self.assertEqual(self.server.status()["errors"], 1)
 
 
+class McpSelftestEncodingTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def test_selftest_prints_utf8_json(self) -> None:
+        import subprocess
+        import sys
+
+        root = Path(__file__).resolve().parents[1]
+        env = os.environ.copy()
+        env["PYSHELD_LICENSE_HOME"] = str(Path(self.temp.name) / "license")
+        for key in ("PYSHELD_TOOL_LICENSE", "PYSHELD_TOOL_PUBLIC_KEY", "PYSHELD_DEV"):
+            env.pop(key, None)
+        projects = Path(self.temp.name) / "projects"
+        projects.mkdir(parents=True, exist_ok=True)
+        (projects / "demo").mkdir(exist_ok=True)
+        (projects / "demo" / "manage.py").write_text("print('ok')\n", encoding="utf-8")
+        proc = subprocess.run(
+            [sys.executable, "-m", "pyshield.mcp_server",
+             "--project-root", str(projects), "--selftest"],
+            capture_output=True, env=env, timeout=60,
+        )
+        self.assertEqual(proc.returncode, 0)
+        payload = json.loads(proc.stdout.decode("utf-8"))
+        self.assertTrue(payload["ok"])
+        # The Chinese "not activated" reason must survive as UTF-8, not GBK.
+        self.assertNotIn(b"\xc9\xd0", proc.stdout)
+
+
 class McpHostTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
