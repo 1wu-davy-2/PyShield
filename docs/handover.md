@@ -87,7 +87,7 @@ python -m http.server 8130 --directory gui/web
 
 ## 6. 发布清单
 
-1. 版本号：**保持 0.6.0，等 owner 明确说升再升**（`pyshield/__init__.py`、`gui/web` 关于页、spec）。
+1. 版本号：**0.6.5**（`pyshield/__init__.py`、`gui/assets/version_info.txt`、`tools/build_commercial.py` 的 `VERSION` 一起改）。
 2. 打正式包：`python tools/build_commercial.py build --public-key root-keys/root.pub --site https://license.你的域名`，只有一个 `PyShieldBuilder.exe`；发布前运行 `python tools/mcp_smoke.py --server dist/PyShieldBuilder.exe --arg=--mcp`；
 3. 私有根密钥离线保管，绝不提交；
 4. 官网部署：`python -m pyshield.trial_server --root-key ... --data-dir ...`，Nginx + HTTPS 样例在 `docs/trial.md` 第 7 节；
