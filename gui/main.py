@@ -45,12 +45,13 @@ def _handle_link(api: Api, window, link: str) -> None:
         except Exception:  # noqa: BLE001 - window backends differ
             pass
     try:
+        raw = result if isinstance(result, dict) else {}
         payload = json.dumps(
             {
-                "ok": bool(result.get("ok")),
-                "error": str(result.get("error") or ""),
-                "license": result.get("license") or {},
-                "trial": result.get("trial") or {},
+                "ok": bool(raw.get("ok")),
+                "error": str(raw.get("error") or ""),
+                "license": raw.get("license") if isinstance(raw.get("license"), dict) else {},
+                "trial": raw.get("trial") if isinstance(raw.get("trial"), dict) else {},
             },
             ensure_ascii=False,
         )
