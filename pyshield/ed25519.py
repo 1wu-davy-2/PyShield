@@ -140,7 +140,13 @@ def _native_classes():
             Ed25519PrivateKey,
             Ed25519PublicKey,
         )
-    except ImportError:
+        # A frozen build can ship the package without its serialization
+        # submodule; validate the whole fast path before trusting it.
+        from cryptography.hazmat.primitives.serialization import (  # noqa: F401
+            Encoding,
+            PublicFormat,
+        )
+    except (ImportError, AttributeError):
         return None
     return Ed25519PrivateKey, Ed25519PublicKey
 

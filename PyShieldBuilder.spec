@@ -72,6 +72,11 @@ datas += collect_data_files("Cython", excludes=["**/Tests/**", "**/Debugger/**"]
 datas += collect_data_files("setuptools")
 
 hiddenimports += [
+    # Imported lazily, so PyInstaller cannot see them from the module graph.
+    "cryptography",
+    "cryptography.hazmat.primitives.serialization",
+    "cryptography.hazmat.primitives.asymmetric.ed25519",
+    "cryptography.hazmat.primitives.ciphers.aead",
     "pyshield.mcp_server",
     "pyshield.mcp_server.protocol",
     "pyshield.mcp_server.http_transport",

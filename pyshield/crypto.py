@@ -165,9 +165,12 @@ def chacha20_xor(key: bytes, nonce: bytes, data: bytes, counter: int = 1) -> byt
 
 def _has_cryptography() -> bool:
     try:
-        import cryptography  # noqa: F401
+        from cryptography.hazmat.primitives.ciphers.aead import (  # noqa: F401
+            AESGCM,
+            ChaCha20Poly1305,
+        )
         return True
-    except ImportError:
+    except (ImportError, AttributeError):
         return False
 
 

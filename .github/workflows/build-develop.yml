@@ -113,6 +113,9 @@ jobs:
           if ('${{ matrix.arch }}' -eq 'x86') {
             python -m pip install cryptography==44.0.3
           } elseif ('${{ matrix.arch }}' -eq 'arm64') {
+            # No win_arm64 wheel upstream: compile against vcpkg's OpenSSL.
+            vcpkg install openssl:arm64-windows
+            $env:OPENSSL_DIR = "$env:VCPKG_INSTALLATION_ROOT\installed\arm64-windows"
             python -m pip install cryptography==44.0.3 --no-binary cryptography
           } else {
             python -m pip install cryptography
