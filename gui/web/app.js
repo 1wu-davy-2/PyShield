@@ -1636,7 +1636,7 @@
     $("#trialPollHint").hidden = false;
     const tick = async () => {
       state.trialTries += 1;
-      if (state.trialTries > 48) {
+      if (state.trialTries > 240) {
         stopTrialPoll("等待授权超时，可稍后点「刷新授权状态」");
         return;
       }
@@ -1647,6 +1647,10 @@
         renderTrial(response);
         if (response.license) renderLicense(response.license);
         else await refreshLicense();
+        return;
+      }
+      if (response && response.ok === false && response.error) {
+        stopTrialPoll(`领取授权失败：${response.error}`);
         return;
       }
       if (response && response.trial) renderTrial(response);
@@ -1756,6 +1760,21 @@
 
   window.pyshieldTrialRefresh = () => {
     refreshAll();
+  };
+
+  // Deep links (pyshield://activate?...) call back here with the claim result.
+  window.pyshieldOnLicense = (result) => {
+    const data = result || {};
+    switchView("trial");
+    if (data.license && data.license.mode) renderLicense(data.license);
+    if (data.trial && data.trial.serial) renderTrial({ trial: data.trial });
+    refreshTrial({ silent: true }).catch(() => {});
+    refreshLicense().catch(() => {});
+    if (data.ok) {
+      toast("授权已生效，版本与到期日已更新", "success");
+    } else {
+      toast(data.error || "已调起客户端，但领取授权失败", "error");
+    }
   };
 
   // ---------------------------------------------------------------- navigation
@@ -3144,6 +3163,18 @@
       else if (event.key === "ArrowLeft") onboardingPrev();
     });
     $("#mcpQuickStart").addEventListener("click", startMcp);
+    $$("[data-mcp-panel]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const panel = button.dataset.mcpPanel;
+        $$("[data-mcp-panel]").forEach((item) => {
+          item.classList.toggle("is-active", item === button);
+        });
+        const copy = $("#mcpPanelCopy");
+        const tools = $("#mcpPanelTools");
+        if (copy) copy.hidden = panel !== "copy";
+        if (tools) tools.hidden = panel !== "tools";
+      });
+    });
     $("#mcpRequestCard").addEventListener("click", openMcpLog);
     $("#mcpLogClose").addEventListener("click", closeMcpLog);
     $("#mcpLogDone").addEventListener("click", closeMcpLog);

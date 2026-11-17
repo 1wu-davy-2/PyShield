@@ -117,9 +117,10 @@ export default function Success() {
                 >
                   在客户端中打开授权
                 </Button>
+                <CopyButton value={deepLink} label="复制调起链接" />
                 <span className="deep-link-note">
                   {autoOpened
-                    ? '已尝试自动跳转。如果没有反应，请点击上面的按钮，或手动复制链接。'
+                    ? '已尝试自动跳转。没反应就点上面的按钮；仍不行时复制链接在地址栏打开，或回到客户端点「刷新授权状态」。'
                     : '浏览器可能拦截了自动跳转，点击按钮即可调起客户端。'}
                 </span>
               </>

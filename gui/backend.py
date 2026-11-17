@@ -808,7 +808,7 @@ class Api:
         window = self._window
         if window is None:
             return
-        for action in ("show", "restore"):
+        for action in ("restore", "show"):
             try:
                 getattr(window, action)()
             except Exception:  # noqa: BLE001 - window backends differ

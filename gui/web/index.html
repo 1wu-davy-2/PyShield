@@ -632,7 +632,7 @@
           </section>
 
           <div class="mcp-grid">
-            <section class="card">
+<section class="card">
               <header class="card-head">
                 <div>
                   <h2>服务控制</h2>
@@ -677,24 +677,16 @@
             <section class="card">
               <header class="card-head">
                 <div>
-                  <h2>可用工具</h2>
-                  <p>令牌与授权一起决定 agent 能做什么</p>
+                  <h2>接入 Agent</h2>
+                  <p>复制配置或查看工具权限，两者共用同一个令牌</p>
                 </div>
-                <span class="nav-count" id="mcpToolCount">0</span>
+                <div class="seg" role="tablist" aria-label="接入方式">
+                  <button class="seg-btn is-active" type="button" role="tab" data-mcp-panel="copy">复制配置</button>
+                  <button class="seg-btn" type="button" role="tab" data-mcp-panel="tools">工具 <span class="nav-count" id="mcpToolCount">0</span></button>
+                </div>
               </header>
-              <p class="mcp-tools-hint" id="mcpToolsHint" hidden>服务已停止：下列工具在启动后可用，当前无法调用。</p>
-              <ul class="mcp-tool-list" id="mcpToolList"></ul>
-            </section>
-          </div>
-
-          <section class="card">
-            <header class="card-head">
-              <div>
-                <h2>复制给 AI Agent</h2>
-                <p>按客户端任选一种，粘贴后重启对应客户端即可生效</p>
-              </div>
-            </header>
-            <div class="mcp-copy-list">
+              <div id="mcpPanelCopy">
+<div class="mcp-copy-list">
               <details class="mcp-copy-row">
                 <summary class="mcp-copy-head">
                   <span class="mcp-copy-title"><strong>Claude Code · HTTP</strong><small>一条命令注册，适合已安装 Claude Code CLI</small></span>
@@ -736,11 +728,17 @@
                 <pre class="mcp-code" id="mcpCodeStdio">—</pre>
               </details>
             </div>
-            <p class="security-note">
+<p class="security-note">
               <svg class="icon"><use href="#i-info"/></svg>
               <span>HTTP 方式需要构建器保持运行；stdio 方式由客户端自行拉起 <code>--mcp</code> 子进程，不依赖端口。</span>
             </p>
-          </section>
+              </div>
+              <div id="mcpPanelTools" hidden>
+                <p class="mcp-tools-hint" id="mcpToolsHint" hidden>服务已停止：下列工具在启动后可用，当前无法调用。</p>
+                <ul class="mcp-tool-list" id="mcpToolList"></ul>
+              </div>
+            </section>
+          </div>
         </section>
 
         <section class="view" id="view-trial" hidden>

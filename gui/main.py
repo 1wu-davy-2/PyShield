@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import threading
@@ -32,12 +33,30 @@ def resource_root() -> Path:
 
 
 def _handle_link(api: Api, window, link: str) -> None:
+    """Claim the entitlement and report the outcome inside the window."""
+    result: dict = {}
     try:
-        api.trial_handle_link(link)
-    except Exception:  # noqa: BLE001 - a broken link must not close the app
-        pass
+        result = api.trial_handle_link(link) or {}
+    except Exception as exc:  # noqa: BLE001 - a broken link must not close the app
+        result = {"ok": False, "error": str(exc)}
+    for action in ("restore", "show"):
+        try:
+            getattr(window, action)()
+        except Exception:  # noqa: BLE001 - window backends differ
+            pass
     try:
-        window.evaluate_js("window.pyshieldTrialRefresh && window.pyshieldTrialRefresh()")
+        payload = json.dumps(
+            {
+                "ok": bool(result.get("ok")),
+                "error": str(result.get("error") or ""),
+                "license": result.get("license") or {},
+                "trial": result.get("trial") or {},
+            },
+            ensure_ascii=False,
+        )
+        window.evaluate_js(
+            f"window.pyshieldOnLicense && window.pyshieldOnLicense({payload})"
+        )
     except Exception:  # noqa: BLE001
         pass
 
