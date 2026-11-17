@@ -838,6 +838,17 @@ class Api:
         except Exception:  # noqa: BLE001
             pass
 
+    @staticmethod
+    def _claim_error(exc: Exception) -> str:
+        text = str(exc)
+        lowered = text.lower()
+        if "signature" in lowered:
+            return (
+                "授权签名校验失败：本机客户端内置的公钥与授权服务的签发密钥不一致。"
+                "请让供应商用服务端的 root.pub 重新构建客户端，或先在客户端「刷新授权状态」重试。"
+            )
+        return text or exc.__class__.__name__
+
     def _claim_trial(self, server: str):
         """Verify claims from the local dev site with its own key."""
         public_key = None
@@ -859,7 +870,7 @@ class Api:
         try:
             entitlement = self._claim_trial(server)
         except (trial_license.TrialError, tool_license.ToolLicenseError, OSError) as exc:
-            return {"ok": False, "error": str(exc), "trial": self._trial_state()}
+            return {"ok": False, "error": self._claim_error(exc), "trial": self._trial_state()}
         self._raise_window()
         return {
             "ok": True,
