@@ -30,6 +30,7 @@ from . import __version__, fingerprint, secure_store, tool_license
 INSTALL_FORMAT = "pyshield-install/1"
 INSTALL_FILE = "install.json"
 ENV_TRIAL_SERVER = "PYSHELD_TRIAL_SERVER"
+HTTP_SITE_HOSTS = {"localhost", "127.0.0.1", "::1", "124.223.78.111"}
 MAX_RESPONSE_BYTES = 1024 * 1024
 SERIAL_PREFIX = "PS"
 SERIAL_GROUPS = 3
@@ -137,8 +138,11 @@ def _validate_server(server: str) -> str:
     parsed = urllib.parse.urlparse(value)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise TrialError(f"试用服务地址无效：{value}")
-    local = parsed.hostname in {"localhost", "127.0.0.1", "::1"}
-    if parsed.scheme != "https" and not local:
+    host = parsed.hostname or ""
+    # Plain HTTP is allowed only for loopback and the release endpoint; any
+    # other host must use TLS. Entitlements are signed, but transport data
+    # (serial/machine/e-mail) would otherwise be readable on the wire.
+    if parsed.scheme != "https" and host not in HTTP_SITE_HOSTS:
         raise TrialError("试用服务必须使用 HTTPS")
     return value
 
