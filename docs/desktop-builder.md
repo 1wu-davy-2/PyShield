@@ -52,6 +52,14 @@ $env:PYSHELD_GUI_CONFIG_DIR = "D:\pyshield-config"
 
 配置目录覆盖不会解除单实例限制：同一用户会话内再次启动只会唤醒已运行窗口并转发深链。并行 UI 测试需要显式设置 `PYSHELD_ALLOW_MULTI_INSTANCE=1`。
 
+### 分发格式
+
+CI 在每个平台产出可直接分发的包，具体清单见 README 的「发布矩阵」。要点：
+
+- Windows：单文件 exe，x64 / x86 / ARM64 三架构；ARM64 版需要 Windows 11 ARM + WebView2，构建链依赖 vcpkg OpenSSL 编译的 `cryptography`。
+- Linux：tar.gz（含二进制、desktop 文件、图标、README）、deb（`/opt/pyshield` + `/usr/bin/pyshield` 软链）、rpm（spec 同布局）、AppImage（AppDir + AppRun，`--appimage-extract-and-run` 可直接运行）。
+- macOS：`.app` 包（Info.plist、icns、ad-hoc 签名）再打 dmg 与 zip；首次打开需在「隐私与安全性」里允许。
+
 ### 启动与首次引导
 
 双击 exe 后先显示全屏启动层（品牌标识 + 进度条），本地引擎就绪后淡出；首次启动会自动弹出 4 步引导：选项目、保护参数、AI 接入、授权与记录。跳过或走完会写入 `onboarding_seen=true`，之后不再自动弹出；设置页提供「重新查看新手引导」。

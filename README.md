@@ -84,9 +84,21 @@ python manage.py runserver 0.0.0.0:8000
 
 ### 桌面构建器
 
-Windows 用户可以直接运行 `PyShieldBuilder.exe`：选择 Django 项目目录，确认输出位置和参数，点击“开始加密”。默认输出到与项目同级的 `<项目名>-shielded`，构建密钥写到 `<输出目录>.shield-secret.json`。
+选择 Django 项目目录，确认输出位置和参数，点击“开始加密”。默认输出到与项目同级的 `<项目名>-shielded`，构建密钥写到 `<输出目录>.shield-secret.json`。
 
-从源码打包 exe：
+### 发布矩阵
+
+每次推送到 `develop` 由 GitHub Actions 构建以下产物，全部挂到 release `ci-develop-latest`：
+
+| 平台 | 架构 | 产物 |
+| --- | --- | --- |
+| Windows | x64 / x86 / ARM64 | `PyShieldBuilder-windows-<arch>.exe`（单文件，免安装） |
+| Linux | x86_64 | `PyShieldBuilder-<版本>-linux-x64.tar.gz`、`PyShieldBuilder_<版本>_amd64.deb`、`PyShieldBuilder-<版本>-x86_64.rpm`、`PyShieldBuilder-<版本>-x86_64.AppImage` |
+| macOS | arm64 / x64 | `PyShieldBuilder-<版本>-macos-<arch>.dmg` 与 `.zip`（内含 `PyShield.app`） |
+
+Windows x86 受限于 `cryptography` 上游轮子，固定使用 44.0.3；Windows ARM64 在 CI 中用 vcpkg 的 OpenSSL 源码编译 `cryptography`，属实验性构建。Linux 包依赖系统 GTK3 与 WebKit2GTK 4.1；deb 已声明依赖，rpm 需 `gtk3` 与 `webkit2gtk4.1`。
+
+从源码打包：
 
 ```bash
 python -m venv .venv

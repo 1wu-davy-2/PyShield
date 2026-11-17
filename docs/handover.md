@@ -81,8 +81,8 @@ python -m http.server 8130 --directory gui/web
 ## 5. 测试与 CI
 
 - 本地：`python -m unittest discover -s tests`（数量以实际输出为准，部分原生/符号链接用例按环境跳过）；
-- CI job：Unit ×2（ubuntu/windows）、Trial registration flow（真起进程）、Windows/Linux builder（含单 exe 的 `--mcp` 自检 + stdio 冒烟）、Protected Django demo（`PYSHELD_DEV=1`，新门禁会拦自检构建，别删这个 env）、Publish CI snapshot；
-- 产物：release tag `ci-develop-latest`，只有 `PyShieldBuilder.exe` 与 Linux 对应 binary；MCP 已内置，不再产出第二个 exe。
+- CI job：Unit ×2（ubuntu/windows）、Trial registration flow（真起进程）、Windows builder ×3（x64/x86/arm64，PE 架构断言 + `--mcp` 冒烟）、Linux builder（单文件 + tar.gz/deb/rpm/AppImage）、macOS package ×2（arm64/x64，.app/dmg/zip）、Protected Django demo（`PYSHELD_DEV=1`）、Publish CI snapshot；
+- 产物：release tag `ci-develop-latest`，Windows x64/x86/arm64 单文件、Linux tar.gz/deb/rpm/AppImage、macOS dmg/zip，以及 `protected-demo.zip` 与各平台 `SHA256SUMS-*`；MCP 已内置，不产出第二个 exe。
 - MCP 冒烟：`python tools/mcp_smoke.py --server module`，或 `--server dist/PyShieldBuilder.exe --arg=--mcp`。
 
 ## 6. 发布清单
