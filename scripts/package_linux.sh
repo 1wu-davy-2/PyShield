@@ -56,7 +56,7 @@ dpkg-deb --root-owner-group --build "$ROOT" "dist/PyShieldBuilder_${VERSION}_amd
 echo "== rpm =="
 TOPDIR="$PWD/build/rpm"
 mkdir -p "$TOPDIR/BUILD" "$TOPDIR/RPMS" "$TOPDIR/SOURCES" "$TOPDIR/SPECS" "$TOPDIR/SRPMS"
-tar -C "$ROOT" -czf "$TOPDIR/SOURCES/pyshield-${VERSION}.tar.gz" .
+tar -C "$ROOT" --exclude=./DEBIAN -czf "$TOPDIR/SOURCES/pyshield-${VERSION}.tar.gz" .
 cat > "$TOPDIR/SPECS/pyshield.spec" <<SPEC
 Name: pyshield-builder
 Version: ${VERSION}

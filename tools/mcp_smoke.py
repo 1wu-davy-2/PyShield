@@ -132,6 +132,16 @@ def main(argv: list[str] | None = None) -> int:
         })["result"]["structuredContent"]
         job_id = started["job_id"]
 
+        def debug_logs(job: str) -> str:
+            try:
+                data = request("tools/call", {
+                    "name": "pyshield_build_logs",
+                    "arguments": {"job_id": job, "tail_lines": 40},
+                })["result"]["structuredContent"]
+                return "\n".join(data.get("lines") or [])
+            except Exception:
+                return "<no logs>"
+
         deadline = time.monotonic() + args.timeout
         final = None
         while time.monotonic() < deadline:
@@ -142,7 +152,9 @@ def main(argv: list[str] | None = None) -> int:
             if final.get("state") in ("success", "failed", "cancelled"):
                 break
             time.sleep(0.05)
-        assert final and final["state"] == "success", final
+        assert final and final["state"] == "success", (
+            f"{final}\n--- build log ---\n{debug_logs(job_id)}"
+        )
 
         logs = request("tools/call", {
             "name": "pyshield_build_logs",
