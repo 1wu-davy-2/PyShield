@@ -31,6 +31,16 @@ if IS_WINDOWS:
         "webview.platforms.edgechromium",
         "webview.platforms.winforms",
     ]
+elif sys.platform == "darwin":
+    # pywebview on macOS talks to Cocoa/WebKit through pyobjc.
+    hiddenimports = [
+        "webview.platforms.cocoa",
+    ]
+    for module in ("objc", "AppKit", "Foundation", "WebKit", "Quartz", "CoreFoundation"):
+        try:
+            hiddenimports += collect_submodules(module)
+        except Exception:  # pragma: no cover - pyobjc not installed
+            pass
 else:
     hiddenimports = [
         "webview.platforms.gtk",
