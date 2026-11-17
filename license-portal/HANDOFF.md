@@ -175,19 +175,24 @@ PowerShell 对应写法与完整环境变量见 `README.md` 第 3 节。
 
 - `npm run build` 产物 `web/dist` 交给 Nginx（`deploy/nginx/pyshield-license-portal.conf` 已改成「静态 root + `/api/` 反代」）。
 - 单进程演示可以让 Python 自己托管：`PYSHELD_PORTAL_WEB_DIR=/path/to/web/dist`。
+- 无 Git 的 Linux 服务器可用 `docker/` 多阶段镜像：本地 `package-source.ps1` 打包源码，服务器 `docker compose build && up`；SQLite、`portal.secret` 和签发密钥持久化在 `/etc/pyshield-portal`，重建镜像不会覆盖。步骤见 `docker/README.md`。
 - CSP 同时写在 `license_portal/security.py`（API 响应）和 Nginx（HTML 响应）：`script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com`，`frame-src` 同理。Vite 产物不需要额外域名；如果以后把字体/图片放到 CDN，要同步改 CSP。
 
 ## 7. 已验证 / 未验证
 
 已验证：
 
-- 后端 107 项 unittest；桌面端授权客户端 65 项。
+- 后端 108 项 unittest；桌面端授权客户端 65 项。
 - 邮件模板与 SMTP 报文构造：品牌 HTML、纯文本正文、From 显示名/Reply-To、HTML 转义、非法 URL 过滤（`tests/test_mailer.py`）。
 - 浏览器端到端（真实页面操作）：首页 → 试用表单 → 邮箱验证码重发（旧码失效）→ 验证签发 → 成功页深链；管理端登录 → 概览 → 客户列表/详情 → 订单标记已收款 → 审计 CSV 导出（核对表头与 CRLF）→ 授权/激活码列表。
 - 桌面端 API 冒烟：`/api/trial/status`、`/api/trial/claim`、`/api/license/activate`、`/api/license/status`、`/api/license/revocations`。
 - 移动端 390px：首页、试用表单不横向溢出。
+- Docker 源码上下文冒烟：按镜像排除规则打包后，`init` 可用 `admin / admin123@` 初始化，`/health`、管理端登录和 SPA 路由正常；替换源码目录并复用数据目录后，SQLite、`portal.secret` 与 `signing.key` 保持不变。
+- Docker 镜像实测（Docker Desktop Linux engine / linux-amd64）：`docker compose build --pull` 成功（约 129MB），Compose 首启自动建库并创建 `admin / admin123@`；容器内主进程以 UID 10001 运行、根文件系统只读，`/health`、SPA、`/api/public/config`、管理员登录、概览和 CSRF 拒绝均通过。删除并重建容器后复用 bind mount，管理员、已建激活码、`portal.secret` 与 `signing.key` 全部保留，日志未再次执行首次初始化。
 
 未验证 / 需要注意：
+
+- 本机验证使用 Windows Docker Desktop 的 bind mount；目标 Linux 服务器仍需按 `docker/README.md` 完成一次实际构建与重建，重点确认 `/etc/pyshield-portal` 的属主、SELinux 标签和备份路径。
 
 - 没有接入真实 Cloudflare Turnstile（本地 site key 为空）。上线前用测试密钥走一遍，重点看 CSP 是否拦截 `challenges.cloudflare.com` 的 iframe。
 - 没有用真实服务商凭据跑通 SMTP 投递（测试覆盖到邮件报文与模板；上线前用 `mail test` 对 QQ/163/企业邮实际发一封）。

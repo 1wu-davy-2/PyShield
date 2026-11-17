@@ -15,7 +15,16 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+# Columns added after schema v1; applied idempotently to existing databases.
+_LICENSE_EXTRA_COLUMNS = (
+    ("builds_used", "INTEGER NOT NULL DEFAULT 0"),
+    ("builds_period", "TEXT NOT NULL DEFAULT ''"),
+    ("builds_limit", "INTEGER"),
+    ("last_seen_at", "TEXT"),
+    ("last_seen_ip", "TEXT NOT NULL DEFAULT ''"),
+)
 
 
 class DatabaseError(Exception):
@@ -127,7 +136,12 @@ CREATE TABLE IF NOT EXISTS licenses (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     revoked_at TEXT,
-    revoked_reason TEXT NOT NULL DEFAULT ''
+    revoked_reason TEXT NOT NULL DEFAULT '',
+    builds_used INTEGER NOT NULL DEFAULT 0,
+    builds_period TEXT NOT NULL DEFAULT '',
+    builds_limit INTEGER,
+    last_seen_at TEXT,
+    last_seen_ip TEXT NOT NULL DEFAULT ''
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_serial ON licenses(serial);
 CREATE INDEX IF NOT EXISTS idx_licenses_machine ON licenses(machine);
@@ -219,6 +233,40 @@ CREATE TABLE IF NOT EXISTS rate_limits (
     window_start INTEGER NOT NULL,
     count INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS guard_nonces (
+    nonce TEXT PRIMARY KEY,
+    serial TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_guard_nonces_expires ON guard_nonces(expires_at);
+
+CREATE TABLE IF NOT EXISTS build_charges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    serial TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    license_id TEXT NOT NULL,
+    used_after INTEGER NOT NULL,
+    quota_limit INTEGER NOT NULL,
+    quota_period TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(serial, idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS idx_build_charges_serial ON build_charges(serial);
+
+CREATE TABLE IF NOT EXISTS client_checks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at TEXT NOT NULL,
+    serial TEXT NOT NULL DEFAULT '',
+    license_id TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL,
+    ok INTEGER NOT NULL,
+    code TEXT NOT NULL DEFAULT '',
+    ip_hash TEXT NOT NULL DEFAULT '',
+    detail TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_client_checks_serial ON client_checks(serial);
+CREATE INDEX IF NOT EXISTS idx_client_checks_at ON client_checks(at);
 """
 
 
@@ -257,6 +305,13 @@ class Database:
                 )
             if version < SCHEMA_VERSION:
                 self._connection.executescript(SCHEMA)
+            existing = {
+                str(row[1]) for row in self._connection.execute("PRAGMA table_info(licenses)")
+            }
+            for name, definition in _LICENSE_EXTRA_COLUMNS:
+                if name not in existing:
+                    self._connection.execute(f"ALTER TABLE licenses ADD COLUMN {name} {definition}")
+            if version < SCHEMA_VERSION:
                 self._connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
                 self._connection.commit()
 

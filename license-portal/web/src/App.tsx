@@ -22,6 +22,7 @@ const Customers = lazy(() => import('./pages/admin/Customers'))
 const CustomerDetail = lazy(() => import('./pages/admin/CustomerDetail'))
 const Orders = lazy(() => import('./pages/admin/Orders'))
 const Audit = lazy(() => import('./pages/admin/Audit'))
+const ClientChecks = lazy(() => import('./pages/admin/ClientChecks'))
 const Signing = lazy(() => import('./pages/admin/Signing'))
 
 export default function App() {
@@ -51,6 +52,7 @@ export default function App() {
           <Route path="customers/:id" element={<CustomerDetail />} />
           <Route path="orders" element={<Orders />} />
           <Route path="audit" element={<Audit />} />
+          <Route path="checks" element={<ClientChecks />} />
           <Route path="signing" element={<Signing />} />
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Route>

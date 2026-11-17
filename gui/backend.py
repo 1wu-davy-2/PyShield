@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -126,19 +127,6 @@ class BuildManager:
                 "license": gate.to_dict(),
             }
 
-        # Cloud quota check (inert until PYSHELD_CLOUD_API is enabled).
-        try:
-            preflight = cloud_license.preflight()
-        except cloud_license.CloudError as exc:
-            return None, {"ok": False, "errors": [str(exc)], "needs_activation": True}
-        if not preflight.get("skipped") and not preflight.get("ok", False):
-            return None, {
-                "ok": False,
-                "errors": [str(preflight.get("error") or "云端授权校验未通过")],
-                "needs_activation": True,
-                "cloud": preflight,
-            }
-
         try:
             license_status = tool_license.require(features=[tool_license.FEATURE_GUI])
         except tool_license.ToolLicenseError as exc:
@@ -147,6 +135,38 @@ class BuildManager:
                 "errors": [f"工具授权不可用：{exc}"],
                 "license": tool_license.status_dict(),
             }
+
+        # Cloud guard: a failed heartbeat blocks every build until the next
+        # successful verify; preflight re-checks quota without charging it.
+        try:
+            cloud_license.ensure_allowed()
+            preflight = cloud_license.preflight(license_status.entitlement)
+        except cloud_license.CloudError as exc:
+            cloud_license.mark_blocked(str(exc), exc.code or "preflight_failed")
+            return None, {
+                "ok": False,
+                "errors": [f"云端授权校验未通过：{exc}"],
+                "needs_activation": True,
+                "cloud_guard": cloud_license.guard_state(),
+            }
+        if not preflight.get("skipped") and not preflight.get("allowed", False):
+            reason = str(preflight.get("reason") or preflight.get("error") or "云端授权校验未通过")
+            cloud_license.mark_blocked(reason, "preflight_denied")
+            return None, {
+                "ok": False,
+                "errors": [reason],
+                "needs_activation": True,
+                "cloud_guard": cloud_license.guard_state(),
+            }
+        if not preflight.get("skipped") and cloud_license.apply_update(preflight):
+            try:
+                license_status = tool_license.require(features=[tool_license.FEATURE_GUI])
+            except tool_license.ToolLicenseError as exc:
+                return None, {
+                    "ok": False,
+                    "errors": [f"工具授权不可用：{exc}"],
+                    "license": tool_license.status_dict(),
+                }
 
         entitlement = license_status.entitlement
         if entitlement is not None and entitlement.edition == tool_license.EDITION_TRIAL:
@@ -198,6 +218,19 @@ class BuildManager:
 
         # A build consumes one quota unit as soon as it is confirmed. Failed or
         # cancelled runs do not refund it; the confirmation dialog says so.
+        # The cloud charge happens first and is idempotent per build job.
+        try:
+            cloud_license.consume(
+                license_status.entitlement, idempotency_key=uuid.uuid4().hex,
+            )
+        except cloud_license.CloudError as exc:
+            cloud_license.mark_blocked(str(exc), exc.code or "consume_failed")
+            return {
+                "ok": False,
+                "errors": [f"云端扣减构建次数失败：{exc}"],
+                "license": tool_license.status_dict(),
+                "cloud_guard": cloud_license.guard_state(),
+            }
         try:
             tool_license.record_build(license_status)
         except (tool_license.ToolLicenseError, OSError) as exc:
@@ -417,10 +450,31 @@ class Api:
     def bind(self, window) -> None:
         self._window = window
 
+    @staticmethod
+    def _cloud_entitlement():
+        try:
+            return tool_license.load_entitlement()
+        except tool_license.ToolLicenseError:
+            return None
+
+    def _setup_cloud_guard(self) -> None:
+        server = self._trial_server()
+        entitlement = self._cloud_entitlement()
+        # Only portal-bound licences (serial baked into the signed payload)
+        # participate in the cloud guard; offline imports stay usable.
+        portal_bound = entitlement is not None and bool(
+            (entitlement.raw or {}).get("serial")
+        )
+        cloud_license.configure(server, enable=True if portal_bound else None)
+        cloud_license.start_watchdog(
+            self._cloud_entitlement, lambda state: None,
+        )
+
     def bootstrap(self) -> dict:
         settings = core.load_settings()
         history = core.load_history()
         self._mark_missing(history)
+        self._setup_cloud_guard()
         try:
             machine = fingerprint.machine_fingerprint()
         except Exception:
@@ -454,6 +508,7 @@ class Api:
             "integrity": core.state_status(),
             "native_runtime": self._native_runtime_state(),
             "mcp": self.mcp.status(),
+            "cloud_guard": cloud_license.guard_state(),
         }
 
     def inspect(self, payload: dict | None = None) -> dict:
@@ -819,6 +874,7 @@ class Api:
             core.save_settings(settings)
         except OSError as exc:
             return {"ok": False, "error": f"无法保存试用服务地址：{exc}"}
+        self._setup_cloud_guard()
         return {"ok": True, "server": value, "trial": self._trial_state()}
 
     def trial_open(self, edition: str = "trial") -> dict:
@@ -900,6 +956,7 @@ class Api:
         except (trial_license.TrialError, tool_license.ToolLicenseError, OSError) as exc:
             return {"ok": False, "error": self._claim_error(exc), "trial": self._trial_state()}
         self._raise_window()
+        self._setup_cloud_guard()
         return {
             "ok": True,
             "granted": True,
@@ -937,6 +994,7 @@ class Api:
                 "license": self._license_status(),
                 "trial": self._trial_state(),
             }
+        self._setup_cloud_guard()
         return {
             "ok": True,
             "license": tool_license.check(initialize_trial=False).to_dict(),
@@ -959,6 +1017,7 @@ class Api:
         updated = bool(result.get("updated"))
         if updated:
             self._raise_window()
+        self._setup_cloud_guard()
         response = {
             "ok": True,
             "updated": updated,
@@ -984,7 +1043,11 @@ class Api:
         return self.manager.start(request, settings)
 
     def snapshot(self) -> dict:
-        return {"ok": True, "state": self.manager.snapshot()}
+        return {
+            "ok": True,
+            "state": self.manager.snapshot(),
+            "cloud_guard": cloud_license.guard_state(),
+        }
 
     def get_history(self) -> dict:
         history = core.load_history()

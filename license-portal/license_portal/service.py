@@ -1033,6 +1033,362 @@ class PortalService:
         )
 
     # ------------------------------------------------------------------
+    # cloud guard: encrypted client verify / preflight / consume
+    # ------------------------------------------------------------------
+
+    GUARD_NONCE_TTL_SECONDS = 600
+    GUARD_CHECK_KEEP = 5000
+
+    def guard_key_material(self, serial: str) -> dict | None:
+        """Row fields needed to derive the shared transport key."""
+        serial = validation.normalize_serial(serial)
+        return self.db.query_one(
+            "SELECT serial, machine, display_code FROM licenses WHERE serial = ?",
+            (serial,),
+        )
+
+    def _quota_state(self, row: dict) -> tuple[int, int, str]:
+        """Return ``(limit, used, period)``; limit 0 means unlimited.
+
+        Trial quota is a total allowance; paid editions reset every calendar
+        month. An admin ``builds_limit`` override wins over the edition default.
+        """
+        override = row.get("builds_limit")
+        limit = int(override) if override is not None else int(row.get("max_builds_per_month") or 0)
+        period = "total" if row.get("edition") == tool_license.EDITION_TRIAL else today().strftime("%Y-%m")
+        used = int(row.get("builds_used") or 0)
+        if str(row.get("builds_period") or "") != period:
+            used = 0
+        return limit, used, period
+
+    @staticmethod
+    def _remaining(limit: int, used: int) -> int | None:
+        return None if limit <= 0 else max(0, limit - used)
+
+    def _log_check(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        serial: str,
+        license_id: str,
+        kind: str,
+        ok: bool,
+        code: str = "",
+        ip_hash: str = "",
+        detail: dict | None = None,
+    ) -> None:
+        connection.execute(
+            "INSERT INTO client_checks (at, serial, license_id, kind, ok, code, ip_hash, detail)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                now_iso(), serial, license_id, kind, 1 if ok else 0, code, ip_hash,
+                _json(detail or {}),
+            ),
+        )
+        connection.execute(
+            "DELETE FROM client_checks WHERE id <= (SELECT MAX(id) - ? FROM client_checks)",
+            (self.GUARD_CHECK_KEEP,),
+        )
+
+    def log_guard_failure(
+        self, serial: str, kind: str, code: str, remote_ip: str,
+        license_id: str = "", detail: dict | None = None,
+    ) -> None:
+        with self.db.transaction() as connection:
+            self._log_check(
+                connection, serial=serial, license_id=license_id, kind=kind,
+                ok=False, code=code, ip_hash=self.hash_ip(remote_ip), detail=detail,
+            )
+
+    def _guard_common(
+        self,
+        connection: sqlite3.Connection,
+        row: dict,
+        data: dict,
+        kind: str,
+        ip_hash: str,
+    ) -> dict:
+        """Validate identity, clock and nonce; raise ServiceError on any mismatch."""
+        serial = str(row["serial"])
+        license_id = str(data.get("license_id") or "")
+        machine = validation.normalize_machine(str(data.get("machine") or ""))
+
+        def fail(message: str, status: int, code: str) -> ServiceError:
+            # The caller's transaction rolls back on raise; the failure is
+            # logged afterwards by log_guard_failure so the audit survives.
+            return ServiceError(message, status, code)
+
+        if machine != str(row["machine"]):
+            raise fail("机器码与授权记录不一致", 403, "machine_mismatch")
+        if str(data.get("serial") or "") != serial:
+            raise fail("序列号与请求不一致", 400, "serial_mismatch")
+        edition = str(data.get("edition") or "")
+        if edition and edition != str(row["edition"]):
+            raise fail("版本与授权记录不一致", 409, "edition_mismatch")
+        status = self._license_status(row)
+        if status == "revoked":
+            raise fail(str(row.get("revoked_reason") or "授权已被吊销"), 403, "license_revoked")
+        if status == "expired":
+            raise fail("授权已过期", 403, "license_expired")
+
+        try:
+            client_time = int(data.get("client_time") or 0)
+        except (TypeError, ValueError):
+            client_time = 0
+        if client_time <= 0 or abs(int(time.time()) - client_time) > int(self.config.guard_clock_skew):
+            raise fail("客户端时间与服务器偏差过大", 400, "clock_skew")
+
+        nonce = str(data.get("nonce") or "")
+        if not (8 <= len(nonce) <= 64) or any(ch not in "0123456789abcdefABCDEF" for ch in nonce):
+            raise fail("nonce 无效", 400, "invalid_nonce")
+        connection.execute("DELETE FROM guard_nonces WHERE expires_at < ?", (now_iso(),))
+        try:
+            connection.execute(
+                "INSERT INTO guard_nonces (nonce, serial, expires_at) VALUES (?, ?, ?)",
+                (nonce.lower(), serial, _iso_offset(self.GUARD_NONCE_TTL_SECONDS)),
+            )
+        except sqlite3.IntegrityError:
+            raise fail("请求已被使用（重放）", 409, "replay_detected") from None
+
+        try:
+            revision = int(data.get("revision") or 0)
+        except (TypeError, ValueError):
+            revision = 0
+        return {"license_id": license_id, "revision": revision}
+
+    def _guard_result_base(self, row: dict, nonce: str) -> dict:
+        limit, used, period = self._quota_state(row)
+        return {
+            "ok": True,
+            "serial": str(row["serial"]),
+            "license_id": str(row["license_id"]),
+            "edition": str(row["edition"]),
+            "revision": int(row["revision"]),
+            "expires": row.get("expires"),
+            "quota_limit": limit,
+            "quota_used": used,
+            "quota_period": period,
+            "remaining_builds": self._remaining(limit, used),
+            "server_time": now_iso(),
+            "client_time": int(time.time()),
+            "nonce": nonce,
+        }
+
+    def _stale_document(self, row: dict, identity: dict) -> dict | None:
+        """Offer a fresh entitlement when the client is behind or renamed."""
+        if (
+            identity["license_id"] != str(row["license_id"])
+            or identity["revision"] < int(row["revision"])
+        ):
+            return _json_load(row.get("document"), {})
+        return None
+
+    def client_verify(self, serial: str, data: dict, remote_ip: str) -> dict:
+        serial = validation.normalize_serial(serial)
+        ip_hash = self.hash_ip(remote_ip)
+        try:
+            with self.db.transaction() as connection:
+                row = self._find_license(connection, serial)
+                if row is None:
+                    raise ServiceError("没有找到该序列号的授权记录", 404, "license_not_found")
+                identity = self._guard_common(connection, row, data, "verify", ip_hash)
+                connection.execute(
+                    "UPDATE licenses SET last_seen_at = ?, last_seen_ip = ? WHERE serial = ?",
+                    (now_iso(), ip_hash, serial),
+                )
+                self._log_check(
+                    connection, serial=serial, license_id=str(row["license_id"]),
+                    kind="verify", ok=True, ip_hash=ip_hash,
+                    detail={"revision": identity["revision"]},
+                )
+                result = self._guard_result_base(row, str(data.get("nonce") or ""))
+                result["status"] = "active"
+                result["next_check_after"] = 60 + secrets.randbelow(241)
+                document = self._stale_document(row, identity)
+                if document is not None:
+                    result["status"] = "update_required"
+                    result["document"] = document
+                return result
+        except ServiceError as exc:
+            self.log_guard_failure(
+                serial, "verify", exc.code, remote_ip,
+                license_id=str(data.get("license_id") or ""),
+            )
+            raise
+
+    def client_preflight(self, serial: str, data: dict, remote_ip: str) -> dict:
+        serial = validation.normalize_serial(serial)
+        ip_hash = self.hash_ip(remote_ip)
+        try:
+            with self.db.transaction() as connection:
+                row = self._find_license(connection, serial)
+                if row is None:
+                    raise ServiceError("没有找到该序列号的授权记录", 404, "license_not_found")
+                identity = self._guard_common(connection, row, data, "preflight", ip_hash)
+                self._log_check(
+                    connection, serial=serial, license_id=str(row["license_id"]),
+                    kind="preflight", ok=True, ip_hash=ip_hash,
+                )
+                result = self._guard_result_base(row, str(data.get("nonce") or ""))
+                result["allowed"] = True
+                result["reason"] = ""
+                document = self._stale_document(row, identity)
+                if document is not None:
+                    result["document"] = document
+                return result
+        except ServiceError as exc:
+            self.log_guard_failure(
+                serial, "preflight", exc.code, remote_ip,
+                license_id=str(data.get("license_id") or ""),
+            )
+            raise
+
+    def client_consume(self, serial: str, data: dict, remote_ip: str) -> dict:
+        serial = validation.normalize_serial(serial)
+        ip_hash = self.hash_ip(remote_ip)
+        idempotency_key = str(data.get("idempotency_key") or "").strip()
+        if not idempotency_key or len(idempotency_key) > 128:
+            self.log_guard_failure(serial, "consume", "invalid_idempotency_key", remote_ip)
+            raise ServiceError("idempotency_key 无效", 400, "invalid_idempotency_key")
+        try:
+            with self.db.transaction() as connection:
+                row = self._find_license(connection, serial)
+                if row is None:
+                    raise ServiceError("没有找到该序列号的授权记录", 404, "license_not_found")
+                identity = self._guard_common(connection, row, data, "consume", ip_hash)
+
+                previous = connection.execute(
+                    "SELECT * FROM build_charges WHERE serial = ? AND idempotency_key = ?",
+                    (serial, idempotency_key),
+                ).fetchone()
+                if previous is not None:
+                    result = self._guard_result_base(row, str(data.get("nonce") or ""))
+                    result.update({
+                        "charged": False,
+                        "duplicate": True,
+                        "quota_used": int(previous["used_after"]),
+                        "remaining_builds": self._remaining(
+                            int(previous["quota_limit"]), int(previous["used_after"]),
+                        ),
+                    })
+                    return result
+
+                limit, used, period = self._quota_state(row)
+                if limit > 0 and used >= limit:
+                    raise ServiceError("构建次数已用完，请联系管理员续费或调整配额", 409, "quota_exhausted")
+
+                used += 1
+                connection.execute(
+                    "UPDATE licenses SET builds_used = ?, builds_period = ?, last_seen_at = ?,"
+                    " last_seen_ip = ? WHERE serial = ?",
+                    (used, period, now_iso(), ip_hash, serial),
+                )
+                connection.execute(
+                    "INSERT INTO build_charges (serial, idempotency_key, license_id, used_after,"
+                    " quota_limit, quota_period, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        serial, idempotency_key, str(row["license_id"]), used, limit, period,
+                        now_iso(),
+                    ),
+                )
+                self._log(
+                    connection, "client", "desktop", "build_charge",
+                    serial=serial, license_id=str(row["license_id"]), ip_hash=ip_hash,
+                    detail={
+                        "idempotency_key": idempotency_key, "used": used,
+                        "limit": limit, "period": period,
+                        "project_hash": str(data.get("project_hash") or "")[:64],
+                    },
+                )
+                self._log_check(
+                    connection, serial=serial, license_id=str(row["license_id"]),
+                    kind="consume", ok=True, ip_hash=ip_hash,
+                    detail={"used": used, "limit": limit, "idempotency_key": idempotency_key},
+                )
+                result = self._guard_result_base(row, str(data.get("nonce") or ""))
+                result.update({
+                    "charged": True,
+                    "duplicate": False,
+                    "quota_used": used,
+                    "remaining_builds": self._remaining(limit, used),
+                })
+                document = self._stale_document(row, identity)
+                if document is not None:
+                    result["document"] = document
+                return result
+        except ServiceError as exc:
+            self.log_guard_failure(
+                serial, "consume", exc.code, remote_ip,
+                license_id=str(data.get("license_id") or ""),
+            )
+            raise
+
+    def list_client_checks(
+        self,
+        serial: str = "",
+        kind: str = "",
+        ok: str = "",
+        limit: int = 200,
+    ) -> list[dict]:
+        clauses: list[str] = []
+        params: list = []
+        if serial:
+            clauses.append("serial LIKE ?")
+            params.append(f"%{serial}%")
+        if kind in {"verify", "preflight", "consume"}:
+            clauses.append("kind = ?")
+            params.append(kind)
+        if ok in {"0", "1"}:
+            clauses.append("ok = ?")
+            params.append(int(ok))
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        params.append(min(max(1, int(limit)), 1000))
+        rows = self.db.query_all(
+            f"SELECT * FROM client_checks{where} ORDER BY id DESC LIMIT ?", params,
+        )
+        for row in rows:
+            row["detail"] = _json_load(row.get("detail"), {})
+        return rows
+
+    def set_build_quota(self, actor: str, serial: str, payload: dict) -> dict:
+        serial = validation.normalize_serial(serial)
+        reset = bool(payload.get("reset"))
+        limit_value = payload.get("limit")
+        if limit_value is not None and limit_value != "":
+            try:
+                limit_value = int(limit_value)
+            except (TypeError, ValueError):
+                raise ServiceError("limit 必须是整数或 null", 400, "validation_failed") from None
+            if limit_value < 0 or limit_value > 1000000:
+                raise ServiceError("limit 超出范围", 400, "validation_failed")
+        else:
+            limit_value = None
+        with self.db.transaction() as connection:
+            row = self._find_license(connection, serial)
+            if row is None:
+                raise ServiceError("授权不存在", 404, "license_not_found")
+            if reset:
+                _, _, period = self._quota_state(row)
+                connection.execute(
+                    "UPDATE licenses SET builds_used = 0, builds_period = ?, updated_at = ?"
+                    " WHERE serial = ?",
+                    (period, now_iso(), serial),
+                )
+            if limit_value is not None or "limit" in payload:
+                connection.execute(
+                    "UPDATE licenses SET builds_limit = ?, updated_at = ? WHERE serial = ?",
+                    (limit_value, now_iso(), serial),
+                )
+            self._log(
+                connection, "admin", actor, "build_quota_adjust",
+                serial=serial, license_id=str(row["license_id"]),
+                detail={"limit": limit_value, "reset": reset},
+            )
+            updated = self._find_license(connection, serial)
+            assert updated is not None
+            return self._row_to_license(updated) or {}
+
+    # ------------------------------------------------------------------
     # upgrade / orders
     # ------------------------------------------------------------------
 
@@ -1074,11 +1430,20 @@ class PortalService:
         row = self.db.query_one("SELECT 1 AS present FROM admins LIMIT 1")
         return row is not None
 
-    def create_admin(self, username: str, password: str, role: str = "admin") -> int:
+    def create_admin(
+        self,
+        username: str,
+        password: str,
+        role: str = "admin",
+        *,
+        allow_weak_password: bool = False,
+    ) -> int:
         username = str(username or "").strip()
         if not username or len(username) > 64:
             raise ServiceError("用户名无效", 400)
-        if not password or len(password) < 10:
+        # Only the deploy-time bootstrap may opt into a legacy short password;
+        # admin create/reset keep the normal 10-character policy.
+        if not password or (not allow_weak_password and len(password) < 10):
             raise ServiceError("管理员密码至少需要 10 个字符", 400)
         password_hash = security.hash_password(password)
         try:
@@ -1391,6 +1756,7 @@ class PortalService:
         data["events"] = self.db.query_all(
             "SELECT * FROM events WHERE serial = ? ORDER BY id DESC LIMIT 50", (serial,),
         )
+        data["client_checks"] = self.list_client_checks(serial=serial, limit=20)
         return data
 
     def _renew_row(

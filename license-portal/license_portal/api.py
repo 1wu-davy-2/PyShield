@@ -303,6 +303,16 @@ def _handle_admin(service: PortalService, config: Config, request: ApiRequest) -
     if path.startswith("/orders/"):
         return _admin_order(service, request, path, str(admin["username"]))
 
+    if path == "/client-checks":
+        limit = _positive_int(request.query.get("limit"), 200, maximum=1000)
+        items = service.list_client_checks(
+            serial=str(request.query.get("serial") or ""),
+            kind=str(request.query.get("kind") or ""),
+            ok=str(request.query.get("ok") or ""),
+            limit=limit,
+        )
+        return ApiResponse({"ok": True, "items": items, "total": len(items)})
+
     if path == "/audit":
         limit = _positive_int(request.query.get("limit"), 200, maximum=1000)
         items = service.list_events(
@@ -361,7 +371,7 @@ def _require_csrf(session: dict, header_value: str) -> None:
 def _admin_license(service: PortalService, request: ApiRequest, path: str) -> ApiResponse:
     rest = path[len("/licenses/"):].strip("/")
     action = ""
-    for suffix in ("/renew", "/upgrade", "/revoke"):
+    for suffix in ("/renew", "/upgrade", "/revoke", "/build-quota"):
         if rest.endswith(suffix):
             action = suffix[1:]
             rest = rest[:-len(suffix)]
@@ -378,6 +388,7 @@ def _admin_license(service: PortalService, request: ApiRequest, path: str) -> Ap
         detail = _slim_license(data, detail=True)
         detail["activations"] = data.get("activations") or []
         detail["events"] = [_slim_event(item) for item in data.get("events") or []]
+        detail["client_checks"] = data.get("client_checks") or []
         return ApiResponse({"ok": True, "license": detail})
 
     if request.method != "POST":
@@ -387,6 +398,14 @@ def _admin_license(service: PortalService, request: ApiRequest, path: str) -> Ap
         result = service.renew_license(actor, serial, request.payload)
     elif action == "upgrade":
         result = service.upgrade_license(actor, serial, request.payload)
+    elif action == "build-quota":
+        license_data = service.set_build_quota(actor, serial, request.payload)
+        return ApiResponse({
+            "ok": True,
+            "license": _slim_license(license_data, detail=True),
+            "serial": serial,
+            "action": action,
+        })
     else:
         result = service.revoke_license(
             actor, serial, str(request.payload.get("reason") or ""),
@@ -495,6 +514,7 @@ def _slim_license(data: dict | None, *, detail: bool = False) -> dict:
         "source", "display_code", "created_at", "updated_at", "revoked_at",
         "revoked_reason", "customer_email", "customer_phone", "customer_name",
         "customer_org_type", "customer_company", "key_id",
+        "builds_used", "builds_period", "builds_limit", "last_seen_at",
     )
     payload = {key: data.get(key) for key in keep if key in data}
     payload["features"] = list(data.get("features") or [])

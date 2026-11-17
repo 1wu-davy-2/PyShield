@@ -1,11 +1,17 @@
-import { Alert, App, Button, DatePicker, Form, Input, InputNumber, Modal, Select, Table } from 'antd'
+import { Alert, App, Button, Checkbox, DatePicker, Form, Input, InputNumber, Modal, Select, Table, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { ApiError } from '../../api/client'
-import { useLicense, useRenewLicense, useRevokeLicense, useUpgradeLicense } from '../../api/hooks'
-import type { AuditEvent, KeyActivation } from '../../api/types'
+import {
+  useLicense,
+  useRenewLicense,
+  useRevokeLicense,
+  useSetBuildQuota,
+  useUpgradeLicense,
+} from '../../api/hooks'
+import type { AuditEvent, ClientCheck, KeyActivation } from '../../api/types'
 import { AdminHeader, TABLE_PAGINATION } from '../../components/admin'
 import {
   Callout,
@@ -20,7 +26,7 @@ import {
 import { applyServerErrors } from '../../lib/formErrors'
 import { formatDate, formatDateTime, formatDetail, remainingText } from '../../lib/format'
 
-type ModalKind = 'renew' | 'upgrade' | 'revoke' | null
+type ModalKind = 'renew' | 'upgrade' | 'revoke' | 'quota' | null
 
 export default function LicenseDetail() {
   const { serial = '' } = useParams()
@@ -29,11 +35,13 @@ export default function LicenseDetail() {
   const renew = useRenewLicense()
   const upgrade = useUpgradeLicense()
   const revoke = useRevokeLicense()
+  const quota = useSetBuildQuota()
   const [modal, setModal] = useState<ModalKind>(null)
   const [formError, setFormError] = useState('')
   const [renewForm] = Form.useForm()
   const [upgradeForm] = Form.useForm()
   const [revokeForm] = Form.useForm()
+  const [quotaForm] = Form.useForm()
 
   if (license.isLoading) return <LoadingScreen text="正在读取授权详情…" />
   if (license.isError || !license.data) {
@@ -59,7 +67,14 @@ export default function LicenseDetail() {
 
   const handleError = (error: unknown) => {
     if (error instanceof ApiError) {
-      const form = modal === 'renew' ? renewForm : modal === 'upgrade' ? upgradeForm : revokeForm
+      const form =
+        modal === 'renew'
+          ? renewForm
+          : modal === 'upgrade'
+            ? upgradeForm
+            : modal === 'quota'
+              ? quotaForm
+              : revokeForm
       applyServerErrors(form, error.errors)
       setFormError(error.message)
     } else {
@@ -128,6 +143,24 @@ export default function LicenseDetail() {
     )
   }
 
+  const submitQuota = (values: { limit?: number | null; reset?: boolean }) => {
+    setFormError('')
+    quota.mutate(
+      {
+        serial: data.serial,
+        limit: values.limit ?? null,
+        reset: Boolean(values.reset),
+      },
+      {
+        onSuccess: () => {
+          message.success('构建配额已更新')
+          closeModal()
+        },
+        onError: handleError,
+      },
+    )
+  }
+
   const activationColumns: ColumnsType<KeyActivation> = [
     {
       title: '激活时间',
@@ -155,6 +188,36 @@ export default function LicenseDetail() {
     },
   ]
 
+  const checkColumns: ColumnsType<ClientCheck> = [
+    { title: '时间', dataIndex: 'at', width: 170, render: (value: string) => formatDateTime(value) },
+    {
+      title: '类型',
+      dataIndex: 'kind',
+      width: 110,
+      render: (value: string) =>
+        ({ verify: '心跳校验', preflight: '构建预检', consume: '构建扣次' })[value] ?? value,
+    },
+    {
+      title: '结果',
+      dataIndex: 'ok',
+      width: 170,
+      render: (value: number, row) => (
+        <span>
+          <Tag color={value ? 'green' : 'red'}>{value ? '通过' : '拒绝'}</Tag>
+          {row.code ? <span className="mono hint">{row.code}</span> : null}
+        </span>
+      ),
+    },
+    {
+      title: '详情',
+      dataIndex: 'detail',
+      render: (value: unknown) => <span className="hint">{formatDetail(value) || '—'}</span>,
+    },
+  ]
+
+  const effectiveLimit = data.builds_limit ?? data.max_builds_per_month
+  const quotaPeriodText = data.edition === 'trial' ? '试用总量（不重置）' : '按月重置'
+
   return (
     <>
       <AdminHeader
@@ -177,6 +240,7 @@ export default function LicenseDetail() {
         <Button type="primary" onClick={() => setModal('upgrade')} disabled={locked}>
           升级版本
         </Button>
+        <Button onClick={() => setModal('quota')}>调整构建配额</Button>
         <Button danger onClick={() => setModal('revoke')} disabled={locked}>
           吊销
         </Button>
@@ -250,6 +314,41 @@ export default function LicenseDetail() {
           </p>
           <CopyButton value={data.serial} label="复制序列号" />
         </div>
+      </SectionCard>
+
+      <SectionCard title="云端构建配额">
+        <div className="detail-grid">
+          <DetailItem
+            label="本期已用"
+            value={`${data.builds_used ?? 0} 次`}
+          />
+          <DetailItem
+            label="本期上限"
+            value={effectiveLimit === 0 ? '不限次数' : `${effectiveLimit} 次`}
+          />
+          <DetailItem
+            label="配额来源"
+            value={data.builds_limit === null || data.builds_limit === undefined ? '版本默认' : '管理员单独设置'}
+          />
+          <DetailItem label="计数周期" value={`${quotaPeriodText}${data.builds_period ? ` · ${data.builds_period}` : ''}`} />
+          <DetailItem label="最近心跳" value={data.last_seen_at ? formatDateTime(data.last_seen_at) : '尚未上报'} />
+        </div>
+        <div className="divider" />
+        <p className="hint" style={{ maxWidth: '64ch' }}>
+          客户端每次构建前会向云端同步扣减次数；心跳校验每 1–5 分钟随机上报。0 表示不限次数，留空表示跟随版本默认上限。
+        </p>
+      </SectionCard>
+
+      <SectionCard title="最近云端校验" flush>
+        <Table<ClientCheck>
+          className="ps-table"
+          rowKey="id"
+          size="middle"
+          columns={checkColumns}
+          dataSource={data.client_checks ?? []}
+          pagination={false}
+          locale={{ emptyText: '暂无云端校验记录' }}
+        />
       </SectionCard>
 
       <SectionCard title="激活记录" flush>
@@ -366,6 +465,36 @@ export default function LicenseDetail() {
           </Form.Item>
           <Form.Item label="备注" name="notes">
             <Input.TextArea rows={2} maxLength={500} placeholder="升级说明（可选）" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        open={modal === 'quota'}
+        title="调整构建配额"
+        okText="保存配额"
+        cancelText="取消"
+        onCancel={closeModal}
+        onOk={() => quotaForm.submit()}
+        confirmLoading={quota.isPending}
+        destroyOnClose
+      >
+        <p className="hint" style={{ marginBottom: 16 }}>
+          单独设置会覆盖版本默认的构建上限；0 表示不限次数，留空表示恢复版本默认。
+        </p>
+        {formError ? <Alert type="error" showIcon message={formError} style={{ marginBottom: 14 }} /> : null}
+        <Form
+          form={quotaForm}
+          layout="vertical"
+          requiredMark={false}
+          onFinish={submitQuota}
+          initialValues={{ limit: data.builds_limit ?? null, reset: false }}
+        >
+          <Form.Item label="构建次数上限" name="limit" extra={`当前版本默认：${data.max_builds_per_month} 次`}>
+            <InputNumber min={0} max={1000000} style={{ width: '100%' }} placeholder="留空 = 跟随版本默认" />
+          </Form.Item>
+          <Form.Item name="reset" valuePropName="checked">
+            <Checkbox>同时将本期已用次数清零</Checkbox>
           </Form.Item>
         </Form>
       </Modal>

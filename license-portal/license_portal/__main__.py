@@ -85,8 +85,18 @@ def _cmd_init(args) -> int:
     print("Inject the public key into the desktop build with:")
     print(f"  python tools/build_commercial.py build --public-key <root.pub> --site {config.site_url or 'https://your-domain'}")
     if args.username:
+        if getattr(args, "allow_weak_password", False):
+            print(
+                "[license-portal] WARNING: bootstrap administrator uses a short password; "
+                "change it after the first login.",
+                file=sys.stderr,
+            )
         service = create_service(config, secret=secret, signing_key=key)
-        service.create_admin(args.username, _password(args.password, confirm=True))
+        service.create_admin(
+            args.username,
+            _password(args.password, confirm=True),
+            allow_weak_password=bool(getattr(args, "allow_weak_password", False)),
+        )
         print(f"administrator created: {args.username}")
     return 0
 
@@ -242,6 +252,11 @@ def _build_parser() -> argparse.ArgumentParser:
     add_config(init)
     init.add_argument("--username", help="optionally create an administrator")
     init.add_argument("--password", help="administrator password (or PYSHELD_PORTAL_ADMIN_PASSWORD)")
+    init.add_argument(
+        "--allow-weak-password",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
     init.set_defaults(func=_cmd_init)
 
     run = subparsers.add_parser("run", help="run the HTTP service")

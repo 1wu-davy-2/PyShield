@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, queryString, setCsrfToken } from './client'
 import type {
   AuditEvent,
+  ClientCheck,
   CreateKeysResult,
   CreatedKey,
   Customer,
@@ -41,6 +42,7 @@ export const queryKeys = {
   customer: (id: number) => ['admin', 'customer', id] as const,
   orders: (status: string) => ['admin', 'orders', status] as const,
   audit: (params: Record<string, string>) => ['admin', 'audit', params] as const,
+  checks: (params: Record<string, string>) => ['admin', 'checks', params] as const,
   signing: ['admin', 'signing'] as const,
   filters: ['admin', 'filters'] as const,
 }
@@ -370,6 +372,51 @@ export function useAudit(params: { action?: string; q?: string; limit?: number }
     queryKey: queryKeys.audit(normalised),
     queryFn: () => api.get<ListResult<AuditEvent>>(`/api/admin/audit${queryString(normalised)}`),
     placeholderData: (previous) => previous,
+  })
+}
+
+export function useClientChecks(params: {
+  serial?: string
+  kind?: string
+  ok?: string
+  limit?: number
+}) {
+  const normalised = {
+    serial: params.serial ?? '',
+    kind: params.kind ?? '',
+    ok: params.ok ?? '',
+    limit: String(params.limit ?? 300),
+  }
+  return useQuery({
+    queryKey: queryKeys.checks(normalised),
+    queryFn: () =>
+      api.get<ListResult<ClientCheck>>(`/api/admin/client-checks${queryString(normalised)}`),
+    placeholderData: (previous) => previous,
+  })
+}
+
+export function useSetBuildQuota() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      serial,
+      limit,
+      reset,
+    }: {
+      serial: string
+      limit?: number | null
+      reset?: boolean
+    }) =>
+      api.post<{ ok: true; license: LicenseDetail | null; serial: string; action: string }>(
+        `/api/admin/licenses/${encodeURIComponent(serial)}/build-quota`,
+        { limit, reset },
+      ),
+    onSuccess: (_result, variables) => {
+      client.invalidateQueries({ queryKey: queryKeys.license(variables.serial) })
+      client.invalidateQueries({ queryKey: ['admin', 'licenses'] })
+      client.invalidateQueries({ queryKey: ['admin', 'checks'] })
+      client.invalidateQueries({ queryKey: queryKeys.dashboard })
+    },
   })
 }
 

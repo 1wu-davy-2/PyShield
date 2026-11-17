@@ -141,6 +141,10 @@ export interface LicenseSummary {
   customer_org_type?: OrgType | null
   customer_company?: string | null
   key_id?: number | null
+  builds_used?: number
+  builds_period?: string
+  builds_limit?: number | null
+  last_seen_at?: string | null
 }
 
 export interface LicenseDetail extends LicenseSummary {
@@ -149,6 +153,21 @@ export interface LicenseDetail extends LicenseSummary {
   has_document: boolean
   activations: KeyActivation[]
   events: AuditEvent[]
+  client_checks?: ClientCheck[]
+}
+
+export type ClientCheckKind = 'verify' | 'preflight' | 'consume'
+
+export interface ClientCheck {
+  id: number
+  at: string
+  serial: string
+  license_id: string
+  kind: ClientCheckKind
+  ok: 0 | 1
+  code: string
+  ip_hash: string
+  detail: Record<string, unknown> | null
 }
 
 export interface KeyActivation {

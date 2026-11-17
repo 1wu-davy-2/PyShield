@@ -67,6 +67,7 @@ const ADMIN_NAV = [
   { to: '/admin/customers', label: '客户' },
   { to: '/admin/orders', label: '订单' },
   { to: '/admin/audit', label: '审计日志' },
+  { to: '/admin/checks', label: '云端校验' },
   { to: '/admin/signing', label: '签发密钥' },
 ]
 

@@ -76,7 +76,7 @@ export default function Login() {
               <Input.Password
                 size="large"
                 prefix={<LockOutlined style={{ color: 'var(--muted-2)' }} />}
-                placeholder="至少 10 位"
+                placeholder="管理员密码"
                 autoComplete="current-password"
                 maxLength={256}
               />

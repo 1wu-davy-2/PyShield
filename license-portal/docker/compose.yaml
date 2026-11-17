@@ -1,0 +1,79 @@
+name: pyshield-license-portal
+
+services:
+  portal:
+    build:
+      context: ../..
+      dockerfile: license-portal/docker/Dockerfile
+      args:
+        NPM_REGISTRY: ${PYSHELD_PORTAL_NPM_REGISTRY:-}
+    image: ${PYSHELD_PORTAL_IMAGE:-pyshield-license-portal:latest}
+    container_name: ${PYSHELD_PORTAL_CONTAINER_NAME:-pyshield-license-portal}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+
+    # Host-side publish only. The service inside the container always listens
+    # on 0.0.0.0:8091; keep the host side on 127.0.0.1 when Nginx is in front,
+    # or use 0.0.0.0 only for direct access (and set TRUST_PROXY=false).
+    ports:
+      - "${PYSHELD_PORTAL_BIND_ADDR:-127.0.0.1}:${PYSHELD_PORTAL_HTTP_PORT:-8091}:8091"
+
+    environment:
+      PYSHELD_PORTAL_DATA_DIR: /etc/pyshield-portal
+      PYSHELD_PORTAL_HOST: 0.0.0.0
+      PYSHELD_PORTAL_PORT: "8091"
+      PYSHELD_PORTAL_WEB_DIR: /app/license-portal/web/dist
+      PYSHELD_PORTAL_SITE_URL: ${PYSHELD_PORTAL_SITE_URL:-http://127.0.0.1:8091}
+      PYSHELD_PORTAL_SITE_NAME: ${PYSHELD_PORTAL_SITE_NAME:-PyShield 授权中心}
+      PYSHELD_PORTAL_CONTACT_WECHAT: ${PYSHELD_PORTAL_CONTACT_WECHAT:-}
+      PYSHELD_PORTAL_SUPPORT_EMAIL: ${PYSHELD_PORTAL_SUPPORT_EMAIL:-}
+      PYSHELD_PORTAL_TRIAL_DAYS: ${PYSHELD_PORTAL_TRIAL_DAYS:-14}
+      PYSHELD_PORTAL_TRIAL_BUILDS: ${PYSHELD_PORTAL_TRIAL_BUILDS:-3}
+      PYSHELD_PORTAL_TRIAL_GRACE_DAYS: ${PYSHELD_PORTAL_TRIAL_GRACE_DAYS:-0}
+      PYSHELD_PORTAL_EMAIL_VERIFICATION: ${PYSHELD_PORTAL_EMAIL_VERIFICATION:-true}
+      PYSHELD_PORTAL_RATE_LIMIT_PER_HOUR: ${PYSHELD_PORTAL_RATE_LIMIT_PER_HOUR:-12}
+      PYSHELD_PORTAL_SMTP_HOST: ${PYSHELD_PORTAL_SMTP_HOST:-}
+      PYSHELD_PORTAL_SMTP_PORT: ${PYSHELD_PORTAL_SMTP_PORT:-587}
+      PYSHELD_PORTAL_SMTP_USER: ${PYSHELD_PORTAL_SMTP_USER:-}
+      PYSHELD_PORTAL_SMTP_PASSWORD: ${PYSHELD_PORTAL_SMTP_PASSWORD:-}
+      PYSHELD_PORTAL_SMTP_FROM: ${PYSHELD_PORTAL_SMTP_FROM:-}
+      PYSHELD_PORTAL_SMTP_FROM_NAME: ${PYSHELD_PORTAL_SMTP_FROM_NAME:-}
+      PYSHELD_PORTAL_SMTP_REPLY_TO: ${PYSHELD_PORTAL_SMTP_REPLY_TO:-}
+      PYSHELD_PORTAL_SMTP_TLS: ${PYSHELD_PORTAL_SMTP_TLS:-starttls}
+      PYSHELD_PORTAL_TURNSTILE_SITE_KEY: ${PYSHELD_PORTAL_TURNSTILE_SITE_KEY:-}
+      PYSHELD_PORTAL_TURNSTILE_SECRET: ${PYSHELD_PORTAL_TURNSTILE_SECRET:-}
+      PYSHELD_PORTAL_TRUST_PROXY: ${PYSHELD_PORTAL_TRUST_PROXY:-true}
+      PYSHELD_PORTAL_SECURE_COOKIES: ${PYSHELD_PORTAL_SECURE_COOKIES:-}
+      PYSHELD_PORTAL_SESSION_HOURS: ${PYSHELD_PORTAL_SESSION_HOURS:-12}
+      PYSHELD_PORTAL_ADMIN_ALLOW_IPS: ${PYSHELD_PORTAL_ADMIN_ALLOW_IPS:-}
+      PYSHELD_PORTAL_SIGNING_PASSPHRASE: ${PYSHELD_PORTAL_SIGNING_PASSPHRASE:-}
+      PYSHELD_PORTAL_KEY_REDEMPTION_DAYS: ${PYSHELD_PORTAL_KEY_REDEMPTION_DAYS:-30}
+      PYSHELD_PORTAL_MAX_BODY: ${PYSHELD_PORTAL_MAX_BODY:-65536}
+      PYSHELD_PORTAL_ADMIN_USER: ${PYSHELD_PORTAL_ADMIN_USER:-admin}
+      PYSHELD_PORTAL_ADMIN_PASSWORD: ${PYSHELD_PORTAL_ADMIN_PASSWORD:-}
+
+    volumes:
+      - "${PYSHELD_PORTAL_HOST_DATA_DIR:-/etc/pyshield-portal}:/etc/pyshield-portal"
+
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8091/health', timeout=3); sys.exit(0 if r.status == 200 else 1)"
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

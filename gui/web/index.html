@@ -148,6 +148,13 @@
             <button class="btn ghost small" id="integrityUseInstall">使用安装目录副本修复</button>
           </div>
         </div>
+        <div class="integrity-banner" id="cloudGuardBanner" hidden>
+          <svg class="icon integrity-icon"><use href="#i-alert"/></svg>
+          <div class="integrity-copy">
+            <strong>云端授权校验未通过，已暂停构建</strong>
+            <p id="cloudGuardText">正在等待下一次云端校验…</p>
+          </div>
+        </div>
         <section class="view" id="view-workspace">
           <div class="trial-banner" id="trialBanner" hidden>
             <div class="trial-banner-copy">

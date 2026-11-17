@@ -452,6 +452,18 @@ class RevocationTests(PortalServiceTestCase):
 
 
 class AdminAuthenticationTests(PortalServiceTestCase):
+    def test_bootstrap_admin_can_use_short_password(self) -> None:
+        assert_service_error(
+            self, 400, "error",
+            self.service.create_admin, "bootstrap", "admin123@",
+        )
+        admin_id = self.service.create_admin(
+            "bootstrap", "admin123@", allow_weak_password=True,
+        )
+        self.assertGreater(admin_id, 0)
+        session = self.service.authenticate("bootstrap", "admin123@", TEST_IP)
+        self.assertEqual(session["admin"]["username"], "bootstrap")
+
     def test_admin_login_session_and_logout(self) -> None:
         admin_id = self.service.create_admin("admin", "correct-horse-battery")
         self.assertGreater(admin_id, 0)

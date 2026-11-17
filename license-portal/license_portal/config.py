@@ -89,6 +89,7 @@ class Config:
     signing_passphrase: str = ""
     key_redemption_days: int = 30
     max_body: int = DEFAULT_MAX_BODY
+    guard_clock_skew: int = 300
     # Directory with the built React console (index.html + assets).
     # Empty means "license-portal/web/dist next to the package".
     web_dir: str = ""
@@ -211,6 +212,7 @@ class Config:
             "signing_passphrase": "SIGNING_PASSPHRASE",
             "key_redemption_days": "KEY_REDEMPTION_DAYS",
             "max_body": "MAX_BODY",
+            "guard_clock_skew": "GUARD_CLOCK_SKEW",
             "web_dir": "WEB_DIR",
         }
         for field_name, env_name in env_map.items():
@@ -240,6 +242,7 @@ class Config:
             ("session_hours", DEFAULT_SESSION_HOURS, 1, 24 * 30),
             ("key_redemption_days", 30, 1, 3650),
             ("max_body", DEFAULT_MAX_BODY, 1024, 16 * 1024 * 1024),
+            ("guard_clock_skew", 300, 30, 3600),
         ):
             if name in values:
                 values[name] = _as_int(values[name], default, name, minimum, maximum)

@@ -27,7 +27,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import __version__, api, security, validation
+from . import __version__, api, client_api, security, validation
 from .config import Config
 from .db import now_iso
 from .service import PortalService, ServiceError, create_service
@@ -375,6 +375,9 @@ class PortalHandler(BaseHTTPRequestHandler):
     # ---- desktop client contract (do not change) ------------------------
 
     def _client_api(self, method: str, path: str) -> None:
+        if path in client_api.ENDPOINTS:
+            self._client_guard_api(method, path)
+            return
         if path == "/api/version" and method in {"GET", "HEAD"}:
             self._json({"ok": True, "version": __version__})
             return
@@ -451,6 +454,23 @@ class PortalHandler(BaseHTTPRequestHandler):
             self._json(result)
             return
         self._api_error(404, "unknown endpoint", "not_found")
+
+    def _client_guard_api(self, method: str, path: str) -> None:
+        if method != "POST":
+            self._api_error(405, "请使用 POST 提交", "method_not_allowed")
+            return
+        payload = self._read_json_optional()
+        try:
+            status, body = client_api.handle(
+                self.server.service, self.server.config, path, payload, self._client_ip(),
+            )
+        except validation.ValidationError as exc:
+            self._api_error(400, exc.message, "validation_failed", exc.errors)
+            return
+        except ServiceError as exc:
+            self._api_error(exc.status, exc.message, exc.code)
+            return
+        self._json(body, status=status)
 
     # ---- browser console ------------------------------------------------
 

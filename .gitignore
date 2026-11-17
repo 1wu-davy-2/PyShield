@@ -18,10 +18,18 @@ pyshield/_site.py
 root.key
 root.pub
 license-data/
+portal.sqlite3*
+portal.secret
+signing.key
+signing.pass
 .pyshield-native/
 
 # local trial playground (tools/trial_demo.py)
 .pyshield-demo/
+
+# Docker deployment secrets and generated source archives
+license-portal/docker/.env
+pyshield-portal-src*.tar.gz
 
 # Grok UI prototype workspace (reference only, not part of the build)
 HA7HqyYHFsn4CepB-grok-workspace/.vercel/output/
@@ -33,3 +41,6 @@ review/round3/flag-value.txt
 # extracted review trees are local-only
 review/round3/extracted/
 review/round3/round3-django-shielded/
+
+# Local portal playground (contains signing.key)
+.tmp-portal-demo/

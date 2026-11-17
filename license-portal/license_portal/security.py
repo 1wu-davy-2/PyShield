@@ -118,6 +118,21 @@ def derive_scoped_key(secret: bytes, purpose: str) -> bytes:
     )
 
 
+GUARD_KEY_SALT = b"pyshield-cloud-guard-v1"
+
+
+def derive_guard_key(serial: str, machine: str, display_code: str) -> bytes:
+    """Per-license transport key shared by the portal and the desktop client.
+
+    Both sides already know the serial, the bound machine fingerprint and the
+    display code (trial code or activation-key prefix), so no extra secret has
+    to travel over the wire. The key only protects the guard endpoints; the
+    authoritative checks remain machine binding and the signed entitlement.
+    """
+    ikm = f"{serial}|{machine}|{display_code}".encode("utf-8")
+    return crypto.hkdf_sha256(ikm, salt=GUARD_KEY_SALT, info=b"client-api", length=32)
+
+
 @dataclass(frozen=True)
 class SignedCookie:
     value: str

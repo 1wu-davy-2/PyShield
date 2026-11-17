@@ -899,6 +899,7 @@
     const snapshot = response.state || {};
     renderProgress(snapshot);
     renderLogs(snapshot.logs);
+    renderCloudGuard(response.cloud_guard);
     if (snapshot.status === "running") {
       state.pollTimer = setTimeout(pollBuild, 350);
     } else {
@@ -1154,6 +1155,19 @@
     const sources = Array.isArray(info.repair_sources) ? info.repair_sources : [];
     $("#integrityUseUser").hidden = !sources.includes("user");
     $("#integrityUseInstall").hidden = !sources.includes("install") || !info.install_path;
+  }
+
+  function renderCloudGuard(data) {
+    const banner = $("#cloudGuardBanner");
+    if (!banner) return;
+    const info = data || {};
+    const blocked = Boolean(info.enabled && info.blocked);
+    banner.hidden = !blocked;
+    if (blocked) {
+      $("#cloudGuardText").textContent =
+        `${info.reason || "云端授权校验未通过"}（${info.code || "cloud_error"}）。` +
+        "软件将每 1–5 分钟自动重试，校验恢复前无法开始构建。";
+    }
   }
 
   async function repairIntegrity(source) {
@@ -2214,6 +2228,7 @@
     state.machine = response.machine || "";
     $("#machineFingerprint").value = state.machine;
     renderIntegrity(response.integrity);
+    renderCloudGuard(response.cloud_guard);
     renderLicense(response.license || null);
     renderTrial({ trial: response.trial });
     renderMcp(response.mcp || null);
@@ -2268,6 +2283,12 @@
     if (state.preview && panel === "confirm") await startBuild();
 
     hideBootWhenReady();
+    clearInterval(state.cloudGuardTimer);
+    state.cloudGuardTimer = setInterval(async () => {
+      if (state.busy) return;
+      const guard = await call("snapshot");
+      if (guard.ok) renderCloudGuard(guard.cloud_guard);
+    }, 30000);
     const forceGuide = new URLSearchParams(location.search).get("onboarding") === "1";
     if (forceGuide || !(response.settings && response.settings.onboarding_seen)) {
       setTimeout(() => openOnboarding(0), BOOT_MIN_MS + 260);

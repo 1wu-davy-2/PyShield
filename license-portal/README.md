@@ -50,7 +50,15 @@ license-portal/
 ├── deploy/
 │   ├── systemd/pyshield-license-portal.service
 │   ├── nginx/pyshield-license-portal.conf
+│   ├── nginx/pyshield-license-portal-docker.conf
 │   └── backup.md                   # 备份、恢复与演练手册
+├── docker/
+│   ├── Dockerfile                  # Node 构建前端 + Python runtime 多阶段镜像
+│   ├── compose.yaml                # 端口、环境变量、/etc 数据卷、健康检查
+│   ├── entrypoint.sh               # 首次初始化、降权运行
+│   ├── .env.example                # Docker 部署配置样例
+│   ├── package-source.ps1/.sh      # 无 Git 服务器的本地源码打包
+│   └── README.md                   # Linux Docker 部署、更新、备份手册
 └── tests/                          # unittest 用例（含 API 与 SPA 托管）
 ```
 
@@ -564,6 +572,26 @@ python tools/build_commercial.py build --backend nuitka --no-clean
 - [ ] 管理端吊销后，桌面端刷新状态被拒绝。
 - [ ] `/api/license/revocations` 返回签名文档。
 - [ ] 备份任务已运行，且做过一次恢复演练。
+
+### 4.12 Docker 部署（前端 + 后端单镜像）
+
+如果服务器没有 Git/Node/Python，用 Docker 多阶段镜像部署：
+
+```bash
+# 本地仓库根目录：打包源码（排除 .git、node_modules、密钥和本地数据）
+powershell -ExecutionPolicy Bypass -File .\license-portal\docker\package-source.ps1
+
+# 上传后，在服务器的源码目录执行
+cd /opt/pyshield-portal/license-portal/docker
+sudo cp .env.example .env && sudo chmod 0600 .env
+sudo editor .env                 # 至少改 SITE_URL、SMTP、管理员初始密码
+sudo docker compose build --pull
+sudo docker compose up -d
+```
+
+数据目录固定为容器内 `/etc/pyshield-portal`，通过 bind mount 映射到宿主机同名目录；重建镜像不会覆盖 SQLite、`portal.secret`、`signing.key` 和 `signing.pass`。默认初始管理员为 `admin / admin123@`，只用于首次无数据库初始化；登录后应立即重置为至少 10 位强密码。
+
+完整的无 Git 打包、Nginx TLS、更新/回滚、备份恢复和排错步骤见 [docker/README.md](docker/README.md)。
 
 ## 5. 业务流程
 

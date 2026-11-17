@@ -114,6 +114,24 @@ def local_serial() -> str:
     return install_state()["serial"]
 
 
+def remember_code(serial: str, code: str) -> None:
+    """Persist the portal display code used to derive the cloud-guard key."""
+    code = str(code or "").strip()
+    if not code:
+        return
+    serial = normalize_serial(serial)
+    state = install_state()
+    codes = state.get("codes") or {}
+    if codes.get(serial) == code:
+        return
+    codes[serial] = code
+    state["codes"] = codes
+    secure_store.write_private(
+        install_path(),
+        json.dumps(state, indent=2, sort_keys=True, ensure_ascii=False).encode("utf-8") + b"\n",
+    )
+
+
 # ---------------------------------------------------------------------------
 # trial site
 # ---------------------------------------------------------------------------
@@ -225,6 +243,7 @@ def claim(server: str, machine: str | None = None, timeout: float = 15.0) -> dic
     document = response.get("document")
     if not isinstance(document, dict):
         raise TrialError(str(response.get("error") or "试用服务没有返回授权文件"))
+    remember_code(state["serial"], response.get("trial_code"))
     return document
 
 
@@ -276,6 +295,7 @@ def activate_key(
     document = response.get("document")
     if not isinstance(document, dict):
         raise TrialError(str(response.get("error") or "授权服务没有返回授权文件"))
+    remember_code(state["serial"], response.get("trial_code"))
     return apply_document(document)
 
 
@@ -312,6 +332,7 @@ def refresh_license(
         "revision": revision,
     }
     response = _request("POST", server, "/api/license/status", request, timeout)
+    remember_code(state["serial"], response.get("trial_code"))
     result = {
         "ok": True,
         "status": str(response.get("status") or ""),
