@@ -55,6 +55,18 @@ class ToolLicenseTestCase(unittest.TestCase):
         activation.install_license(path, machine="machine-a")
         return path
 
+    def test_read_only_check_does_not_create_trial_state(self) -> None:
+        trial_file = tool_license.trial_path()
+        status = tool_license.check(machine="machine-a", initialize_trial=False)
+        self.assertEqual(status.mode, "trial")
+        self.assertTrue(status.trial.get("not_started"))
+        self.assertFalse(trial_file.exists())
+
+        started = tool_license.check(machine="machine-a")
+        self.assertEqual(started.mode, "trial")
+        self.assertFalse(started.trial.get("not_started"))
+        self.assertTrue(trial_file.exists())
+
     def test_unlicensed_without_public_key_or_license(self) -> None:
         with mock.patch.dict(os.environ, {tool_license.ENV_PUBLIC_KEY: "dev"}):
             status = tool_license.check()

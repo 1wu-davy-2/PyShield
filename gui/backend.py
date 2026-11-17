@@ -667,7 +667,7 @@ class Api:
             return {"ok": False, "error": str(exc), "license": self._license_status()}
         return {
             "ok": True,
-            "license": tool_license.check().to_dict(),
+            "license": tool_license.check(initialize_trial=False).to_dict(),
             "license_id": entitlement.license_id,
         }
 
@@ -683,7 +683,7 @@ class Api:
             return {"ok": False, "error": str(exc), "license": self._license_status()}
         return {
             "ok": True,
-            "license": tool_license.check().to_dict(),
+            "license": tool_license.check(initialize_trial=False).to_dict(),
             "license_id": entitlement.license_id,
             "server": target,
         }
@@ -709,7 +709,7 @@ class Api:
             return {"ok": False, "error": str(exc), "license": self._license_status()}
         return {
             "ok": True,
-            "license": tool_license.check().to_dict(),
+            "license": tool_license.check(initialize_trial=False).to_dict(),
             "license_id": entitlement.license_id,
         }
 
@@ -721,7 +721,7 @@ class Api:
         return {"ok": True, "removed": removed, "license": self._license_status()}
 
     def license_heartbeat(self) -> dict:
-        status = tool_license.check()
+        status = tool_license.check(initialize_trial=False)
         if not status.valid or status.entitlement is None:
             return {"ok": False, "error": "当前授权不支持心跳（开发模式、试用或无效授权）。"}
         used = int((status.quota or {}).get("used", 0))
@@ -865,7 +865,7 @@ class Api:
             "ok": True,
             "granted": True,
             "license_id": entitlement.license_id,
-            "license": tool_license.check().to_dict(),
+            "license": tool_license.check(initialize_trial=False).to_dict(),
             "trial": self._trial_state(),
         }
 
@@ -900,7 +900,7 @@ class Api:
             }
         return {
             "ok": True,
-            "license": tool_license.check().to_dict(),
+            "license": tool_license.check(initialize_trial=False).to_dict(),
             "trial": self._trial_state(),
             "license_id": entitlement.license_id,
             "edition": entitlement.edition,
@@ -1147,7 +1147,8 @@ class Api:
     @staticmethod
     def _license_status() -> dict:
         try:
-            return tool_license.status_dict()
+            # Status reads are read-only: never create local trial state.
+            return tool_license.status_dict(initialize_trial=False)
         except Exception as exc:  # pragma: no cover - defensive for GUI bootstrap
             return {
                 "mode": "invalid",

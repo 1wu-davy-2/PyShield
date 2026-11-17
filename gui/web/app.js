@@ -1255,8 +1255,11 @@
     } else if (mode === "licensed") {
       pillText.textContent = editionLabel;
     } else if (mode === "trial") {
+      const notStarted = Boolean((data.trial || {}).not_started);
       const days = (data.trial || {}).days_left;
-      pillText.textContent = days == null ? "试用版" : `试用 · ${days} 天`;
+      pillText.textContent = notStarted
+        ? "试用 · 未开始"
+        : days == null ? "试用版" : `试用 · ${days} 天`;
     } else {
       pillText.textContent = LICENSE_MODE_LABELS[mode] || "授权异常";
     }
@@ -1266,7 +1269,9 @@
     badge.className = `status-badge ${data.valid ? (mode === "licensed" ? (data.edition === "trial" ? "warning" : "success") : "warning") : "danger"}`;
     badge.textContent = mode === "licensed"
       ? EDITION_LABELS[data.edition] || "正式授权"
-      : LICENSE_MODE_LABELS[mode] || "未知状态";
+      : mode === "trial" && (data.trial || {}).not_started
+        ? "未激活"
+        : LICENSE_MODE_LABELS[mode] || "未知状态";
 
     $("#licenseReason").textContent = data.reason || "—";
     $("#licenseEdition").textContent = editionLabel;
@@ -1520,8 +1525,9 @@
       if (devMode && server && input && !input.value.trim()) input.value = server;
     }
 
-    const active = Boolean(data.active && data.trial);
-    const ended = Boolean(data.trial && !data.active);
+    const notStarted = Boolean(data.not_started);
+    const active = Boolean(data.active && data.trial) && !notStarted;
+    const ended = Boolean(data.trial && !data.active) && !notStarted;
     const licensed = data.mode === "licensed" && !data.trial;
     const invalid = data.mode === "invalid";
     badge.className = `status-badge ${active ? "warning" : licensed ? "success" : invalid || ended ? "danger" : ""}`;
@@ -1546,7 +1552,9 @@
         ? "14 天试用期或 3 次构建额度已用完，购买专业版后可以继续构建。"
         : licensed
           ? "已安装正式授权，可以继续使用全部已购买功能。"
-          : "免费版可自助开通：14 天、3 次加密构建，无需付款。";
+          : notStarted
+            ? "免费版开箱即用：14 天、10 次加密构建。点下方「申请 14 天试用」可在授权门户登记，获取可续期的正式试用授权。"
+            : "免费版可自助开通：14 天、10 次加密构建，无需付款。";
 
     $("#trialSerial").textContent = data.serial || "—";
     $("#trialMachine").textContent = shortMachine(data.machine);
@@ -1585,7 +1593,7 @@
       else button.title = "试用已结束，请升级专业版";
     });
 
-    const needsActivation = data.mode === "unlicensed";
+    const needsActivation = data.mode === "unlicensed" || notStarted;
     const banner = $("#trialBanner");
     banner.hidden = !(active || ended || needsActivation);
     if (!banner.hidden) {
@@ -1596,7 +1604,9 @@
         ? `试用版 · 剩余 ${data.days_left == null ? "—" : data.days_left} 天 · 剩余 ${data.builds_left == null ? "—" : data.builds_left} 次构建`
         : ended
           ? "试用额度已用完，购买专业版后可继续构建"
-          : "尚未激活，先申请 14 天免费试用再开始构建";
+          : notStarted
+            ? "试用尚未开始：点「去申请」在授权门户登记，或直接开始构建（首次构建即开始计费试用期）"
+            : "尚未激活，先申请 14 天免费试用再开始构建";
       $("#trialBannerAction").textContent = active ? "升级版本" : "去申请";
     }
   }

@@ -390,7 +390,9 @@ def status(server: str | None = None) -> dict:
         "license_id": None,
     }
     try:
-        license_status = tool_license.check()
+        # Status reads must not create local trial state: a fresh install is
+        # "trial not started" until the user builds or claims a portal grant.
+        license_status = tool_license.check(initialize_trial=False)
     except tool_license.ToolLicenseError:
         return result
     result["mode"] = license_status.mode
@@ -413,10 +415,12 @@ def status(server: str | None = None) -> dict:
             result["builds_left"] = max(0, entitlement.max_builds_per_month - used)
     elif license_status.mode == "trial":
         trial = license_status.trial or {}
+        not_started = bool(trial.get("not_started"))
         result.update({
             "edition": tool_license.EDITION_TRIAL,
             "trial": True,
-            "active": True,
+            "active": not not_started,
+            "not_started": not_started,
             "days_left": int(trial.get("days_left") or 0),
             "builds_left": int(trial.get("builds_left") or 0),
         })
