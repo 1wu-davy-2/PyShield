@@ -109,6 +109,13 @@ def inject_site(value: str, module: Path = SITE_PATH, force: bool = False) -> Pa
     return module
 
 
+def _reset_local_license() -> None:
+    script = ROOT / "tools" / "reset_local_license.py"
+    result = subprocess.run([sys.executable, str(script)], check=False)
+    if result.returncode != 0:
+        raise BuildError("failed to clear the local license state")
+
+
 def find_output(candidates: list[Path]) -> Path | None:
     for path in candidates:
         if path.is_file():
@@ -205,6 +212,8 @@ def main(argv: list[str] | None = None) -> int:
     prepare = subparsers.add_parser("prepare", help="write pyshield/_tool_key.py")
     prepare.add_argument("--public-key", required=True, help="root.pub path or Base85 public key")
     prepare.add_argument("--site", default=DEFAULT_SITE, help="public trial site (default: %(default)s)")
+    prepare.add_argument("--reset-local-license", action="store_true",
+                         help="clear this machine's trial/license files before packaging")
     prepare.add_argument("--module", default=str(MODULE_PATH))
     prepare.add_argument("--force", action="store_true")
 
@@ -212,6 +221,8 @@ def main(argv: list[str] | None = None) -> int:
     build.add_argument("--backend", choices=("pyinstaller", "nuitka"), default="pyinstaller")
     build.add_argument("--public-key", default="", help="inject this key before packaging")
     build.add_argument("--site", default=DEFAULT_SITE, help="inject the trial site URL before packaging (default: %(default)s)")
+    build.add_argument("--reset-local-license", action="store_true",
+                       help="clear this machine's trial/license files before packaging")
     build.add_argument("--force-key", action="store_true", help="replace an existing _tool_key.py")
     build.add_argument("--no-clean", action="store_true", help="reuse previous build caches")
     build.add_argument("--signtool", default="", help="path to Windows signtool.exe")
@@ -226,6 +237,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.public_key:
             inject_public_key(args.public_key, MODULE_PATH, args.force_key)
+        if args.reset_local_license:
+            _reset_local_license()
         if args.site:
             inject_site(args.site, force=args.force_key)
         if not MODULE_PATH.is_file():

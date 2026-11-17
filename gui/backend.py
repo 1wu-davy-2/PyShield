@@ -19,6 +19,7 @@ from pyshield import (
     __version__,
     activation,
     builder,
+    cloud_license,
     devsite,
     fingerprint,
     python_runtime,
@@ -110,6 +111,33 @@ class BuildManager:
             )
         if errors:
             return None, {"ok": False, "errors": errors}
+
+        # A local, never-started trial must not silently become a build: the
+        # product now expects an entitlement issued by the cloud portal.
+        gate = tool_license.check(
+            features=[tool_license.FEATURE_GUI], initialize_trial=False,
+        )
+        not_started = gate.mode == "trial" and (gate.trial or {}).get("not_started")
+        if gate.mode == "unlicensed" or not_started:
+            return None, {
+                "ok": False,
+                "errors": ["尚未激活：请先在「版本与试用」申请试用，或导入授权文件。"],
+                "needs_activation": True,
+                "license": gate.to_dict(),
+            }
+
+        # Cloud quota check (inert until PYSHELD_CLOUD_API is enabled).
+        try:
+            preflight = cloud_license.preflight()
+        except cloud_license.CloudError as exc:
+            return None, {"ok": False, "errors": [str(exc)], "needs_activation": True}
+        if not preflight.get("skipped") and not preflight.get("ok", False):
+            return None, {
+                "ok": False,
+                "errors": [str(preflight.get("error") or "云端授权校验未通过")],
+                "needs_activation": True,
+                "cloud": preflight,
+            }
 
         try:
             license_status = tool_license.require(features=[tool_license.FEATURE_GUI])

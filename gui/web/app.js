@@ -753,6 +753,7 @@
   function buildQuotaNote(license, trial) {
     if (!license) return "确认后立即消耗 1 次构建额度。";
     if (license.mode === "development") return "开发模式 · 不消耗构建额度。";
+    if ((license.trial || {}).not_started) return "尚未激活：请先在「版本与试用」申请试用。";
     const trialData = trial || license.trial || {};
     const isTrial = license.edition === "trial" || license.mode === "trial" || trialData.trial;
     if (isTrial) {
@@ -827,7 +828,7 @@
     if (!response.ok) {
       showErrors(response.errors || (response.error ? [response.error] : ["构建无法开始。"]));
       if (!maybeShowTrialEnded(response.license)) {
-        if (response.license && response.license.code === "not_activated") {
+        if (response.needs_activation || (response.license && response.license.code === "not_activated")) {
           switchView("trial");
           toast("请先申请试用或导入授权", "error");
         } else {
@@ -1558,8 +1559,8 @@
 
     $("#trialSerial").textContent = data.serial || "—";
     $("#trialMachine").textContent = shortMachine(data.machine);
-    $("#trialDays").textContent = data.days_left == null ? "—" : `${data.days_left} 天`;
-    $("#trialBuilds").textContent = data.builds_left == null
+    $("#trialDays").textContent = notStarted || data.days_left == null ? "—" : `${data.days_left} 天`;
+    $("#trialBuilds").textContent = notStarted || data.builds_left == null
       ? "—"
       : `${data.builds_left}${data.build_limit ? ` / ${data.build_limit}` : ""} 次`;
     $("#trialExpires").textContent = data.expires || "—";
