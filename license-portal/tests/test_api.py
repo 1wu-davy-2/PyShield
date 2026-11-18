@@ -467,5 +467,172 @@ class AdminApiTests(ApiBase, unittest.TestCase):
         self.assertEqual(payload["code"], "license_not_found")
 
 
+class LicenseDeleteTests(ApiBase, unittest.TestCase):
+    def grant_trial(self, **overrides) -> dict:
+        status, payload = self.post("/api/public/trial/apply", self.trial_payload(**overrides))
+        self.assertEqual(status, 200, payload)
+        self.assertEqual(payload["status"], "granted")
+        return payload
+
+    def seed_guard_rows(self, serial: str) -> None:
+        row = self.service.db.query_one("SELECT * FROM licenses WHERE serial = ?", (serial,))
+        assert row is not None
+        license_id = row["license_id"]
+        application = self.service.db.query_one(
+            "SELECT id FROM applications WHERE serial = ?", (serial,),
+        )
+        assert application is not None
+        now = "2026-11-18T00:00:00+00:00"
+        self.service.db.execute(
+            "INSERT INTO email_codes (application_id, email, code_hash, purpose,"
+            " expires_at, attempts, consumed_at, created_at)"
+            " VALUES (?, 'x@example.com', 'h', 'trial', ?, 0, NULL, ?)",
+            (application["id"], now, now),
+        )
+        self.service.db.execute(
+            "INSERT INTO client_checks (at, serial, license_id, kind, ok, code, ip_hash, detail)"
+            " VALUES (?, ?, ?, 'verify', 0, 'machine_mismatch', '', '')",
+            (now, serial, license_id),
+        )
+        self.service.db.execute(
+            "INSERT INTO build_charges (serial, idempotency_key, license_id, used_after,"
+            " quota_limit, quota_period, created_at) VALUES (?, 'job-1', ?, 1, 3, 'total', ?)",
+            (serial, license_id, now),
+        )
+        self.service.db.execute(
+            "INSERT INTO guard_nonces (nonce, serial, expires_at) VALUES ('ab12', ?, ?)",
+            (serial, now),
+        )
+        self.service.db.execute(
+            "INSERT INTO orders (customer_id, serial, kind, edition, status, contact,"
+            " notes, amount, created_at, updated_at, handled_by)"
+            " VALUES (?, ?, 'upgrade', 'pro', 'pending', '', '', '', ?, ?, '')",
+            (row["customer_id"], serial, now, now),
+        )
+
+    def counts(self, serial: str) -> dict:
+        tables = (
+            "licenses", "applications", "key_activations", "build_charges",
+            "client_checks", "guard_nonces", "orders", "events",
+        )
+        result = {
+            table: self.service.db.query_one(
+                f"SELECT COUNT(*) AS n FROM {table} WHERE serial = ?", (serial,),
+            )["n"]
+            for table in tables
+        }
+        result["email_codes"] = self.service.db.query_one(
+            "SELECT COUNT(*) AS n FROM email_codes WHERE application_id IN"
+            " (SELECT id FROM applications WHERE serial = ?)", (serial,),
+        )["n"]
+        return result
+
+    def test_delete_purges_serial_and_orphan_customer(self) -> None:
+        self.grant_trial()
+        self.seed_guard_rows(self.serial)
+        customer = self.service.db.query_one(
+            "SELECT customer_id FROM licenses WHERE serial = ?", (self.serial,),
+        )["customer_id"]
+        self.login()
+
+        status, payload = self.post(
+            f"/api/admin/licenses/{self.serial}/delete", {"confirm": "PS-XXXX-XXXX-XXXX"},
+        )
+        self.assertEqual(status, 400, payload)
+        self.assertEqual(payload["code"], "confirm_mismatch")
+        status, _ = self.get(f"/api/admin/licenses/{self.serial}")
+        self.assertEqual(status, 200)
+
+        status, payload = self.post(
+            f"/api/admin/licenses/{self.serial}/delete", {"confirm": self.serial},
+        )
+        self.assertEqual(status, 200, payload)
+        self.assertEqual(payload["removed"]["licenses"], 1)
+        self.assertEqual(payload["removed"]["applications"], 1)
+        self.assertEqual(payload["removed"]["email_codes"], 1)
+        self.assertEqual(payload["removed"]["client_checks"], 1)
+        self.assertEqual(payload["removed"]["build_charges"], 1)
+        self.assertEqual(payload["removed"]["guard_nonces"], 1)
+        self.assertEqual(payload["removed"]["orders"], 1)
+        self.assertEqual(payload["removed"]["customers"], 1)
+
+        for table, count in self.counts(self.serial).items():
+            expected = 1 if table == "events" else 0
+            self.assertEqual(count, expected, table)
+        event = self.service.db.query_one(
+            "SELECT * FROM events WHERE serial = ?", (self.serial,),
+        )
+        self.assertEqual(event["action"], "license_delete")
+        self.assertEqual(event["actor"], "admin")
+        self.assertIsNone(
+            self.service.db.query_one("SELECT id FROM customers WHERE id = ?", (customer,)),
+        )
+
+        status, payload = self.get(f"/api/admin/licenses/{self.serial}")
+        self.assertEqual(status, 404)
+        self.assertEqual(payload["code"], "license_not_found")
+        status, payload = self.get("/api/admin/licenses")
+        self.assertEqual(payload["total"], 0)
+        status, payload = self.get("/api/admin/customers")
+        self.assertEqual(payload["total"], 0)
+        status, payload = self.get("/api/admin/client-checks")
+        self.assertEqual(payload["total"], 0)
+
+    def test_delete_keeps_customer_with_other_license(self) -> None:
+        self.grant_trial()
+        customer_id = self.service.db.query_one(
+            "SELECT customer_id FROM licenses WHERE serial = ?", (self.serial,),
+        )["customer_id"]
+        key = self.create_key()
+        other_machine = "f" * 32
+        other_serial = trial_license.serial_from(other_machine, "api-test-salt")
+        status, payload = self.post("/api/public/redeem", {
+            "key": key, "serial": other_serial, "machine": other_machine,
+        })
+        self.assertEqual(status, 200, payload)
+        # Link the paid licence to the same customer so the purge must keep them.
+        self.service.db.execute(
+            "UPDATE licenses SET customer_id = ? WHERE serial = ?",
+            (customer_id, other_serial),
+        )
+        self.login()
+        status, payload = self.post(
+            f"/api/admin/licenses/{self.serial}/delete", {"confirm": self.serial},
+        )
+        self.assertEqual(status, 200, payload)
+        self.assertEqual(payload["removed"]["customers"], 0)
+        status, payload = self.get(f"/api/admin/licenses/{other_serial}")
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["license"]["customer_email"])
+        status, payload = self.get("/api/admin/customers")
+        self.assertEqual(payload["total"], 1)
+
+    def test_delete_requires_session_and_csrf(self) -> None:
+        self.grant_trial()
+        status, payload = self.post(
+            f"/api/admin/licenses/{self.serial}/delete", {"confirm": self.serial},
+        )
+        self.assertEqual(status, 401)
+        self.assertEqual(payload["code"], "unauthorized")
+        self.login()
+        self.csrf = "deadbeef"
+        status, payload = self.post(
+            f"/api/admin/licenses/{self.serial}/delete", {"confirm": self.serial},
+        )
+        self.assertEqual(status, 403)
+        self.assertEqual(payload["code"], "csrf_failed")
+
+    def test_delete_unknown_serial_and_method(self) -> None:
+        self.login()
+        status, payload = self.post(
+            "/api/admin/licenses/PS-0000-0000-0000/delete", {"confirm": "PS-0000-0000-0000"},
+        )
+        self.assertEqual(status, 404)
+        self.assertEqual(payload["code"], "license_not_found")
+        status, payload = self.get(f"/api/admin/licenses/{self.serial}/delete")
+        self.assertEqual(status, 405)
+        self.assertEqual(payload["code"], "method_not_allowed")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -420,6 +420,27 @@ export function useSetBuildQuota() {
   })
 }
 
+export function useDeleteLicense() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ serial, confirm }: { serial: string; confirm: string }) =>
+      api.post<{ ok: true; serial: string; removed: Record<string, number>; action: string }>(
+        `/api/admin/licenses/${encodeURIComponent(serial)}/delete`,
+        { confirm },
+      ),
+    onSuccess: (_result, variables) => {
+      client.removeQueries({ queryKey: queryKeys.license(variables.serial) })
+      client.invalidateQueries({ queryKey: ['admin', 'licenses'] })
+      client.invalidateQueries({ queryKey: ['admin', 'checks'] })
+      client.invalidateQueries({ queryKey: ['admin', 'customers'] })
+      client.invalidateQueries({ queryKey: ['admin', 'customer'] })
+      client.invalidateQueries({ queryKey: ['admin', 'orders'] })
+      client.invalidateQueries({ queryKey: ['admin', 'audit'] })
+      client.invalidateQueries({ queryKey: queryKeys.dashboard })
+    },
+  })
+}
+
 export function useSigning() {
   return useQuery({
     queryKey: queryKeys.signing,

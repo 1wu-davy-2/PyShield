@@ -6,7 +6,7 @@ import { Link } from 'react-router-dom'
 
 import { useLicenses } from '../../api/hooks'
 import type { Edition, LicenseStatus, LicenseSummary } from '../../api/types'
-import { AdminHeader, TABLE_PAGINATION } from '../../components/admin'
+import { AdminHeader, DeleteLicenseModal, TABLE_PAGINATION } from '../../components/admin'
 import { EditionChip, ErrorNote, SectionCard, StatusTag } from '../../components/ui'
 import { expiryHint, formatDate } from '../../lib/format'
 
@@ -28,6 +28,7 @@ export default function Licenses() {
   const [q, setQ] = useState('')
   const [edition, setEdition] = useState<Edition | ''>('')
   const [status, setStatus] = useState<LicenseStatus | ''>('')
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const licenses = useLicenses({ q, edition: edition || '', status: status || '' })
 
   const columns: ColumnsType<LicenseSummary> = [
@@ -87,11 +88,16 @@ export default function Licenses() {
     {
       title: '',
       key: 'action',
-      width: 78,
+      width: 110,
       render: (_, row) => (
-        <Link className="table-link" to={`/admin/licenses/${encodeURIComponent(row.serial)}`}>
-          详情
-        </Link>
+        <span style={{ display: 'inline-flex', gap: 12, alignItems: 'center' }}>
+          <Link className="table-link" to={`/admin/licenses/${encodeURIComponent(row.serial)}`}>
+            详情
+          </Link>
+          <Button type="link" size="small" danger style={{ padding: 0 }} onClick={() => setDeleteTarget(row.serial)}>
+            删除
+          </Button>
+        </span>
       ),
     },
   ]
@@ -149,6 +155,13 @@ export default function Licenses() {
           locale={{ emptyText: '没有找到匹配的授权' }}
         />
       </SectionCard>
+
+      <DeleteLicenseModal
+        serial={deleteTarget ?? ''}
+        open={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        onDeleted={() => setDeleteTarget(null)}
+      />
     </>
   )
 }

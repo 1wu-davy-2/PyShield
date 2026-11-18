@@ -1916,6 +1916,58 @@ class PortalService:
             )
         return {"ok": True, "serial": serial}
 
+    def delete_license(self, actor: str, serial: str, confirm: str = "") -> dict:
+        """Hard-delete a license and every record bound to its serial."""
+        serial = validation.normalize_serial(serial)
+        if str(confirm or "").strip() != serial:
+            raise ServiceError("请输入完整序列号以确认删除", 400, "confirm_mismatch")
+        with self.db.transaction() as connection:
+            row = self._find_license(connection, serial)
+            if row is None:
+                raise ServiceError("授权不存在", 404, "license_not_found")
+            application_ids = [
+                int(item["id"]) for item in self.db.query_all(
+                    "SELECT id FROM applications WHERE serial = ?",
+                    (serial,), connection=connection,
+                )
+            ]
+            removed: dict[str, int] = {}
+            if application_ids:
+                marks = ",".join("?" for _ in application_ids)
+                removed["email_codes"] = connection.execute(
+                    f"DELETE FROM email_codes WHERE application_id IN ({marks})",
+                    application_ids,
+                ).rowcount
+            for table in (
+                "applications", "key_activations", "build_charges",
+                "client_checks", "guard_nonces", "orders", "events",
+            ):
+                removed[table] = connection.execute(
+                    f"DELETE FROM {table} WHERE serial = ?", (serial,),
+                ).rowcount
+            connection.execute("DELETE FROM licenses WHERE id = ?", (int(row["id"]),))
+            removed["licenses"] = 1
+            removed["customers"] = 0
+            customer_id = row.get("customer_id")
+            if customer_id is not None:
+                leftover = self.db.query_one(
+                    "SELECT (SELECT COUNT(*) FROM licenses WHERE customer_id = ?)"
+                    " + (SELECT COUNT(*) FROM applications WHERE customer_id = ?)"
+                    " + (SELECT COUNT(*) FROM orders WHERE customer_id = ?) AS total",
+                    (customer_id, customer_id, customer_id), connection=connection,
+                )
+                if int(leftover["total"]) == 0:
+                    connection.execute(
+                        "DELETE FROM customers WHERE id = ?", (customer_id,),
+                    )
+                    removed["customers"] = 1
+            # The serial's audit history is purged too; this event is the only trace left.
+            self._log(
+                connection, "admin", actor, "license_delete",
+                serial=serial, license_id=row["license_id"], detail=removed,
+            )
+        return {"ok": True, "serial": serial, "removed": removed}
+
     # ------------------------------------------------------------------
     # admin dashboards
     # ------------------------------------------------------------------

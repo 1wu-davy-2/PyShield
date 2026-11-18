@@ -1,7 +1,7 @@
 import { Alert, App, Button, Checkbox, DatePicker, Form, Input, InputNumber, Modal, Select, Table, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { ApiError } from '../../api/client'
 import {
@@ -12,7 +12,7 @@ import {
   useUpgradeLicense,
 } from '../../api/hooks'
 import type { AuditEvent, ClientCheck, KeyActivation } from '../../api/types'
-import { AdminHeader, TABLE_PAGINATION } from '../../components/admin'
+import { AdminHeader, DeleteLicenseModal, TABLE_PAGINATION } from '../../components/admin'
 import {
   Callout,
   CopyButton,
@@ -26,10 +26,11 @@ import {
 import { applyServerErrors } from '../../lib/formErrors'
 import { formatDate, formatDateTime, formatDetail, remainingText } from '../../lib/format'
 
-type ModalKind = 'renew' | 'upgrade' | 'revoke' | 'quota' | null
+type ModalKind = 'renew' | 'upgrade' | 'revoke' | 'quota' | 'delete' | null
 
 export default function LicenseDetail() {
   const { serial = '' } = useParams()
+  const navigate = useNavigate()
   const { message } = App.useApp()
   const license = useLicense(serial)
   const renew = useRenewLicense()
@@ -243,6 +244,9 @@ export default function LicenseDetail() {
         <Button onClick={() => setModal('quota')}>调整构建配额</Button>
         <Button danger onClick={() => setModal('revoke')} disabled={locked}>
           吊销
+        </Button>
+        <Button danger onClick={() => setModal('delete')}>
+          删除
         </Button>
       </AdminHeader>
 
@@ -525,6 +529,13 @@ export default function LicenseDetail() {
           </Form.Item>
         </Form>
       </Modal>
+
+      <DeleteLicenseModal
+        serial={data.serial}
+        open={modal === 'delete'}
+        onClose={closeModal}
+        onDeleted={() => navigate('/admin/licenses')}
+      />
     </>
   )
 }

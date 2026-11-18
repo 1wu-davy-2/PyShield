@@ -371,7 +371,7 @@ def _require_csrf(session: dict, header_value: str) -> None:
 def _admin_license(service: PortalService, request: ApiRequest, path: str) -> ApiResponse:
     rest = path[len("/licenses/"):].strip("/")
     action = ""
-    for suffix in ("/renew", "/upgrade", "/revoke", "/build-quota"):
+    for suffix in ("/renew", "/upgrade", "/revoke", "/build-quota", "/delete"):
         if rest.endswith(suffix):
             action = suffix[1:]
             rest = rest[:-len(suffix)]
@@ -406,6 +406,11 @@ def _admin_license(service: PortalService, request: ApiRequest, path: str) -> Ap
             "serial": serial,
             "action": action,
         })
+    elif action == "delete":
+        result = service.delete_license(
+            actor, serial, str(request.payload.get("confirm") or ""),
+        )
+        return ApiResponse({**result, "action": action})
     else:
         result = service.revoke_license(
             actor, serial, str(request.payload.get("reason") or ""),
