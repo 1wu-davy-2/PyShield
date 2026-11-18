@@ -294,8 +294,11 @@ class BuildService:
         # Unactivated installs (local trial never started, no entitlement) must
         # not build through MCP either: the product expects a portal grant.
         gate = tool_license.check(initialize_trial=False)
-        if gate.mode == "unlicensed" or (
-            gate.mode == "trial" and (gate.trial or {}).get("not_started")
+        # Packaged builds embed a public key; source runs intentionally skip
+        # this gate so the dev/test trial flow keeps working.
+        if gate.public_key_configured and (
+            gate.mode == "unlicensed"
+            or (gate.mode == "trial" and (gate.trial or {}).get("not_started"))
         ):
             raise ServiceError(
                 "LICENSE_REQUIRED",

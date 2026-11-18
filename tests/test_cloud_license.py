@@ -29,7 +29,7 @@ from license_portal.service import create_service
 
 if str(PORTAL) in sys.path:
     sys.path.remove(str(PORTAL))
-from pyshield import cloud_license, fingerprint, tool_license, trial_license
+from pyshield import cloud_license, crypto, fingerprint, tool_license, trial_license
 
 MACHINE = "e" * 32
 
@@ -40,7 +40,11 @@ class McpActivationGateTests(unittest.TestCase):
         self.root = Path(self.temp.name).resolve()
         self.home = self.root / "home"
         self.home.mkdir()
-        self.patch = mock.patch.dict(os.environ, {tool_license.ENV_HOME: str(self.home)})
+        self.patch = mock.patch.dict(os.environ, {
+            tool_license.ENV_HOME: str(self.home),
+            # Pretend to be a packaged build so the activation gate applies.
+            tool_license.ENV_PUBLIC_KEY: crypto.b85encode(bytes(range(32))),
+        })
         self.patch.start()
         for key in (tool_license.ENV_DEV, tool_license.ENV_LICENSE, "PYSHELD_CLOUD_API"):
             os.environ.pop(key, None)
