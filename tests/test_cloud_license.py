@@ -34,6 +34,40 @@ from pyshield import cloud_license, fingerprint, tool_license, trial_license
 MACHINE = "e" * 32
 
 
+class McpActivationGateTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name).resolve()
+        self.home = self.root / "home"
+        self.home.mkdir()
+        self.patch = mock.patch.dict(os.environ, {tool_license.ENV_HOME: str(self.home)})
+        self.patch.start()
+        for key in (tool_license.ENV_DEV, tool_license.ENV_LICENSE, "PYSHELD_CLOUD_API"):
+            os.environ.pop(key, None)
+
+    def tearDown(self) -> None:
+        self.patch.stop()
+        self.temp.cleanup()
+
+    def test_start_requires_activation(self) -> None:
+        from pyshield.build_service import BuildService
+        from pyshield.build_service.models import BuildPolicy
+
+        projects = self.root / "projects"
+        projects.mkdir()
+        service = BuildService(BuildPolicy(
+            project_roots=(projects,),
+            output_root=self.root / "out",
+            secret_dir=self.root / "secrets",
+            job_dir=self.root / "jobs",
+            audit_dir=self.root / "audit",
+            allow_build=True,
+        ))
+        with self.assertRaises(Exception) as ctx:
+            service.start({"project": str(projects)}, confirm=True)
+        self.assertEqual(getattr(ctx.exception, "code", ""), "LICENSE_REQUIRED")
+
+
 class CloudGuardClientTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()

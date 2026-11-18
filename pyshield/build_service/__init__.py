@@ -291,6 +291,16 @@ class BuildService:
             raise ServiceError("BUILD_DISABLED", "MCP 构建工具未启用（缺少 --allow-build）")
         if not confirm:
             raise ServiceError("CONFIRMATION_REQUIRED", "构建请求必须显式 confirm=true")
+        # Unactivated installs (local trial never started, no entitlement) must
+        # not build through MCP either: the product expects a portal grant.
+        gate = tool_license.check(initialize_trial=False)
+        if gate.mode == "unlicensed" or (
+            gate.mode == "trial" and (gate.trial or {}).get("not_started")
+        ):
+            raise ServiceError(
+                "LICENSE_REQUIRED",
+                "尚未激活：请先在客户端「版本与试用」申请试用或导入授权。",
+            )
         req, issues = self._coerce(request)
         if issues:
             raise ServiceError(
@@ -349,9 +359,6 @@ class BuildService:
 
         # Cloud guard: revoked/expired/unreachable licences must stop MCP
         # builds exactly like the GUI path (no side door around the quota).
-        gate = tool_license.check(
-            features=_features(prepared), initialize_trial=False,
-        )
         portal_bound = gate.entitlement is not None and bool(
             (gate.entitlement.raw or {}).get("serial")
         )
