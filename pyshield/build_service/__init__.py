@@ -16,7 +16,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any, Mapping
 
-from .. import build_spec, builder, secure_store, tool_license
+from .. import build_spec, builder, cloud_license, secure_store, tool_license, trial_license
 from .artifacts import JobArtifacts, redact_text
 from .engine import ExecutionHooks, execute, redaction_pairs
 from .jobs import snapshot_copy, snapshot_from_dict
@@ -249,6 +249,7 @@ class BuildService:
             },
             "license": license_status_summary(status),
             "quota": _quota_snapshot(),
+            "cloud_guard": cloud_license.guard_state(),
         }
 
     def status(self, job_id: str) -> BuildJobSnapshot:
@@ -346,11 +347,53 @@ class BuildService:
                 details={"expected": expect_plan_hash, "actual": prepared.plan_hash},
             )
 
+        # Cloud guard: revoked/expired/unreachable licences must stop MCP
+        # builds exactly like the GUI path (no side door around the quota).
+        gate = tool_license.check(
+            features=_features(prepared), initialize_trial=False,
+        )
+        portal_bound = gate.entitlement is not None and bool(
+            (gate.entitlement.raw or {}).get("serial")
+        )
+        cloud_license.configure(
+            trial_license.default_server(), enable=True if portal_bound else None,
+        )
+        try:
+            cloud_license.ensure_allowed()
+            preflight = (
+                cloud_license.preflight(gate.entitlement)
+                if portal_bound else {"ok": True, "skipped": True}
+            )
+        except cloud_license.CloudError as exc:
+            cloud_license.mark_blocked(str(exc), getattr(exc, "code", "") or "cloud_error")
+            raise ServiceError(
+                "LICENSE_BLOCKED", f"云端授权校验未通过：{exc}",
+            ) from exc
+        if not preflight.get("skipped") and not preflight.get("allowed", False):
+            reason = str(preflight.get("reason") or "云端授权校验未通过")
+            cloud_license.mark_blocked(reason, "preflight_denied")
+            raise ServiceError("LICENSE_BLOCKED", reason)
+        if portal_bound and not preflight.get("skipped"):
+            cloud_license.apply_update(preflight)
+
         slot = self._acquire_slot()
         job_id = secrets.token_hex(16)
         reservation: tool_license.BuildReservation | None = None
         started = False
         try:
+            if portal_bound:
+                try:
+                    cloud_license.consume(
+                        gate.entitlement, idempotency_key=job_id,
+                    )
+                except cloud_license.CloudError as exc:
+                    cloud_license.mark_blocked(
+                        str(exc), getattr(exc, "code", "") or "consume_failed",
+                    )
+                    self._release_slot(slot)
+                    raise ServiceError(
+                        "LICENSE_BLOCKED", f"云端扣减构建次数失败：{exc}",
+                    ) from exc
             try:
                 reservation = tool_license.begin_build(
                     _features(prepared), token=job_id,

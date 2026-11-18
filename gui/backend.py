@@ -443,6 +443,7 @@ class Api:
     def __init__(self) -> None:
         self.manager = BuildManager()
         self.mcp = mcp_host.McpHost()
+        self._cloud_stopped_mcp = False
         self._mcp_started = False
         self._python_job = python_runtime.InstallJob()
         self._window = None
@@ -466,9 +467,28 @@ class Api:
             (entitlement.raw or {}).get("serial")
         )
         cloud_license.configure(server, enable=True if portal_bound else None)
-        cloud_license.start_watchdog(
-            self._cloud_entitlement, lambda state: None,
-        )
+        cloud_license.start_watchdog(self._cloud_entitlement, self._on_cloud_blocked)
+
+    def _cloud_event(self, state: dict) -> None:
+        window = self._window
+        if window is None:
+            return
+        try:
+            payload = json.dumps(state, ensure_ascii=False)
+            window.evaluate_js(
+                f"window.pyshieldCloudBlocked && window.pyshieldCloudBlocked({payload})"
+            )
+        except Exception:  # noqa: BLE001 - the window may be closing
+            pass
+
+    def _on_cloud_blocked(self, state: dict) -> None:
+        """A failed heartbeat freezes the app: stop MCP and cover the UI."""
+        self._cloud_stopped_mcp = True
+        try:
+            self.mcp.stop()
+        except Exception:  # noqa: BLE001
+            pass
+        self._cloud_event(dict(state, blocked=True, mcp_stopped=True))
 
     def bootstrap(self) -> dict:
         settings = core.load_settings()
@@ -1043,10 +1063,26 @@ class Api:
         return self.manager.start(request, settings)
 
     def snapshot(self) -> dict:
+        guard = cloud_license.guard_state()
+        if guard.get("blocked"):
+            if not self._cloud_stopped_mcp:
+                self._cloud_stopped_mcp = True
+                try:
+                    self.mcp.stop()
+                except Exception:  # noqa: BLE001
+                    pass
+        elif self._cloud_stopped_mcp:
+            self._cloud_stopped_mcp = False
+            try:
+                if core.load_settings().get("mcp_enabled"):
+                    self.mcp.start()
+            except Exception:  # noqa: BLE001
+                pass
+            self._cloud_event({"blocked": False})
         return {
             "ok": True,
             "state": self.manager.snapshot(),
-            "cloud_guard": cloud_license.guard_state(),
+            "cloud_guard": guard,
         }
 
     def get_history(self) -> dict:

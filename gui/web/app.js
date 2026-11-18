@@ -75,6 +75,7 @@
     lastStatus: "idle",
     lastSummary: null,
     errors: [],
+    cloudBlocked: false,
     outputAuto: true,
     verifyAuto: true,
     verifyWasAuto: false,
@@ -1158,17 +1159,31 @@
   }
 
   function renderCloudGuard(data) {
-    const banner = $("#cloudGuardBanner");
-    if (!banner) return;
     const info = data || {};
     const blocked = Boolean(info.enabled && info.blocked);
-    banner.hidden = !blocked;
-    if (blocked) {
-      $("#cloudGuardText").textContent =
-        `${info.reason || "云端授权校验未通过"}（${info.code || "cloud_error"}）。` +
-        "软件将每 1–5 分钟自动重试，校验恢复前无法开始构建。";
-    }
+    state.cloudBlocked = blocked;
+    const banner = $("#cloudGuardBanner");
+    if (banner) banner.hidden = true;
+    const modal = $("#cloudBlockModal");
+    if (!modal) return;
+    modal.hidden = !blocked;
+    if (!blocked) return;
+    $("#cloudBlockReason").textContent =
+      `${info.reason || "云端授权校验未通过"}（${info.code || "cloud_error"}）`;
+    $("#cloudBlockCode").textContent = info.code || "cloud_error";
+    document.body.classList.toggle("is-cloud-blocked", true);
   }
+
+  window.pyshieldCloudBlocked = (payload) => {
+    if (payload && payload.blocked === false) {
+      renderCloudGuard({ enabled: true, blocked: false });
+      document.body.classList.remove("is-cloud-blocked");
+      toast("云端校验已恢复，构建功能已解锁", "success");
+      return;
+    }
+    renderCloudGuard({ enabled: true, blocked: true, ...(payload || {}) });
+    toast("云端授权校验未通过，已暂停构建", "error");
+  };
 
   async function repairIntegrity(source) {
     const response = await call("state_repair", source);
@@ -2098,6 +2113,7 @@
   }
 
   function switchView(view) {
+    if (state.cloudBlocked) return;
     if (!VIEW_META[view]) return;
     state.view = view;
     const navView = view === "build" ? "workspace" : view;

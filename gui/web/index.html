@@ -1134,6 +1134,16 @@
     </div>
   </div>
 
+  <div class="cloud-lock" id="cloudBlockModal" hidden role="alertdialog" aria-modal="true" aria-labelledby="cloudBlockTitle">
+    <div class="cloud-lock-card">
+      <div class="cloud-lock-icon"><svg class="icon"><use href="#i-alert"/></svg></div>
+      <h2 id="cloudBlockTitle">云端授权校验未通过，已暂停构建</h2>
+      <p class="cloud-lock-reason" id="cloudBlockReason">检测到授权异常。</p>
+      <p class="cloud-lock-hint">软件将每 1–5 分钟自动重试，校验恢复前无法进行任何操作；MCP 服务已停止。</p>
+      <code class="cloud-lock-code" id="cloudBlockCode">cloud_error</code>
+    </div>
+  </div>
+
   <div class="modal-backdrop onboarding-backdrop" id="onboardingModal" hidden>
     <div class="modal-card onboarding-card" role="dialog" aria-modal="true" aria-labelledby="onboardingTitle">
       <div class="onboarding-art" id="onboardingArt">
