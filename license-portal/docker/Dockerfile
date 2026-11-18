@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1.7
-#
 # Build from the PyShield repository root:
 #   docker compose -f license-portal/docker/compose.yaml build
 #

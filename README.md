@@ -103,8 +103,12 @@ Windows x86 受限于 `cryptography` 上游轮子，固定使用 44.0.3；Window
 ```bash
 python -m venv .venv
 .venv/Scripts/python -m pip install pyinstaller==6.22.3 pywebview==6.2.1 pythonnet==3.2.1 cryptography
+# 正式包：注入服务器签发公钥与授权站点（release/tool_key.b85 为公钥，可公开）
+.venv/Scripts/python tools/build_commercial.py prepare --public-key release/tool_key.b85
 .venv/Scripts/python -m PyInstaller --noconfirm --clean PyShieldBuilder.spec
 ```
+
+CI 的三个平台构建任务都会先执行上面的 `prepare`，因此 CI 产物与本地正式包使用同一把公钥、同一个站点，不再区分“测试版/正式版”两个 exe。
 
 详见[桌面构建器文档](docs/desktop-builder.md)。桌面版内置 CPython 3.12 与全部界面资源，产物仍需部署在 CPython 3.12.x 上。
 

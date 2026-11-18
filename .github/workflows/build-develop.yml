@@ -122,6 +122,9 @@ jobs:
           }
           python -c "import cryptography; print('cryptography', cryptography.__version__)"
 
+      - name: Inject release key and site
+        run: python tools/build_commercial.py prepare --public-key release/tool_key.b85
+
       - name: Build PyShieldBuilder.exe
         run: python -m PyInstaller --noconfirm --clean PyShieldBuilder.spec
 
@@ -206,6 +209,9 @@ jobs:
           print("GTK", Gtk.get_major_version(), Gtk.get_minor_version())
           print("WebKit2", WebKit2.get_major_version(), WebKit2.get_minor_version())
           PY
+
+      - name: Inject release key and site
+        run: .venv/bin/python tools/build_commercial.py prepare --public-key release/tool_key.b85
 
       - name: Build PyShieldBuilder
         run: .venv/bin/python -m PyInstaller --noconfirm --clean PyShieldBuilder.spec
@@ -296,6 +302,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install pywebview==6.2.1 pyinstaller==6.22.3 cryptography 'Cython>=3'
+
+      - name: Inject release key and site
+        run: python tools/build_commercial.py prepare --public-key release/tool_key.b85
 
       - name: Build PyShieldBuilder
         run: python -m PyInstaller --noconfirm --clean PyShieldBuilder.spec
