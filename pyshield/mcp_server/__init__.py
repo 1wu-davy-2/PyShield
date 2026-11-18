@@ -122,7 +122,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         policy = _policy_from_args(args)
-        service = BuildService(policy)
+        service = BuildService(policy, require_activation=True)
     except (ValueError, OSError) as exc:
         print(f"[pyshield-mcp] configuration error: {exc}", file=sys.stderr)
         return 2

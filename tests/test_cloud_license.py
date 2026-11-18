@@ -59,7 +59,7 @@ class McpActivationGateTests(unittest.TestCase):
 
         projects = self.root / "projects"
         projects.mkdir()
-        service = BuildService(BuildPolicy(
+        service = BuildService(require_activation=True, policy=BuildPolicy(
             project_roots=(projects,),
             output_root=self.root / "out",
             secret_dir=self.root / "secrets",

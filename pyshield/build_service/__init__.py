@@ -210,8 +210,9 @@ def _quota_snapshot() -> dict:
 
 
 class BuildService:
-    def __init__(self, policy: BuildPolicy):
+    def __init__(self, policy: BuildPolicy, *, require_activation: bool = False) -> None:
         self.policy = _validate_policy(policy)
+        self.require_activation = require_activation
         self._jobs: dict[str, JobRuntime] = {}
         self._state_lock = threading.Lock()
         self._audit_lock = threading.Lock()
@@ -296,7 +297,7 @@ class BuildService:
         gate = tool_license.check(initialize_trial=False)
         # Packaged builds embed a public key; source runs intentionally skip
         # this gate so the dev/test trial flow keeps working.
-        if gate.public_key_configured and (
+        if self.require_activation and gate.public_key_configured and (
             gate.mode == "unlicensed"
             or (gate.mode == "trial" and (gate.trial or {}).get("not_started"))
         ):

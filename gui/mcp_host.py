@@ -188,7 +188,7 @@ class McpHost:
 
             try:
                 policy = self._policy(project_root, state_dir, self._allow_build)
-                service = BuildService(policy)
+                service = BuildService(policy, require_activation=True)
             except (ValueError, OSError) as exc:
                 self._error = str(exc)
                 return {"ok": False, "error": str(exc), "code": "policy", "status": self.status()}
